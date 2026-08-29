@@ -45,11 +45,11 @@ function backendUrl(ctx) {
 
 function electronPath() {
   try {
-    // electron 是 dshome 包的本地依赖（E:\DSH\dshome\node_modules）；
+    // electron 是 dshome 包的本地依赖（dshome/node_modules 下）；
     // 该包 main 导出 ELECTRON 可执行文件的路径字符串。
     return require('electron');
   } catch (error) {
-    throw new Error(`dshome/shell: electron is not installed in the dshome package (npm i -D electron in E:\\DSH\\dshome): ${String(error)}`);
+    throw new Error(`dshome/shell: electron is not installed in the dshome package (npm i -D electron, or run scripts/install-electron.mjs): ${String(error)}`);
   }
 }
 

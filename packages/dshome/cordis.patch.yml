@@ -1,6 +1,6 @@
 # DSHOME bundle patch: the third patch layer of profile `dshome`,
 # applied after @deepseek-ai/dsh-base and @deepseek-ai/dsh-web-app.
-# Design doc: E:\DSH\DSHOME-DESIGN.md
+# Design doc: docs/DSHOME-DESIGN.md
 
 # -- 自有 host 插件 --
 - insert:
