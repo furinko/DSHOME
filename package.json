@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=1 build",
-    "publish": "pnpm -r publish"
+    "publish": "pnpm -r publish",
+    "setup": "node scripts/install-electron.mjs"
   },
   "dependencies": {
     "dshome": "workspace:*"

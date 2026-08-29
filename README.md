@@ -20,8 +20,8 @@ dshome-monorepo/
 ```bash
 git clone https://github.com/furinko/DSHOME.git
 cd DSHOME
-pnpm install                 # 装依赖（workspace 链接三包）
-node node_modules/electron/install.js   # electron 二进制（pnpm 默认跳过 postinstall，需手动一次；或设 ELECTRON_MIRROR）
+pnpm install        # 装依赖（workspace 链接三包）
+pnpm setup          # 下载 electron 二进制（pnpm 默认跳过 postinstall；此脚本用镜像加速）
 ```
 - 改 `packages/dshome` 等源码 → 另一台 `git pull` → 即生效（`workspace:*` 互引，无 `file:+junction` 的 churn/删源码问题）。
 - 铁律：需要市场真实安装时，别在 dsh 的 profile 目录里跑 `pnpm`；发布/装插件走「发布 + 版本依赖」或 GitHub 源。
@@ -44,4 +44,7 @@ git push origin main
 
 ## 相关文档
 - `docs/NEW-DEVICE.md`：换新设备部署（官方 npm 流程）
-- `DSHOME-HANDOVER.md`、`DSHOME-DESIGN.md`（在开发机 `E:\DSH`）
+- `docs/DSHOME-NPM-PUBLISH-RESTRUCTURE.md`：方案① 私有 verdaccio 发布 + 版本号依赖
+- `docs/DSHOME-SETTINGS-UI-RECONSTRUCT.md`：客户端设置 UI（通知/插件管理）重建
+- `docs/DSHOME-HANDOVER.md`：开发交接（当前状态、坑、下一步）
+- `docs/DSHOME-DESIGN.md`：完整设计文档
