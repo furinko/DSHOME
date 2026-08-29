@@ -16,7 +16,7 @@
 | **B. DSH Desktop** | 官方安装包（自带 CLI + pnpm，免装 Node） | 零 Node 环境；launch.vbs 优先用它 |
 
 其它前置：`DEEPSEEK_API_KEY`（模型访问；本机 `.dsh\.credentials.yaml` 里已有，迁移一并拷走）。
-项目拷贝到新机器同路径：`E:\DSH\dshome` + `E:\DSH\packages\dshome-theme`（file: 依赖写死该路径）。
+克隆仓库到**任意路径**，运行 `packages\dshome\scripts\deploy-new-device.cmd`（脚本自动把模板 file: 依赖的 `E:/DSH` 占位符重指到实际仓库路径，无需同路径拷贝）。
 
 ### 1. 建 profile
 `scripts/deploy-new-device.cmd` 自动完成等价操作（也可手动）：

@@ -3,10 +3,12 @@ rem DSHOME deploy on a new device.
 rem Prereq (either):
 rem   A. standalone: Node.js 22/24 + `npm i -g pnpm` + `npm i -g @deepseek-ai/dsh@0.1.1-rc.2`
 rem   B. DSH Desktop installed (bundles CLI + pnpm; zero Node setup)
-rem Repo paths on the new machine must match the file: deps in profile/package.json:
-rem   E:\DSH\dshome and E:\DSH\packages\dshome-theme
+rem The template's file: deps use the E:/DSH placeholder; deploy re-points it to the
+rem actual clone location (see REPO below), so the repo can live at any path.
 setlocal
 set "PROFILE=%USERPROFILE%\.dsh\profiles\dshome"
+rem Repo root = this script's location (packages\dshome\scripts -> repo root).
+set "REPO=%~dp0..\..\.."
 
 rem 1) Profile + dependencies (official npm flow, all pinned 0.1.1-rc.2)
 if exist "%PROFILE%\package.json" (
@@ -16,6 +18,8 @@ if exist "%PROFILE%\package.json" (
     mkdir "%PROFILE%" 2>nul
     copy /y "%~dp0..\profile-template\package.json" "%PROFILE%\package.json" >nul
     copy /y "%~dp0..\profile-template\pnpm-workspace.yaml" "%PROFILE%\pnpm-workspace.yaml" >nul
+    rem Re-point the E:/DSH placeholder in the copied profile to this clone's real path.
+    node -e "const f=process.argv[1],path=require('path'),a=path.resolve(process.argv[2]).replace(/\\/g,'/'),c=require('fs').readFileSync(f,'utf8'),o=c.split('E:/DSH').join(a);require('fs').writeFileSync(f,o)" "%PROFILE%\package.json" "%REPO%"
     pushd "%PROFILE%"
     echo Installing DSHOME dependencies (pnpm install)...
     call pnpm install
@@ -28,13 +32,14 @@ if exist "%PROFILE%\package.json" (
 )
 
 rem 2) Electron runtime for the shell window (installed into the dshome package)
-if not exist "E:\DSH\dshome\node_modules\electron\dist\electron.exe" (
-    pushd "E:\DSH\dshome"
+set "DSHOME_PKG=%REPO%\packages\dshome"
+if not exist "%DSHOME_PKG%\node_modules\electron\dist\electron.exe" (
+    pushd "%DSHOME_PKG%"
     echo Installing Electron (mirror for CN networks)...
     set "ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/"
     call npm install --save-dev electron@43.4.0
     popd
-    if not exist "E:\DSH\dshome\node_modules\electron\dist\electron.exe" (
+    if not exist "%DSHOME_PKG%\node_modules\electron\dist\electron.exe" (
         echo Electron install failed. Download the zip from the mirror manually.
     )
 )
