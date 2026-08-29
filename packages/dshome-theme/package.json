@@ -1,0 +1,25 @@
+{
+  "name": "dshome-theme",
+  "version": "0.1.0",
+  "description": "DSHOME client theme: brand accent token overrides + DSHOME brand slots.",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.cjs",
+  "exports": {
+    ".": "./lib/index.cjs",
+    "./client": "./lib/client.js",
+    "./plugin": "./lib/plugin.cjs",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ]
+    }
+  }
+}

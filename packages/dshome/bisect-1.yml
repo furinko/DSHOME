@@ -1,0 +1,3 @@
+# Bisect overlay: disable dshome-core row to isolate the boot failure.
+- id: dshome-core
+  disabled: true

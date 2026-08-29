@@ -1,0 +1,50 @@
+{
+  "name": "dshome",
+  "version": "0.1.0",
+  "description": "DSHOME: a personal DeepSeek Harness desktop client bundle (skeleton). Name pun: DSH + HOME — your own home for DSH.",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./core": "./lib/host/core.js",
+    "./shell": "./lib/host/shell.js",
+    "./notify": "./lib/host/notify.js",
+    "./plugin-manager": "./lib/host/plugin-manager.js",
+    "./desktop": "./lib/host/desktop.js",
+    "./client-core": "./lib/client/core.js",
+    "./theme": "./lib/client/theme.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "dshome-theme",
+        "dshome-palette"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "safe": "node scripts/safe.mjs"
+  },
+  "dependencies": {
+    "dshome-theme": "workspace:*",
+    "@deepseek-ai/schemastery": "3.18.1",
+    "@deepseek-ai/dsh-settings": "0.1.1-rc.2"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "devDependencies": {
+    "electron": "43.4.0"
+  }
+}

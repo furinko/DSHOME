@@ -1,0 +1,48 @@
+# DSHOME bundle patch: the third patch layer of profile `dshome`,
+# applied after @deepseek-ai/dsh-base and @deepseek-ai/dsh-web-app.
+# Design doc: E:\DSH\DSHOME-DESIGN.md
+
+# -- 自有 host 插件 --
+- insert:
+    # dshome-core: 扩展点服务（commands/panels 注册表），未来所有 DSHOME 插件的地基。
+    - id: dshome-core
+      name: dshome/core
+    # dshome-shell（Phase 2）：Electron 薄壳窗口/托盘/单实例/离线重连。
+    - id: dshome-shell
+      name: dshome/shell
+    # dshome-theme（Phase 3）：DSHOME 品牌皮肤（强调色 token + 品牌槽）。
+    # 裸包名行保证 roster 扫描到 dsh.client；根导出为 CJS 插件对象。
+    - id: dshome-theme
+      name: dshome-theme
+    # dshome-palette（主线 A）：Ctrl+K 命令面板。
+    - id: dshome-palette
+      name: dshome-palette
+    # dshome-notify（主线 A 第 2 步）：回合级通知，开关在「设置 → 通知」。
+    - id: dshome-notify
+      name: dshome/notify
+    # dshome-plugin-manager（block 1）：已装插件 列表 + 启/停。
+    - id: dshome-plugin-manager
+      name: dshome/plugin-manager
+    # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
+    # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
+    # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。
+    - id: dshome-desktop
+      name: dshome/desktop
+
+# -- 覆盖官方行（整体替换 config，不合并）--
+- id: web-runtime
+  config:
+    openBrowser: false
+    printUrl: true
+    surfaceContext: true
+    trustedHosts: []
+
+# 专属默认端口：与官方 web（3080）错开；CLI --port 仍优先。
+- id: webserver
+  config:
+    host: !!js ctx.webStartup.host ?? '127.0.0.1'
+    port: !!js ctx.webStartup.port ?? 3081
+
+# 官方品牌由 dshome-theme 的品牌槽替代。
+- id: ui-brand-official
+  disabled: true

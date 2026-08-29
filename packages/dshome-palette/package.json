@@ -1,0 +1,19 @@
+{
+  "name": "dshome-palette",
+  "version": "0.1.0",
+  "description": "DSHOME Ctrl+K command palette: session titles, open, favorites. Vanilla DOM, no React.",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.cjs",
+  "exports": {
+    ".": "./lib/index.cjs",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

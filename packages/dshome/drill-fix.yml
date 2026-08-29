@@ -1,0 +1,3 @@
+# 故障演练恢复层：把坏行禁用（不改代码、不卸载）。
+- id: dshome-broken
+  disabled: true

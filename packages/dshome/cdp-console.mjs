@@ -1,0 +1,12 @@
+﻿const list = await (await fetch('http://127.0.0.1:9222/json')).json();
+const page = list.find((t) => t.type === 'page' && t.url.startsWith('http://127.0.0.1:3081'));
+const ws = new WebSocket(page.webSocketDebuggerUrl);
+const pend = new Map(); let id = 0; const warns = [];
+ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id); } else if (m.method === 'Runtime.consoleAPICalled') { const txt = m.params.args.map((a) => a.value ?? a.description ?? '').join(' '); if (/dshome/i.test(txt)) warns.push(m.params.type + ': ' + txt); } };
+await new Promise((r) => (ws.onopen = r));
+const send = (m, p = {}) => new Promise((r) => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method: m, params: p })); });
+await send('Runtime.enable'); await send('Page.enable'); await send('Network.enable');
+await send('Network.setCacheDisabled', { cacheDisabled: true });
+await send('Page.reload'); await new Promise((r) => setTimeout(r, 11000));
+console.log('dshome warns:'); warns.forEach((w) => console.log('  ', w.slice(0, 200)));
+ws.close(); process.exit(0);

@@ -1,0 +1,19 @@
+# deps
+node_modules/
+
+# logs / tmp
+*.log
+*.tmp
+node_modules/.cache/electron/
+
+# dshome local dump/describe artifacts
+describe.json
+dump-*.log
+*.backend.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# local build/install artifacts
+*.tsbuildinfo
