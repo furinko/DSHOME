@@ -25,3 +25,6 @@ sessions/
 storages/
 .anonymous-user-id
 profiles/*/cordis.yml
+
+# dev launcher log
+dsh-server.log
