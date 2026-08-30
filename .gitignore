@@ -28,3 +28,6 @@ profiles/*/cordis.yml
 
 # dev launcher log
 dsh-server.log
+
+# dsh credentials store (API keys, zero-credential rule)
+.credentials.yaml
