@@ -37,25 +37,34 @@ function backendPort() {
 }
 
 // ---- 后端规格解析 ----
-// 优先级：环境变量 DSHOME_BACKEND_CMD（开发/测试）> 安装版 install.env
+// 优先级：环境变量 DSHOME_BACKEND_CMD（开发/测试）> 安装版 install.env（向上遍历查找）
+function findInstallEnv() {
+  // 安装布局：<install>\install.env 与 <install>\src\packages\dshome\shell-app（本目录）
+  // 从本目录向上最多找 6 级（兼容旧布局 packages\dshome\install.env）
+  let dir = __dirname;
+  for (let i = 0; i < 6; i++) {
+    const f = path.join(dir, 'install.env');
+    if (fs.existsSync(f)) return f;
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
 function resolveBackendSpec() {
   const envCmd = process.env.DSHOME_BACKEND_CMD;
   if (envCmd) return { kind: 'cmd', cmd: envCmd, env: { ...process.env } };
-  const candidates = [
-    path.join(__dirname, '..', 'install.env'),
-    path.join(__dirname, '..', '..', 'install.env'),
-  ];
-  for (const envFile of candidates) {
-    if (!fs.existsSync(envFile)) continue;
+  const envFile = findInstallEnv();
+  if (envFile) {
     try {
       const lines = fs.readFileSync(envFile, 'utf8').split(/\r?\n/);
       const instDir = (lines[1] || '').trim();
       const profDir = (lines[2] || '').trim();
-      if (!instDir || !profDir) continue;
-      const nodeExe = path.join(instDir, 'runtime', 'node.exe');
-      const cliBin = path.join(profDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
-      if (fs.existsSync(nodeExe) && fs.existsSync(cliBin)) {
-        return { kind: 'install', instDir, profDir, nodeExe, cliBin, env: { ...process.env, DSH_HOME: instDir } };
+      if (instDir && profDir) {
+        const nodeExe = path.join(instDir, 'runtime', 'node.exe');
+        const cliBin = path.join(profDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
+        if (fs.existsSync(nodeExe) && fs.existsSync(cliBin)) {
+          return { kind: 'install', instDir, profDir, nodeExe, cliBin, env: { ...process.env, DSH_HOME: instDir } };
+        }
       }
     } catch { /* 忽略坏 env 文件 */ }
   }
@@ -133,7 +142,7 @@ function startBackend() {
     } else {
       const args = [spec.cliBin, '--profile', 'dshome', '--no-open', '--port', String(backendPort())];
       if (safeMode) args.push('--patch', SAFE_OVERLAY_FILE);
-      backend = spawn(spec.node, args, { windowsHide: true, env: spec.env, stdio: ['ignore', 'ignore', 'pipe'] });
+      backend = spawn(spec.nodeExe, args, { windowsHide: true, env: spec.env, stdio: ['ignore', 'ignore', 'pipe'] });
     }
   } catch (e) {
     logLine({ backend: 'spawn-error', error: String(e?.message ?? e) });
