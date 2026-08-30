@@ -13,6 +13,7 @@ const { spawn } = require('node:child_process');
 const { createServer } = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
+const updater = require('./updater.cjs');
 
 // ---- 配置 ----
 const DEFAULT_PORT = 3099;
@@ -272,6 +273,65 @@ function showWindow() {
   window.focus();
 }
 
+// 供 updater 在应用更新前退出壳 + 后端
+global.__dshomeQuitBeforeUpdate = () => {
+  quitting = true;
+  stopBackend();
+  app.quit();
+};
+
+// 启动后延迟静默检查更新（有更新才通知，失败静默）
+function scheduleStartupUpdateCheck() {
+  const silent = process.env.DSHOME_NO_UPDATE_CHECK === '1';
+  if (silent) return;
+  setTimeout(async () => {
+    const info = await updater.checkForUpdate();
+    if (!info) return;
+    try {
+      if (Notification.isSupported()) {
+        const n = new Notification({
+          title: 'DSHOME 有更新',
+          body: `发现新版本 v${info.version}，点击查看。`,
+        });
+        n.on('click', async () => {
+          const applied = await updater.applyUpdate(info, () => window);
+          if (applied) { /* 壳已退出，由安装器接管 */ }
+        });
+        n.show();
+      }
+    } catch { /* notification failure is not fatal */ }
+  }, 5000);
+}
+
+// 手动检查更新（托盘入口）
+async function manualCheckUpdate() {
+  try {
+    const info = await updater.checkForUpdate();
+    if (!info) {
+      dialog.showMessageBoxSync(window, {
+        type: 'info',
+        title: 'DSHOME 检查更新',
+        message: '当前已是最新版本。',
+        buttons: ['确定'],
+        noLink: true,
+      });
+      return;
+    }
+    await updater.applyUpdate(info, () => window);
+  } catch (e) {
+    logLine({ updater: 'manual-fail', error: String(e?.message ?? e) });
+    try {
+      dialog.showMessageBoxSync(window, {
+        type: 'error',
+        title: 'DSHOME 检查更新失败',
+        message: `检查更新失败：${String(e?.message ?? e)}`,
+        buttons: ['确定'],
+        noLink: true,
+      });
+    } catch { /* ignore */ }
+  }
+}
+
 function rebuildTrayMenu() {
   if (!tray) return;
   const openAtLogin = app.getLoginItemSettings().openAtLogin;
@@ -284,6 +344,7 @@ function rebuildTrayMenu() {
     { label: '刷新页面', click: () => { if (window) window.webContents.reloadIgnoringCache(); } },
     { label: '重启后端', click: () => restartBackend('normal') },
     { label: '安全模式重启', click: () => restartBackend('safe') },
+    { label: '检查更新…', click: () => manualCheckUpdate() },
     { type: 'separator' },
     {
       label: `开机自启 ${openAtLogin ? '✓' : '✗'}`,
@@ -388,6 +449,7 @@ if (!gotLock) {
     createWindow();
     createTray();
     startNotifyListener();
+    scheduleStartupUpdateCheck();
   });
   app.on('window-all-closed', () => { /* keep alive in tray */ });
   app.on('before-quit', () => { quitting = true; });
