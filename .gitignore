@@ -18,3 +18,10 @@ Thumbs.db
 # local build/install artifacts
 *.tsbuildinfo
 *.tgz
+
+# dsh runtime data (generated on first boot)
+settings.yaml
+sessions/
+storages/
+.anonymous-user-id
+profiles/*/cordis.yml
