@@ -1,6 +1,6 @@
 {
   "name": "dshome-theme",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSHOME client theme: brand accent token overrides + DSHOME brand slots.",
   "private": true,
   "type": "module",

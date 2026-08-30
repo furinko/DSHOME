@@ -1,6 +1,6 @@
 {
   "name": "dshome",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSHOME: a personal DeepSeek Harness desktop client bundle (skeleton). Name pun: DSH + HOME — your own home for DSH.",
   "private": true,
   "type": "module",

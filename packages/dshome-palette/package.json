@@ -1,6 +1,6 @@
 {
   "name": "dshome-palette",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSHOME Ctrl+K command palette: session titles, open, favorites. Vanilla DOM, no React.",
   "private": true,
   "type": "module",
