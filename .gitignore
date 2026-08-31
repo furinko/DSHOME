@@ -18,6 +18,7 @@ Thumbs.db
 # local build/install artifacts
 *.tsbuildinfo
 *.tgz
+!vendor/*.tgz
 
 # dsh runtime data (generated on first boot)
 settings.yaml

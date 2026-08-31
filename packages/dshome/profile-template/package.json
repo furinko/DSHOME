@@ -39,7 +39,7 @@
     "dshome-palette": "file:E:/DSH/packages/dshome-palette",
     "dshome-theme": "file:E:/DSH/packages/dshome-theme",
     "dsh-better-sidebar": "0.17.1",
-    "dsh-evolve": "https://github.com/chenzheshushi-commits/dsh-evolve/releases/download/v0.4.2/dsh-evolve-0.4.2.tgz",
+    "dsh-evolve": "file:E:/DSH/vendor/dsh-evolve-0.4.2.tgz",
     "dsh-whale-widget": "^0.2.10",
     "dshmarket": "^1.38.1"
   },

@@ -140,8 +140,8 @@ importers:
         specifier: 0.17.1
         version: 0.17.1(e4a437d0b9efa642571a916ed8ae9e3e)
       dsh-evolve:
-        specifier: https://github.com/chenzheshushi-commits/dsh-evolve/releases/download/v0.4.2/dsh-evolve-0.4.2.tgz
-        version: https://github.com/chenzheshushi-commits/dsh-evolve/releases/download/v0.4.2/dsh-evolve-0.4.2.tgz(react@18.3.1)
+        specifier: file:../../vendor/dsh-evolve-0.4.2.tgz
+        version: file:vendor/dsh-evolve-0.4.2.tgz(react@18.3.1)
       dsh-whale-widget:
         specifier: ^0.2.10
         version: 0.2.10
@@ -3452,8 +3452,8 @@ packages:
       '@huanlin/dsh-plugin-better-locale':
         optional: true
 
-  dsh-evolve@https://github.com/chenzheshushi-commits/dsh-evolve/releases/download/v0.4.2/dsh-evolve-0.4.2.tgz:
-    resolution: {integrity: sha512-BOpjBFlLStxGBTuT3aXkZsrMzRkBOV7vzEyypV8qUfb5abkZC2fuNLzzAjRifevIYfeslRDsDCCBSmYFxkwMbA==, tarball: https://github.com/chenzheshushi-commits/dsh-evolve/releases/download/v0.4.2/dsh-evolve-0.4.2.tgz}
+  dsh-evolve@file:vendor/dsh-evolve-0.4.2.tgz:
+    resolution: {integrity: sha512-BOpjBFlLStxGBTuT3aXkZsrMzRkBOV7vzEyypV8qUfb5abkZC2fuNLzzAjRifevIYfeslRDsDCCBSmYFxkwMbA==, tarball: file:vendor/dsh-evolve-0.4.2.tgz}
     version: 0.4.2
     engines: {node: '>=22.5.0'}
     peerDependencies:
@@ -8383,7 +8383,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  dsh-evolve@https://github.com/chenzheshushi-commits/dsh-evolve/releases/download/v0.4.2/dsh-evolve-0.4.2.tgz(react@18.3.1):
+  dsh-evolve@file:vendor/dsh-evolve-0.4.2.tgz(react@18.3.1):
     dependencies:
       react: 18.3.1
       schemastery: 3.18.0

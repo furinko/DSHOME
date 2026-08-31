@@ -36,7 +36,7 @@
     "@deepseek-ai/dsh-web-app": "0.1.1-rc.2",
     "@deepseek-ai/dsh-workflow-worker-thread": "0.1.1-rc.2",
     "dsh-better-sidebar": "0.17.1",
-    "dsh-evolve": "https://github.com/chenzheshushi-commits/dsh-evolve/releases/download/v0.4.2/dsh-evolve-0.4.2.tgz",
+    "dsh-evolve": "file:../../vendor/dsh-evolve-0.4.2.tgz",
     "dsh-whale-widget": "^0.2.10",
     "dshmarket": "^1.38.1",
     "dshome": "workspace:*",
