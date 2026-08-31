@@ -1,4 +1,0 @@
-# 故障演练（Phase 3 验收）：故意挂入一个不存在的损坏插件。
-- insert:
-    - id: dshome-broken
-      name: dshome-no-such-plugin-package

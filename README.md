@@ -43,7 +43,7 @@ pnpm run setup      # 下载 electron 二进制（pnpm 默认跳过 postinstall�
 ```bash
 pnpm version patch          # 改版本
 pnpm publish                # 发布到 registry（如需）
-git tag v0.1.0 && git push origin v0.1.0   # GitHub tag
+git tag v0.2.0 && git push origin v0.2.0   # GitHub tag
 git push origin main
 ```
 别人：`dsh plugin --profile dshome add github:furinko/DSHOME`（或 `git clone` + `pnpm install`）。
@@ -56,7 +56,7 @@ git push origin main
 | `dshome-palette` | Ctrl+K 命令面板 |
 
 ## 相关文档
-- `docs/NEW-DEVICE.md`：换新设备部署（官方 npm 流程）
+- `packages/dshome/docs/NEW-DEVICE.md`：换新设备部署（官方 npm 流程）
 - `docs/DSHOME-NPM-PUBLISH-RESTRUCTURE.md`：方案① 私有 verdaccio 发布 + 版本号依赖
 - `docs/DSHOME-SETTINGS-UI-RECONSTRUCT.md`：客户端设置 UI（通知/插件管理）重建
 - `docs/DSHOME-HANDOVER.md`：开发交接（当前状态、坑、下一步）
