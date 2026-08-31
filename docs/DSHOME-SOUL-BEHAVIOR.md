@@ -21,7 +21,7 @@ dsh-evolve v0.4.2（已装入，冒烟全绿，见 `docs/DSHOME-EVOLVE-SMOKE.md`
 | 常驻灵魂摘要（每会话注入） | **本层 AGENTS.md** | `$DSH_HOME/AGENTS.md` 由 dsh-agent-instructions 首步自动注入（≤2KB，按会话生效） |
 | 用户纠正 → 行为规则 | **本层 Learn.md + evolve 记忆双写** | Learn.md 是可读镜像；`memory_remember` 进 evolve 记忆参与召回/结晶 |
 
-## 2. `E:\DSHOME\AGENTS.md`（S0 常驻，≤2KB）
+## 2. `$DSH_HOME/AGENTS.md`（S0 常驻，≤2KB）
 
 ```markdown
 # AGENTS.md — DSHOME 运行纪律与灵魂摘要
@@ -67,12 +67,12 @@ dsh-evolve v0.4.2（已装入，冒烟全绿，见 `docs/DSHOME-EVOLVE-SMOKE.md`
 ## 4. 写入通道与约束（实测确认）
 
 - **记忆本体走 dsh-evolve**（`memory_remember` → storage domain，宿主写，**不受模型 fs-sandbox 限制**——这是选它而非自研文件方案的关键原因，自研方案的 fs-sandbox 硬冲突由此规避）。
-- **Learn.md 镜像**：放在 `E:\DSHOME\soul\` 下；注意模型在 `workspace-write` 权限会话**不能直写**该目录（fs-sandbox 只允许写 workspace root + temp）——镜像可在 full-access 会话维护，或接受"仅靠 evolve 记忆承载行为规则"。
+- **Learn.md 镜像**：放在 `$DSH_HOME/soul/` 下；注意模型在 `workspace-write` 权限会话**不能直写**该目录（fs-sandbox 只允许写 workspace root + temp）——镜像可在 full-access 会话维护，或接受"仅靠 evolve 记忆承载行为规则"。
 - **AGENTS.md 预算**：dsh-agent-instructions `maxBytes=65536`（64KB），2KB 摘要安全；渲染"最具体优先"，项目级 AGENTS.md 多时用户级可能被截断，保持精简即可。
 - **注入生效粒度**：baseline 首步组装，会话中途改动**下次会话生效**。
 
 ## 5. 落地清单
 
-1. `E:\DSHOME\AGENTS.md`（模板见 §2）
-2. `E:\DSHOME\soul\Learn.md`（鱼鱼段落，见 §3）
+1. `$DSH_HOME/AGENTS.md`（模板见 §2）
+2. `$DSH_HOME/soul/Learn.md`（鱼鱼段落，见 §3）
 3. 验收：新会话首步可见灵魂摘要；用户纠正一次 → Learn.md 出现「笨鱼鱼💢」条目 + evolve 出现 lesson 记忆；下次会话默认遵守。

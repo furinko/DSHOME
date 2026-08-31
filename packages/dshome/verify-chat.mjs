@@ -19,7 +19,7 @@ async function rpc(method, params, rpcId = `v-${Date.now()}-${Math.random().toSt
   return data.result.value;
 }
 
-const created = await rpc('session.create', { cwd: 'E:\\DSH', agentPreset: 'standard' });
+const created = await rpc('session.create', { cwd: process.env.DSHOME_TEST_CWD ?? process.cwd(), agentPreset: 'standard' });
 const sessionId = created.sessionId;
 console.log('created:', sessionId, JSON.stringify(created).slice(0, 300));
 

@@ -22,12 +22,12 @@
 ## 冒烟 3：技能固化（自进化核心）
 1. 在会话 A 里重复 2-3 次相同教训（如"写测试时绝不使用真实生产记录作为样本"）
 2. 调用 `crystallize_skill`（指定 tag，如 `warehouse-safety`）
-3. 期望：`~/.dsh/skills/`（即 E:\DSHOME\skills\）下生成 SKILL.md
+3. 期望：`$DSH_HOME/skills/`（默认 `~/.dsh/skills/`）下生成 SKILL.md
 4. 再调用 `refine_skill` 精炼一次 → 验证备份是否生成（`.curator-backups` 目录，验证 bsdtar 修复生效）
 5. `skill_rollback` 验证回滚
 
 > ✅ **2026-08-31 实测通过（完整闭环）**：
-> - `crystallize_skill(tag=dsh-evolve)` → `dsh-evolve-integration` v1.0.0 写入 `E:\DSHOME\skills\`，**DSH 热加载**（本会话技能目录立即可见、`skill` 工具可加载）；
+> - `crystallize_skill(tag=dsh-evolve)` → `dsh-evolve-integration` v1.0.0 写入 `$DSH_HOME/skills/`，**DSH 热加载**（本会话技能目录立即可见、`skill` 工具可加载）；
 > - `refine_skill(tag=dsh-evolve)` → v1.1.0，追加 Refinement 段、保留人工编辑；**备份实证**：`.curator-backups\2026-08-31-0520-refine\dsh-evolve-integration.tgz` 由 bsdtar 成功生成（GNU tar 的 Windows 路径缺陷修复生效）。
 > - 前置条件：refine 只折叠**已确认**的 lesson/decision 记忆（pending 不算，会返回 "no new confirmed..."）。
 

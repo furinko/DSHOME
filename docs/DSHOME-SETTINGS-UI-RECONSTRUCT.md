@@ -1,5 +1,6 @@
 # DSHOME 客户端设置 UI 重建指南（已同步到当前验证可用版本）
 
+> ⚠️ 历史重建文档：内含当时本机绝对路径（E:\DSH 等），仅作内部参考，路径已过时。
 > 本文件与 **`packages/dshome-theme/lib/client.js` 当前状态完全一致**（已验证：插件管理分区渲染、通知开关可持久化）。
 > 适用：`packages/dshome-theme/lib/client.js`（profile 经 junction 加载的客户端 bundle）。
 > 宿主侧已就绪：`notify.js`（命名空间 `dshome`，字段 `enabled`/`notifyOnTurnCompletion`）、

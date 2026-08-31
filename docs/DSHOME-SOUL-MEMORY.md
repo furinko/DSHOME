@@ -86,7 +86,7 @@ L3 记忆(按需): history/(日期归档) + index/ + project/     TRASH: 软删�
 
 | 层 | 位置 | 内容 | 注入策略 |
 |---|---|---|---|
-| **S0 常驻** | `E:\DSHOME\AGENTS.md` | 灵魂摘要 + 运行纪律 + 记忆指针 | **每会话首步必注入**（唯一常驻，≤2KB；按会话粒度生效） |
+| **S0 常驻** | `$DSH_HOME/AGENTS.md` | 灵魂摘要 + 运行纪律 + 记忆指针 | **每会话首步必注入**（唯一常驻，≤2KB；按会话粒度生效） |
 | **S1 灵魂** | `soul\SOUL.md` | 完整身份/价值观/思考模式 | 按需 read |
 | **S2 蒸馏记忆** | `soul\MEMORY.md` / `soul\USER.md` / `soul\Learn.md` | 结论条目 / 用户画像 / 行为学习 | 按需 read / 模型驱动召回 |
 | **S3 经验** | `soul\Exp\` | 每主题一文件（踩坑/判例/方法论） | 按需 read |
@@ -96,7 +96,7 @@ L3 记忆(按需): history/(日期归档) + index/ + project/     TRASH: 软删�
 ### 3.2 文件布局（Phase 1 交付物）
 
 ```
-E:\DSHOME\
+DSHOME/（= $DSH_HOME）
 ├─ AGENTS.md                     # S0 常驻注入（模板见 §4.1）
 ├─ skills\
 │  └─ soul\SKILL.md              # 灵魂技能（全文见 §4.6，模型按需加载）
@@ -213,7 +213,7 @@ E:\DSHOME\
 §
 [2026-09-01] [I] XX 项目翻译管线：改翻译只改 xlsx 英文字段（唯一入口），不直接改 json；交付物 output\en.json。
 §
-[2026-08-31] [N] DSH 环境：DSHOME 源码 clone 至 E:\DSHOME（pnpm monorepo），开发环境 %LOCALAPPDATA%\dshome-dev。
+[2026-08-31] [N] DSH 环境：DSHOME 源码位于仓库根（pnpm monorepo），开发环境 %LOCALAPPDATA%\dshome-dev。
 ```
 
 **条目格式**：`[YYYY-MM-DD] [C|I|N] <分类>：<蒸馏结论>`，条目间以 `§` 分隔（Hermes 兼容格式，read 时按 § 切块省 token）。

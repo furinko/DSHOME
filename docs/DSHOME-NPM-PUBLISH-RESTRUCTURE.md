@@ -1,5 +1,6 @@
 # DSHOME 方案①：私有 verdaccio 发布 + 版本号依赖（根治 pnpm churn / 市场安装）
 
+> ⚠️ 历史方案文档：内含当时本机绝对路径（E:\DSH、C:\Users\kuro 等），仅作方案参考，路径已过时。
 > 目标：让 `dshome` / `dshome-theme` / `dshome-palette` 从「`file:` + 快捷方式」变成「普通版本号包」，
 > 从而 **pnpm 市场安装不再破坏它们 / 不再 ENOENT**。
 > ⚠️ **这是结构性改动，强烈建议先在一个备份/克隆的 profile 上演练通过，再动现在的 profile。**
