@@ -229,7 +229,7 @@ window.__ModuleLoader__.load({
       // 头部
       var head = el("div", "dshome-pc-head");
       var headIco = el("div", "dshome-pc-head-icon");
-      headIco.appendChild(svg("M14 7V5a2 2 0 1 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-3h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2z", 15));
+      headIco.appendChild(svg("M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z", 15));
       head.appendChild(headIco);
       var titleBox = el("div", "dshome-pc-head-title");
       titleBox.appendChild(el("div", "dshome-pc-title", "插件管理"));
