@@ -8,6 +8,10 @@ rem Auto-detect local dev node (installed by setup-dev.cmd) without touching use
 if exist "%LOCALAPPDATA%\dshome-dev\node\node.exe" (
   set "PATH=%LOCALAPPDATA%\dshome-dev\node;C:\Windows\System32;C:\Windows;%PATH%"
 )
+rem 安装版兜底：仓库自带 node 运行时（打包安装时 payload\runtime\node.exe）。
+if not exist "%LOCALAPPDATA%\dshome-dev\node\node.exe" (
+  if exist "%~dp0runtime\node.exe" set "PATH=%~dp0runtime;C:\Windows\System32;C:\Windows;%PATH%"
+)
 set "DSHOME_BACKEND_CMD=node %DSH_HOME%node_modules\@deepseek-ai\dsh\lib\bin.js --profile dshome --no-open --port 3099"
 if not defined DEEPSEEK_API_KEY (
   echo [hint] For chat, set your key first:
