@@ -38,18 +38,39 @@ async function writeToggle(id, enabled) {
   const raw = await readFile(file, 'utf8').catch(() => '[]');
   // 载荷里的 entryId 形如 `include:dshome-core`；patch 行的 id 是 `dshome-core`。
   const coreId = String(id).replace(/^include:/, '');
-  // 解析现有块序列条目 `- id: X`（可带 `disabled: true`）；忽略 flow `[]`。
-  const re = /^- id: (\S+)\n(?: +disabled: (.+))?/gm;
-  const entries = [];
-  let m;
-  while ((m = re.exec(raw)) !== null) entries.push({ id: m[1], disabled: m[2] !== void 0 });
-  const kept = entries.filter((e) => e.id !== coreId);
-  if (!enabled) kept.push({ id: coreId, disabled: true });
-  // 始终输出合法块序列（空时 `[]`）；绝不混用 flow/block。
-  const body = kept.length > 0
-    ? kept.map((e) => `- id: ${e.id}` + (e.disabled ? '\n  disabled: true' : '')).join('\n') + '\n'
-    : '[]';
-  await writeFile(file, body, 'utf8');
+  // 行级最小修改：只动目标 `- id: X` 行的 disabled，绝不重建文件
+  // （重建会丢失同条目的 config/注释——如 llm-deepseek 的 apiKeyEnv）。
+  const nl = raw.includes('\r\n') ? '\r\n' : '\n';
+  const lines = raw.split(/\r?\n/);
+  const out = [];
+  let found = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const idMatch = /^- id: (\S+)/.exec(line);
+    if (idMatch && idMatch[1] === coreId) {
+      found = true;
+      const next = lines[i + 1] ?? '';
+      if (enabled) {
+        // 启用：跳过紧跟的 `  disabled: true` 行（若存在）
+        if (/^\s+disabled:\s*true\b/.test(next)) i++;
+        out.push(line);
+      } else {
+        // 停用：保留原行；若下一行已是 disabled 则不重复
+        out.push(line);
+        if (!/^\s+disabled:/.test(next)) out.push('  disabled: true');
+      }
+      continue;
+    }
+    out.push(line);
+  }
+  if (!found) {
+    if (enabled) return { ok: true, message: '已启用（重启生效）' };
+    const tail = raw.trim();
+    const base = (tail === '[]' || tail === '') ? '' : raw.replace(/\s+$/, '') + nl;
+    await writeFile(file, `${base}- id: ${coreId}${nl}  disabled: true`, 'utf8');
+    return { ok: true, message: '已停用（重启生效）' };
+  }
+  await writeFile(file, out.join(nl) + nl, 'utf8');
   return { ok: true, message: enabled ? '已启用（重启生效）' : '已停用（重启生效）' };
 }
 function snapshot(ctx) {
