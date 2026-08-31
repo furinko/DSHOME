@@ -46,7 +46,8 @@ pnpm publish                # 发布到 registry（如需）
 git tag v0.2.0 && git push origin v0.2.0   # GitHub tag
 git push origin main
 ```
-别人：`dsh plugin --profile dshome add github:furinko/DSHOME`（或 `git clone` + `pnpm install`）。
+别人（新设备推荐，一键）：clone 仓库后运行 `packages/dshome/scripts/deploy-new-device.cmd` —— 自动建 profile（含 dsh-evolve 记忆/技能、Ctrl+K 面板、市场、挂件）+ 装依赖 + 拷贝灵魂行为层模板（AGENTS.md / soul / skills）+ 建桌面快捷方式。
+别人（手动）：`dsh plugin --profile dshome add github:furinko/DSHOME`（或 `git clone` + `pnpm install`）。
 
 ## 三包
 | 包 | 说明 |
