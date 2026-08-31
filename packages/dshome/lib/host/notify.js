@@ -8,7 +8,7 @@
 // 事件源接缝：`sessions.on("session/event", ...)` 的 turn/start、user/message、turn/end
 // （来自官方 dsh-plugin-desktop 的 notifications 插件，被 DSH Desktop 2.0.3 验证）。
 //
-// 护栏（DSHOME-DESIGN.md §13.5）：每个服务挂载独立 try/catch，失败只记日志，
+// 护栏（设计见历史文档，已归档）：每个服务挂载独立 try/catch，失败只记日志，
 // 绝不阻断 profile 启动；通知投递失败静默忽略。
 
 import z from "@deepseek-ai/schemastery";

@@ -59,7 +59,8 @@ git push origin main
 - `docs/DSHOME-SOUL-BEHAVIOR.md`：灵魂行为层（AGENTS.md 每会话纪律 + Learn.md 鱼鱼行为学习；记忆机制由 dsh-evolve 提供）
 - `docs/DSHOME-EVOLVE-SMOKE.md`：dsh-evolve（跨会话记忆/技能固化）集成与冒烟清单
 - `packages/dshome/docs/NEW-DEVICE.md`：换新设备部署（官方 npm 流程）
-- `docs/DSHOME-NPM-PUBLISH-RESTRUCTURE.md`：方案① 私有 verdaccio 发布 + 版本号依赖
-- `docs/DSHOME-SETTINGS-UI-RECONSTRUCT.md`：客户端设置 UI（通知/插件管理）重建
-- `docs/DSHOME-HANDOVER.md`：开发交接（当前状态、坑、下一步）
-- `docs/DSHOME-DESIGN.md`：完整设计文档
+
+## 开发注意事项（沉淀自历史交接文档，2026-08-31 归档后保留）
+- 🔴 别在本机 profile 目录直接跑 `pnpm add`/`pnpm install`（`file:` 依赖会 ERR_PNPM_ENOENT；装插件用 `dsh plugin --profile dshome add <pkg>`）
+- 🔴 删 junction 用 `Remove-Item`（不带 `-Recurse`），勿用 `rmdir /s /q`（会顺 junction 删真实内容）
+- ℹ️ 可恢复快照：`build-stage/dshome-node-snapshot/`（profile-package.json / cordis.patch.yml / junctions.txt 等）

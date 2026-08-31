@@ -1,7 +1,7 @@
 # DSHOME 灵魂记忆（Soul Memory）设计方案
 
 > 版本：v1.1（2026-08-31，评审合入）～状态：**已归档** ～目标读者：实施者（DeepSeek + dsh 代理）与需求方本人
-> 前置文档：`docs/DSHOME-DESIGN.md`（壳层方案）。本文是 DSHOME 的记忆/自进化子系统方案，挂接在 `dshome/core` 扩展点之上。
+> 前置文档：DSHOME-DESIGN.md（壳层方案，2026-08-31 已归档移除）。本文是 DSHOME 的记忆/自进化子系统方案，挂接在 `dshome/core` 扩展点之上。
 >
 > **⚠️ 归档说明（2026-08-31）**：本自研方案已被市场插件 **dsh-evolve v0.4.2** 替代——存储/检索/反射/技能固化设计已由 dsh-evolve 实现并实测通过（冒烟全绿，见 `docs/DSHOME-EVOLVE-SMOKE.md`），本方案相应部分**作废**。
 > 仅以下内容可复用：§4.1 AGENTS.md 模板（灵魂纪律层）、§4.5 Learn.md 行为学习模板（**鱼鱼**形象，非猫猫）、§2.5 与 compaction/goal 的分工边界。行为层落地见 `docs/DSHOME-SOUL-BEHAVIOR.md`。

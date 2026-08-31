@@ -12,7 +12,7 @@
 //   - desktopActions            → openTerminal() / requestRestart()（DSHOME 不真重启，
 //                                 后者只发信号，重启由用户/壳手动完成）
 //
-// 护栏（DSHOME-DESIGN.md §13.5）：全程 try/catch，只记日志、绝不 rethrow，
+// 护栏（设计见历史文档，已归档）：全程 try/catch，只记日志、绝不 rethrow，
 // 避免阻断 profile 启动。若宿主（DSH Desktop）已提供同名服务，则不覆盖。
 
 import { spawn } from 'node:child_process';

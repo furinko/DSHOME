@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // DSHOME 恢复模式（Phase 1+）：用 --patch 覆盖层临时禁用全部自有插件启动，
-// 判定崩溃来源（DSHOME-DESIGN.md §13.5 L2 / §9.1 铁律）。不改任何配置、不删代码。
+// 判定崩溃来源（设计见历史文档 §13.5 L2 / §9.1 铁律，已归档）。不改任何配置、不删代码。
 // 用法：node scripts/safe.mjs [--port <port>]
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';

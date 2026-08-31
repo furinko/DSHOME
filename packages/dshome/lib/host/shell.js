@@ -3,7 +3,7 @@
 // 职责：后端就绪后 spawn Electron 窗口应用（shell-app），并维持与壳的
 // 生命周期关系（壳关 = 后端退出时随关；后端被杀 = 壳自动切离线页）。
 //
-// 护栏（DSHOME-DESIGN.md §13.5）：全程 try/catch，electron 缺装/启动失败
+// 护栏（设计见历史文档，已归档）：全程 try/catch，electron 缺装/启动失败
 // 只记日志，绝不阻断 profile 启动。
 
 import { spawn } from 'node:child_process';

@@ -3,7 +3,7 @@
 // 提供 ctx.dshome = { commands, panels } 注册表，供未来所有 DSHOME 插件
 // 接入（命令面板、侧栏面板等），对应设计文档 §7.2 / §11 扩展点规范。
 //
-// 护栏（DSHOME-DESIGN.md §13.5）：服务挂载全部 try/catch，
+// 护栏（设计见历史文档，已归档）：服务挂载全部 try/catch，
 // 任何失败只记日志、绝不 rethrow，保证不阻断 profile 启动。
 
 /** Stable Cordis plugin name (row: `name: dshome/core`). */
