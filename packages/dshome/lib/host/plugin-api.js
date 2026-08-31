@@ -97,13 +97,16 @@ export function makePluginRoutes(ctx) {
 
 /** 经 inject webServer 的子插件激活（仅 web profile；headless 自动跳过）。 */
 export function setupPluginApi(ctx) {
+  // 注意：cordis 子插件的 ctx 服务受限（仅 inject 声明的服务）。
+  // loader 属于主 ctx —— 数据函数用主 ctx，子插件只负责 webServer.register。
+  const hostCtx = ctx;
   const routesPlugin = {
     name: 'dshome-plugin-api',
     inject: ['webServer'],
     apply(wctx) {
       const disposers = [];
       try {
-        for (const route of makePluginRoutes(wctx)) disposers.push(wctx.webServer.register(route));
+        for (const route of makePluginRoutes(hostCtx)) disposers.push(wctx.webServer.register(route));
         wctx.logger?.('dshome').info(`dshome plugin-api ready: ${PLUGIN_API_PREFIX}`);
       } catch (e) {
         for (const d of disposers) { try { d(); } catch { /* ignore */ } }

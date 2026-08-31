@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "lib/index.cjs",
   "exports": {
+    ".": "./lib/index.cjs",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
