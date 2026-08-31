@@ -219,8 +219,14 @@ window.__ModuleLoader__.load({
           background: "transparent",
         },
         children: [
-          react_jsx_runtime.jsx("span", { style: { fontSize: 15 }, children: "🧩" }),
-          wide ? react_jsx_runtime.jsx("span", { style: { fontSize: 12 }, children: "插件" }) : null,
+          react_jsx_runtime.jsx("svg", {
+            width: 15, height: 15, viewBox: "0 0 24 24", fill: "none",
+            stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round",
+            children: react_jsx_runtime.jsx("path", {
+              d: "M14 7V5a2 2 0 1 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-3h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2z",
+            }),
+          }),
+          wide ? react_jsx_runtime.jsx("span", { style: { fontSize: 12 }, children: "插件管理" }) : null,
         ],
       });
     }
@@ -234,7 +240,7 @@ window.__ModuleLoader__.load({
             name: "sidebar.footer.action",
             id: "dshome-plugin-center",
             order: 5,
-            label: function () { return "插件"; },
+            label: function () { return "插件管理"; },
           }, PluginCenterAction);
         });
       } catch (e) { console.warn("dshome-plugin-center: slot registration failed", e); }
