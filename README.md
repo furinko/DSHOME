@@ -56,6 +56,8 @@ git push origin main
 | `dshome-palette` | Ctrl+K 命令面板 |
 
 ## 相关文档
+- `docs/DSHOME-SOUL-BEHAVIOR.md`：灵魂行为层（AGENTS.md 每会话纪律 + Learn.md 鱼鱼行为学习；记忆机制由 dsh-evolve 提供）
+- `docs/DSHOME-EVOLVE-SMOKE.md`：dsh-evolve（跨会话记忆/技能固化）集成与冒烟清单
 - `packages/dshome/docs/NEW-DEVICE.md`：换新设备部署（官方 npm 流程）
 - `docs/DSHOME-NPM-PUBLISH-RESTRUCTURE.md`：方案① 私有 verdaccio 发布 + 版本号依赖
 - `docs/DSHOME-SETTINGS-UI-RECONSTRUCT.md`：客户端设置 UI（通知/插件管理）重建

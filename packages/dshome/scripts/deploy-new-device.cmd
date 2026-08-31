@@ -31,7 +31,19 @@ if exist "%PROFILE%\package.json" (
     echo DSHOME profile installed at %PROFILE%
 )
 
-rem 2) Electron runtime for the shell window (installed into the dshome package)
+rem 2) 灵魂行为层：AGENTS.md / soul/ / skills/ 拷到目标 DSH_HOME（新设备从零获得框架模板，之后各自自进化）
+set "DEST_HOME=%USERPROFILE%\.dsh"
+if not exist "%DEST_HOME%\AGENTS.md" copy /y "%REPO%\AGENTS.md" "%DEST_HOME%\AGENTS.md" >nul 2>&1
+if not exist "%DEST_HOME%\soul\Learn.md" (
+    mkdir "%DEST_HOME%\soul" 2>nul
+    copy /y "%REPO%\soul\Learn.md" "%DEST_HOME%\soul\Learn.md" >nul 2>&1
+)
+if not exist "%DEST_HOME%\skills\dsh-evolve-integration\SKILL.md" (
+    mkdir "%DEST_HOME%\skills" 2>nul
+    robocopy "%REPO%\skills" "%DEST_HOME%\skills" /E /NFL /NDL /NJH /NJS >nul 2>&1
+)
+
+rem 3) Electron runtime for the shell window (installed into the dshome package)
 set "DSHOME_PKG=%REPO%\packages\dshome"
 if not exist "%DSHOME_PKG%\node_modules\electron\dist\electron.exe" (
     pushd "%DSHOME_PKG%"
@@ -44,7 +56,7 @@ if not exist "%DSHOME_PKG%\node_modules\electron\dist\electron.exe" (
     )
 )
 
-rem 3) Desktop shortcut: hidden launcher -> backend + window
+rem 4) Desktop shortcut: hidden launcher -> backend + window
 wscript.exe "%~dp0make-shortcut.vbs"
 echo Shortcut created: Desktop\DSHOME.lnk
 echo Done. Double-click DSHOME to start (backend runs hidden, window pops up).
