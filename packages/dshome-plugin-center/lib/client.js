@@ -48,6 +48,7 @@ window.__ModuleLoader__.load({
       ".dshome-pc-main{flex:1;min-width:0}",
       ".dshome-pc-name{font-size:14px;color:var(--dsw-alias-label-primary,#1a2233);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".dshome-pc-mod{font-size:11.5px;color:var(--dsw-alias-label-tertiary,#6b7a99);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;font-family:Consolas,'Cascadia Mono',monospace}",
+      ".dshome-pc-desc{font-size:11.5px;color:var(--dsw-alias-label-tertiary,#6b7a99);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}",
       // 状态徽章（圆点 + 文字）
       ".dshome-pc-badge{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px}",
       ".dshome-pc-badge::before{content:'';width:6px;height:6px;border-radius:50%}",
@@ -183,10 +184,12 @@ window.__ModuleLoader__.load({
       // 分类色块（首字母）
       var dot = el("div", "dshome-pc-dot " + catDotCls(p.category), catLetter(p.category));
       r.appendChild(dot);
-      // 名称 + id
+      // 名称 + 一句话说明（描述优先；无描述显示 entryId 兜底；moduleName 进悬停提示）
       var main = el("div", "dshome-pc-main");
-      main.appendChild(el("div", "dshome-pc-name", p.moduleName));
-      main.appendChild(el("div", "dshome-pc-mod", p.entryId));
+      var nameEl = el("div", "dshome-pc-name", p.moduleName);
+      nameEl.title = p.entryId;
+      main.appendChild(nameEl);
+      main.appendChild(el("div", "dshome-pc-desc", p.description || p.entryId));
       r.appendChild(main);
       // 状态徽章
       r.appendChild(el("span", "dshome-pc-badge dshome-pc-badge-" + (p.phase || (p.enabled ? "active" : "disabled")), stateText(p)));
