@@ -35,7 +35,7 @@
     "@deepseek-ai/dsh-tool-workflow": "0.1.1-rc.2",
     "@deepseek-ai/dsh-web-app": "0.1.1-rc.2",
     "@deepseek-ai/dsh-workflow-worker-thread": "0.1.1-rc.2",
-    "dsh-community-market": "file:E:/dsh-archive/cleanpkg/dsh-community-market-0.1.0-dev.0.tgz",
+    "@sanqi-normal/dsh-webui-market-plugin": "^0.5.5",
     "dshome": "workspace:*",
     "dshome-palette": "workspace:*",
     "dshome-theme": "workspace:*"
@@ -45,7 +45,8 @@
       "bundles": [
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
-        "dshome"
+        "dshome",
+        "@sanqi-normal/dsh-webui-market-plugin"
       ]
     }
   }

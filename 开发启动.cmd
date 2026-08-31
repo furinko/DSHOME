@@ -4,6 +4,10 @@ rem Starts the Electron shell; the shell launches+guards the backend via DSHOME_
 rem No extra console windows. Closing this cmd does NOT stop DSHOME.
 rem To stop: tray menu -> Exit (or close DSHOME window and tray).
 set "DSH_HOME=%~dp0"
+rem Auto-detect local dev node (installed by setup-dev.cmd) without touching user PATH.
+if exist "%LOCALAPPDATA%\dshome-dev\node\node.exe" (
+  set "PATH=%LOCALAPPDATA%\dshome-dev\node;%PATH%"
+)
 set "DSHOME_BACKEND_CMD=node %DSH_HOME%node_modules\@deepseek-ai\dsh\lib\bin.js --profile dshome --no-open --port 3099"
 if not defined DEEPSEEK_API_KEY (
   echo [hint] For chat, set your key first:
