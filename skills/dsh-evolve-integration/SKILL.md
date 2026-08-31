@@ -25,15 +25,12 @@ dsh-evolve v0.4.2 is installed as an active plugin in the DSHOME dshome profile 
 - The development launcher (`开发启动.cmd`) has already been updated to prepend `System32` to PATH, which fixes GNU tar's Windows path defect.
 - Smoke checklist lives at `docs/DSHOME-EVOLVE-SMOKE.md`.
 
-## Memory panel placement decision
-- User decision (2026-08-31): do not move the memory panel to the “对话/轨迹” area for now; keep it at the Settings page entry.
-- Reason: dsh-evolve hardcodes registration in the `settings.section` slot.
-  - Moving it by editing third-party source is not viable: upgrades would overwrite the change, and the props contract is incompatible.
-  - Writing a DSHOME-owned client plugin through the frontend build chain is a medium-to-large effort and not worth it currently.
-
-## Future path
-- Preferred form if ever implemented: conversation header button or trajectory tab.
-- Option B is the correct route: a DSHOME-owned client plugin reusing `/api/evolve/*`.
+## Memory panel placement (framework note)
+- The memory panel registers in the `settings.section` slot by default (hardcoded in dsh-evolve's client).
+- Relocating it means either editing third-party source (lost on upgrade; props contract incompatible) or
+  writing a DSHOME-owned client plugin through the frontend build chain (medium-to-large effort).
+- Preferred form if ever relocated: conversation header button or trajectory tab, reusing `/api/evolve/*`
+  from a DSHOME-owned client plugin.
 
 ## Changelog
 

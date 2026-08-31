@@ -25,7 +25,7 @@
 > 措辞说明：本方案追求的是"**可控负担**"而非"零负担"——recall 本身消耗工具轮次与少量 token，频繁召回会增加成本；负担控制靠"预算"而非"消失"。所有指标见 §6。
 
 **硬约束（来自需求方）**：
-- 参考本设备 `D:\CatHome2.2Out\Data\CatCatBigParty`（CatHome/CCBP）与 `E:\Hermes\Hermes Agent CN Desktop\data\hermes-home`（Hermes）的实现模式；
+- 参考本设备上的 CatHome/CCBP（灵魂宪法分层）与 Hermes（最小蒸馏形态）实现模式（具体路径从略，仅作模式参考）；
 - **不得依赖二者的存在**——实现只允许使用 DSH 原生机制与纯文件，零外部依赖、零外部进程；迁移到新设备只需拷贝本方案涉及的目录。
 
 **已核实的 DSH 原生机制（本机 0.1.1-rc.2）**：
@@ -211,7 +211,7 @@ E:\DSHOME\
 §
 [2026-09-01] [C] 用户铁律：任何方案必须先给评估/可行性分析，用户明确确认后才动手；禁止拿到建议直接执行。
 §
-[2026-09-01] [I] 战姬翻译管线：改翻译只改 xlsx 英文字段（唯一入口），不直接改 json；交付物 output\en.json。
+[2026-09-01] [I] XX 项目翻译管线：改翻译只改 xlsx 英文字段（唯一入口），不直接改 json；交付物 output\en.json。
 §
 [2026-08-31] [N] DSH 环境：DSHOME 源码 clone 至 E:\DSHOME（pnpm monorepo），开发环境 %LOCALAPPDATA%\dshome-dev。
 ```
