@@ -34,8 +34,9 @@ export function apply(ctx) {
           if (req.op !== 'toggle' || typeof req.id !== 'string') return;
           const target = (next.entries || []).find((e) => e.entryId === req.id);
           const moduleName = target?.moduleName || '';
-          if (isProtected(moduleName)) {
-            try { scope.update({ result: { ok: false, protected: true, restartNeeded: false, message: '核心插件，不可停用' } }); } catch {}
+          // 受保护语义：仅禁止停用【运行中】的核心插件；已停用的核心允许启用。
+          if (isProtected(moduleName) && target?.enabled) {
+            try { scope.update({ result: { ok: false, protected: true, restartNeeded: false, message: '核心插件运行中，不可停用' } }); } catch {}
             return;
           }
           writeToggle(req.id, !!req.enabled).then((res) => {

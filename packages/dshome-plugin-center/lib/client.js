@@ -21,23 +21,23 @@ window.__ModuleLoader__.load({
       ".dshome-pc-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--dsw-alias-border-l1,#e3e9f3)}",
       ".dshome-pc-head-icon{flex:none;width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(77,107,254,.18),rgba(77,107,254,.06));color:var(--dsw-alias-brand-primary,#4D6BFE)}",
       ".dshome-pc-head-title{flex:1;min-width:0}",
-      ".dshome-pc-title{font-size:15px;font-weight:700;color:var(--dsw-alias-label-primary,#1a2233);letter-spacing:.2px}",
-      ".dshome-pc-sub{font-size:11px;color:var(--dsw-alias-label-tertiary,#6b7a99);margin-top:2px}",
+      ".dshome-pc-title{font-size:16px;font-weight:700;color:var(--dsw-alias-label-primary,#1a2233);letter-spacing:.2px}",
+      ".dshome-pc-sub{font-size:12px;color:var(--dsw-alias-label-tertiary,#6b7a99);margin-top:2px}",
       ".dshome-pc-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--dsw-alias-border-l2,#d3dcea);border-radius:9px;padding:6px 11px;font-size:12px;color:var(--dsw-alias-label-secondary,#4a5a78);cursor:pointer;transition:all .15s}",
       ".dshome-pc-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.08));border-color:var(--dsw-alias-brand-primary,#4D6BFE);color:var(--dsw-alias-brand-primary,#4D6BFE)}",
       // 工具栏
       ".dshome-pc-toolbar{display:flex;gap:8px;padding:12px 18px;border-bottom:1px solid var(--dsw-alias-border-l1,#e3e9f3);flex-wrap:wrap;align-items:center}",
       ".dshome-pc-search-wrap{position:relative;flex:1;min-width:170px}",
-      ".dshome-pc-search{width:100%;box-sizing:border-box;padding:8px 12px 8px 32px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#d3dcea);background:var(--dsw-alias-bg-base,#f7f9fc);color:var(--dsw-alias-label-primary,#1a2233);font-size:12.5px;outline:none;transition:border-color .15s,box-shadow .15s}",
+      ".dshome-pc-search{width:100%;box-sizing:border-box;padding:8px 12px 8px 32px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#d3dcea);background:var(--dsw-alias-bg-base,#f7f9fc);color:var(--dsw-alias-label-primary,#1a2233);font-size:13.5px;outline:none;transition:border-color .15s,box-shadow .15s}",
       ".dshome-pc-search:focus{border-color:var(--dsw-alias-brand-primary,#4D6BFE);box-shadow:0 0 0 3px rgba(77,107,254,.14)}",
       ".dshome-pc-search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--dsw-alias-label-tertiary,#6b7a99);pointer-events:none}",
-      ".dshome-pc-select{padding:8px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#d3dcea);background:var(--dsw-alias-bg-base,#f7f9fc);color:var(--dsw-alias-label-primary,#1a2233);font-size:12.5px;outline:none;cursor:pointer;transition:border-color .15s}",
+      ".dshome-pc-select{padding:8px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2,#d3dcea);background:var(--dsw-alias-bg-base,#f7f9fc);color:var(--dsw-alias-label-primary,#1a2233);font-size:13.5px;outline:none;cursor:pointer;transition:border-color .15s}",
       ".dshome-pc-select:focus{border-color:var(--dsw-alias-brand-primary,#4D6BFE)}",
       // 列表
       ".dshome-pc-list{flex:1;overflow:auto;padding:6px 14px 16px}",
       ".dshome-pc-list::-webkit-scrollbar{width:8px}.dshome-pc-list::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l2,#d3dcea);border-radius:99px}",
-      ".dshome-pc-group{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:var(--dsw-alias-label-tertiary,#6b7a99);padding:14px 6px 7px;letter-spacing:.5px;text-transform:uppercase}",
-      ".dshome-pc-group-count{font-weight:600;font-size:10px;padding:1px 7px;border-radius:99px;background:var(--dsw-alias-border-l1,#e3e9f3);color:var(--dsw-alias-label-secondary,#4a5a78)}",
+      ".dshome-pc-group{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--dsw-alias-label-tertiary,#6b7a99);padding:14px 6px 7px;letter-spacing:.5px;text-transform:uppercase}",
+      ".dshome-pc-group-count{font-weight:600;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--dsw-alias-border-l1,#e3e9f3);color:var(--dsw-alias-label-secondary,#4a5a78)}",
       // 插件行卡片
       ".dshome-pc-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:11px;border:1px solid transparent;transition:background .12s,border-color .12s}",
       ".dshome-pc-row:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.06));border-color:var(--dsw-alias-border-l1,#e3e9f3)}",
@@ -46,10 +46,10 @@ window.__ModuleLoader__.load({
       ".dshome-pc-dot-builtin{background:linear-gradient(135deg,#7c8db5,#5a6a92)}",
       ".dshome-pc-dot-download{background:linear-gradient(135deg,#2fbf8f,#1e9e73)}",
       ".dshome-pc-main{flex:1;min-width:0}",
-      ".dshome-pc-name{font-size:13px;color:var(--dsw-alias-label-primary,#1a2233);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-      ".dshome-pc-mod{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7a99);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;font-family:Consolas,'Cascadia Mono',monospace}",
+      ".dshome-pc-name{font-size:14px;color:var(--dsw-alias-label-primary,#1a2233);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".dshome-pc-mod{font-size:11.5px;color:var(--dsw-alias-label-tertiary,#6b7a99);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;font-family:Consolas,'Cascadia Mono',monospace}",
       // 状态徽章（圆点 + 文字）
-      ".dshome-pc-badge{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:99px}",
+      ".dshome-pc-badge{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px}",
       ".dshome-pc-badge::before{content:'';width:6px;height:6px;border-radius:50%}",
       ".dshome-pc-badge-active{background:rgba(47,191,143,.12);color:#1e9e73}.dshome-pc-badge-active::before{background:#2fbf8f}",
       ".dshome-pc-badge-loading{background:rgba(240,180,41,.14);color:#b8860b}.dshome-pc-badge-loading::before{background:#f0b429}",
@@ -71,7 +71,7 @@ window.__ModuleLoader__.load({
       ".dshome-pc-entry:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.08))}",
       ".dshome-pc-entry:active{transform:scale(.96)}",
       ".dshome-pc-entry-ico{flex:none;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#5b7bff,#3e5bf0);color:#fff;box-shadow:0 2px 8px rgba(77,107,254,.35)}",
-      ".dshome-pc-entry-label{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#4a5a78)}",
+      ".dshome-pc-entry-label{font-size:13px;font-weight:600;color:var(--dsw-alias-label-secondary,#4a5a78)}",
     ].join("");
 
     // ── 状态 ─────────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ window.__ModuleLoader__.load({
       return plugins.filter(function (p) {
         if (filters.cat !== "全部" && p.category !== filters.cat) return false;
         if (filters.state !== "全部") {
-          if (filters.state === "protected") { if (!p.protected) return false; }
+          if (filters.state === "protected") { if (!(p.protected && p.enabled)) return false; }
           else if (p.phase !== filters.state) return false;
         }
         if (q && (p.moduleName || "").toLowerCase().indexOf(q) < 0 && (p.entryId || "").toLowerCase().indexOf(q) < 0) return false;
@@ -169,7 +169,7 @@ window.__ModuleLoader__.load({
       }
       var groups = {};
       rows.forEach(function (p) { (groups[p.category] = groups[p.category] || []).push(p); });
-      Object.keys(groups).sort(function (a, b) { return { 自制: 0, 内置: 1, 下载: 2 }[a] - { 自制: 0, 内置: 1, 下载: 2 }[b]; }).forEach(function (cat) {
+      Object.keys(groups).sort(function (a, b) { return { 下载: 0, 自制: 1, 内置: 2 }[a] - { 下载: 0, 自制: 1, 内置: 2 }[b]; }).forEach(function (cat) {
         var list = groups[cat];
         var g = el("div", "dshome-pc-group");
         g.appendChild(el("span", null, cat));
@@ -190,13 +190,14 @@ window.__ModuleLoader__.load({
       r.appendChild(main);
       // 状态徽章
       r.appendChild(el("span", "dshome-pc-badge dshome-pc-badge-" + (p.phase || (p.enabled ? "active" : "disabled")), stateText(p)));
-      // 受保护
-      if (p.protected) r.appendChild(el("span", "dshome-pc-lock", "🔒"));
+      // 受保护：仅运行中的核心插件显示 🔒 且禁停；已停用的核心允许启用
+      var coreRunning = p.protected && p.enabled;
+      if (coreRunning) r.appendChild(el("span", "dshome-pc-lock", "🔒"));
       // 启停开关
       var t = el("button", "dshome-pc-toggle" + (p.enabled && p.phase !== "disabled" ? " on" : ""));
       t.type = "button";
-      t.title = p.protected ? "核心插件，不可停用" : (p.enabled ? "停用（重启后生效）" : "启用（重启后生效）");
-      if (p.protected) t.disabled = true;
+      t.title = coreRunning ? "核心插件，不可停用" : (p.enabled ? "停用（重启后生效）" : "启用（重启后生效）");
+      if (coreRunning) t.disabled = true;
       t.onclick = function () { toggle(p.entryId, !p.enabled); };
       r.appendChild(t);
       return r;
@@ -255,7 +256,7 @@ window.__ModuleLoader__.load({
       sw.appendChild(searchEl);
       toolbar.appendChild(sw);
       catSel = el("select", "dshome-pc-select");
-      ["全部", "自制", "内置", "下载"].forEach(function (c) { var o = el("option", null, c === "全部" ? "全部分类" : c); o.value = c; catSel.appendChild(o); });
+      ["全部", "下载", "自制", "内置"].forEach(function (c) { var o = el("option", null, c === "全部" ? "全部分类" : c); o.value = c; catSel.appendChild(o); });
       catSel.onchange = applyFilters;
       toolbar.appendChild(catSel);
       stateSel = el("select", "dshome-pc-select");

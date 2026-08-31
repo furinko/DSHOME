@@ -84,8 +84,10 @@ export function makePluginRoutes(ctx) {
             return json(res, 400, { ok: false, error: 'body must be { id, enabled }' });
           }
           const target = snapshot(ctx).find((e) => e.entryId === body.id || e.moduleName === body.id);
-          if (target?.protected) {
-            return json(res, 403, { ok: false, protected: true, message: '核心插件，不可停用' });
+          // 受保护语义：仅禁止停用【运行中】的核心插件；已停用的核心（如 dshome-desktop）
+          // 允许启用（保护防"停用"，不防"启用"）。
+          if (target?.protected && target?.enabled) {
+            return json(res, 403, { ok: false, protected: true, message: '核心插件运行中，不可停用' });
           }
           const out = await writeToggle(body.id, body.enabled);
           json(res, 200, { ok: out.ok, message: out.message, restartNeeded: !!out.ok });
