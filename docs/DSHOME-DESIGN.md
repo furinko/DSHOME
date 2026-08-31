@@ -1,299 +1,377 @@
-﻿# DSHOME 瀹㈡埛绔璁℃柟妗堬紙楠ㄦ灦鐗堬級
+# DSHOME 客户端设计方案（骨架版）
 
-> 鐗堟湰锛歷1.0 锝?鐘舵€侊細宸蹭笌闇€姹傛柟纭锛屽緟瀹炴柦 锝?鐩爣璇昏€咃細瀹炴柦鑰咃紙DeepSeek + dsh 浠ｇ悊锛変笌闇€姹傛柟鏈汉
+> 版本：v1.0 ～状态：已与需求方确认，待实施 ～目标读者：实施者（DeepSeek + dsh 代理）与需求方本人
 
 ---
 
-## 1. 椤圭洰瀹氫綅
+## 1. 项目定位
 
-**DSHOME** 鏄竴娆鹃潰鍚戜釜浜轰娇鐢ㄧ殑 DeepSeek Harness 妗岄潰瀹㈡埛绔細
+**DSHOME** 是一款面向个人使用的 DeepSeek Harness 桌面客户端：
 
-- **褰㈡€?*锛氭闈㈠３锛圖esktop Shell锛? 鑷湁瀹㈡埛绔?bundle锛堣矾寰勪箼锛?- **鍘熷垯**锛氶鏋跺厛琛岋紝鑳藉姏鎻掍欢鍖栤€斺€擬VP 鍙氦浠?鑳借窇閫氱殑楠ㄦ灦 + 棰勭暀鎵╁睍鐐?锛屽悗缁墍鏈夊姛鑳斤紙涓婚銆佸懡浠ら潰鏉裤€佷細璇濈疆椤躲€侀檮鍔犻潰鏉裤€佽繙绋嬭闂級涓€寰嬩互鎻掍欢褰㈠紡鐢熼暱锛屼笉鏀归鏋躲€?- **寮€鍙戞柟寮?*锛氫娇鐢?DeepSeek + dsh锛圓I 浠ｇ悊锛夊疄鏂斤紝鏈柟妗堢簿纭埌鏂囦欢缁撴瀯銆佽ˉ涓佽銆佷緷璧栨竻鍗曚笌楠屾敹鏍囧噯锛屼唬鐞嗗彲鐩存帴鎵ц銆?
-## 2. 宸茬‘璁ゅ喅绛?
-| 鍐崇瓥椤?| 瀹氭 |
+- **形态**：桌面壳（Desktop Shell），自有客户端 bundle（路径乙）。
+- **原则**：骨架先行，能力插件化——MVP 只交付能跑通的骨架 + 预留扩展点，后续所有功能（主题、命令面板、会话置顶、附加面板、远程访问）一律以插件形式生长，不改骨架。
+- **开发方式**：使用 DeepSeek + dsh（AI 代理）实施，本方案精确到文件结构、补丁行、依赖清单与验收标准，代理可直接执行。
+## 2. 已确认决策
+| 决策项 | 定案 |
 |---|---|
-| 椤圭洰鍚?/ npm 鍖呭悕 | **DSHOME** / `dshome`锛坣pm 鍚嶅凡楠岃瘉涓虹┖闂诧級 |
-| profile 鍚嶄笌鍚姩鍛戒护 | `dsh --profile dshome` |
-| 瀹㈡埛绔矾寰?| 璺緞涔欙細鐙珛 profile bundle锛屽畼鏂?client 妯″潡鎵撳簳 + 鑷湁瑕嗙洊灞?|
-| 澶栧３褰㈡€?| 钖勫３锛氭闈㈢獥鍙?+ 鎵樼洏 + 鍗曞疄渚?+ 鍚庣鐩戞祴锛堝弬鑰?dsh-clean-desktop-shell / dsh-plugin-desktop 鍏煎妯″紡锛?|
-| MVP 鑼冨洿 | 楠ㄦ灦璺戦€氾紙A 鐙珛鍏ュ彛 + B 钖勫３灞?+ 鎵╁睍鐐归鐣欙級锛岄浂澶氫綑鍔熻兘 |
-| 鐣岄潰璇█ | 涓枃 |
-| 棣栧彂骞冲彴 | Windows x64锛沵acOS 浜屾湡 |
-| 鐩爣鐢ㄦ埛 | 涓汉鑷敤 |
-| 鎶€鏈爤 | Node 24 + TypeScript锛堥鏋跺彲鍏堢函 JS锛? Cordis 4 + DSH 鏍稿績鍖咃紙閽夋 `0.1.1-rc.2`锛? Electron锛堝３杩愯鏃讹級 |
-| 涓婃父绛栫暐 | 璺熼殢 DeepSeek Harness 瀹樻柟 `@deepseek-ai/*` 鍖咃紙鍚?DSH Desktop 鐨?pin 绛栫暐锛?|
+| 项目名 / npm 包名 | **DSHOME** / `dshome`（npm 名已验证为空闲） |
+| profile 名与启动命令 | `dsh --profile dshome` |
+| 客户端路径 | 路径乙：独立 profile bundle，官方 client 模块打底 + 自有覆盖层 |
+| 外壳形态 | 薄壳：桌面窗口 + 托盘 + 单实例 + 后端监测（参考 dsh-clean-desktop-shell / dsh-plugin-desktop 兼容模式） |
+| MVP 范围 | 骨架跑通（A 独立入口 + B 薄壳层 + 扩展点预留），零多余功能 |
+| 界面语言 | 中文 |
+| 首发平台 | Windows x64；macOS 二期 |
+| 目标用户 | 个人自用 |
+| 技术栈 | Node 24 + TypeScript（骨架可先纯 JS），Cordis 4 + DSH 核心包（钉死 `0.1.1-rc.2`），Electron（壳运行时） |
+| 上游策略 | 跟随 DeepSeek Harness 官方 `@deepseek-ai/*` 包（含 DSH Desktop 的 pin 策略） |
 
-## 3. 鑳屾櫙锛欴SH "瀹㈡埛绔?鐨勬湰璐紙宸叉牳瀹炵殑浜嬪疄锛?
-浠ヤ笅鏈哄埗鏉ヨ嚜瀵规湰鏈?DSH Desktop 2.0.3锛坄dsh-plugin-desktop`锛夋墦鍖呬骇鐗╃殑閫嗗悜鏍稿疄锛屽潎涓虹湡瀹炲瓧娈典笌琛屼负锛?
-1. **Profile = 涓€涓?Cordis 搴旂敤**銆俙dsh --profile <name>` 鍚姩涓€涓嫭绔?Cordis 杩愯鏃讹紙Host 杩涚▼锛夛紝鐢卞嚑灞?**bundle 琛ヤ竵锛坈ordis.patch.yml锛?* 缁勮锛?   - 绗?1 灞傦細`@deepseek-ai/dsh-base`锛?every profile's first patch layer"锛?7 涓緷璧栵紝鎻掑叆鏍稿績琛岋細timer / hmr / llm / session / typert / 鈥︼級
-   - 绗?2 灞傦細妯″紡 bundle鈥斺€旀祻瑙堝櫒闈?`@deepseek-ai/dsh-web-app`锛堝湪 dsh-base 涔嬩笂鍙犲姞 webserver / web-runtime / 瀹樻柟 client roster锛夛紱鏃犲ご `@deepseek-ai/dsh-headless`
-   - 绗?3 灞傦細profile 鑷繁鐨?`cordis.patch.yml`
-   - 绗?4 灞傦細CLI `--patch` 瑕嗙洊灞?   - **琛岃涔?*锛氬悓涓€ `id` 鐨勫悗灞傝ˉ涓?*鏁翠綋鏇挎崲**璇ヨ config锛堜笉鍚堝苟锛夛紱`- insert:` 杩藉姞鏂拌锛沗disabled: true` 鍋滅敤鍩哄骇琛岋紱`name: pkg` 鎴?`name: pkg/subpath` 瀹氫綅鎻掍欢銆?2. **瀹㈡埛绔?UI = 涓€寮?client roster**銆俙cordis.patch.yml` 涓互 `insert` 鎸傝浇鐨?`dsh-client-*` 琛屾棦鏄?host 鎻掍欢鑺傜偣锛屼篃鏄?**browser roster**锛氱敱 `dsh-client-modules` 鐨?node 鍗婇儴鎵弿鏁存５渚濊禆鏍戯紝缁勮鎴?`window.__DSH_BOOT__`锛涙祻瑙堝櫒绔?`dsh-client-runtime` + `dsh-cordis-client-runner` 鍦ㄩ〉闈㈤噷鍚姩娴忚鍣ㄧ Cordis銆?3. **瀹樻柟 web roster 鍏ㄩ儴琛?*锛堟潵鑷?`dsh-web-app/cordis.patch.yml`锛屽潎鍙寜闇€瑁佸壀/鎻掓嫈锛夛細
-   `modules`銆乣connection`銆乣api-remotes`銆乣client-runtime`銆乣cordis-client-runner`銆乣ui-theme`銆乣locale`銆乣ui-layout`銆乣ui-renderer`銆乣ui-sidebar`銆乣ui-settings`銆乣ui-settings-general`銆乣ui-settings-models`銆乣ui-settings-plugin-inventory`銆乣ui-conversation`銆乣ui-brand-official`銆乣ui-attachment`銆乣ui-tool`銆乣ui-cordis`銆乣ui-workflow-run`銆乣ui-deliverables`銆乣ui-workspace`銆乣ui-input-trigger`銆乣ui-commands`銆乣ui-skill`銆乣ui-subagent`銆乣ui-reference`銆乣ui-jobs`銆乣ui-goal`銆乣ui-message-feedback`銆乣ui-model-selection`銆乣ui-permission`銆乣ui-agent-preset`銆乣ui-settings-plugins`銆乣ui-plan`銆乣ui-user-questions`銆乣ui-trajectory`
-4. **琛ヤ竵瑕嗙洊妯℃澘锛堟闈㈠吋瀹规ā寮忥級** = `dsh-plugin-desktop/cordis.patch.yml`锛氬湪 web bundle 涔嬩笂 insert `desktop-shell / desktop-terminal / desktop-notifications / desktop-pnpm / desktop-profiles / desktop-updates`锛屽苟瑕嗙洊 `web-runtime` 琛?`openBrowser: false / printUrl: false / surfaceContext: true / trustedHosts: []`銆?5. **鎻掍欢褰㈡€佽杽澹冲厛渚?* = `dsh-clean-desktop-shell`锛圛cather锛夛細鎸傚湪鐜版湁 profile 涓婏紝鎻愪緵绯荤粺鎵樼洏銆佸崟瀹炰緥銆佸悗绔椿鎬х洃娴?+ 绂荤嚎椤?+ 鑷姩閲嶈繛銆佹墭鐩樹竴閿惎鍋滃悗绔€佹闈㈠揩鎹锋柟寮忋€佹鏌ユ洿鏂帮紱Electron 杩愯鏃堕娆¤仈缃戣嚜鍔ㄥ噯澶囷紙绾?1鈥? 鍒嗛挓锛夛紝涓嶅仛浠讳綍瑙嗚鏀归€犮€?
-## 4. 鎬讳綋鏋舵瀯
+## 3. 背景：DSH "客户端" 的本质（已核实的事实）
+以下机制来自对本机 DSH Desktop 2.0.3（`dsh-plugin-desktop`）打包产物的逆向核实，均为真实字段与行为。
+1. **Profile = 一个 Cordis 应用**。`dsh --profile <name>` 启动一个独立的 Cordis 运行时（Host 进程），由几个 **bundle 补丁（cordis.patch.yml）** 组装。
+   - 第 1 层：`@deepseek-ai/dsh-base`（"every profile's first patch layer"，77 个依赖，插入核心行：timer / hmr / llm / session / typert / …）
+   - 第 2 层：模式 bundle——浏览器面 `@deepseek-ai/dsh-web-app`（在 dsh-base 之上叠加 webserver / web-runtime / 官方 client roster）；无头 `@deepseek-ai/dsh-headless`
+   - 第 3 层：profile 自己的 `cordis.patch.yml`
+   - 第 4 层：CLI `--patch` 覆盖层
+   - **行语义**：同一 `id` 的后层补丁**整体替换**该行 config（不合并）；`- insert:` 追加新行；`disabled: true` 停用基座行；`name: pkg` 或 `name: pkg/subpath` 定位插件。
+2. **客户端 UI = 一个 client roster**。`cordis.patch.yml` 中以 `insert` 挂载的 `dsh-client-*` 行既是 host 插件节点，也是 **browser roster**：由 `dsh-client-modules` 的 node 半部扫描整棵依赖树，组装成 `window.__DSH_BOOT__`；浏览器端 `dsh-client-runtime` + `dsh-cordis-client-runner` 在页面里启动浏览器端 Cordis。
+3. **官方 web roster 全部行**（来自 `dsh-web-app/cordis.patch.yml`，均可按需裁剪/插拔）：
+   `modules`、`connection`、`api-remotes`、`client-runtime`、`cordis-client-runner`、`ui-theme`、`locale`、`ui-layout`、`ui-renderer`、`ui-sidebar`、`ui-settings`、`ui-settings-general`、`ui-settings-models`、`ui-settings-plugin-inventory`、`ui-conversation`、`ui-brand-official`、`ui-attachment`、`ui-tool`、`ui-cordis`、`ui-workflow-run`、`ui-deliverables`、`ui-workspace`、`ui-input-trigger`、`ui-commands`、`ui-skill`、`ui-subagent`、`ui-reference`、`ui-jobs`、`ui-goal`、`ui-message-feedback`、`ui-model-selection`、`ui-permission`、`ui-agent-preset`、`ui-settings-plugins`、`ui-plan`、`ui-user-questions`、`ui-trajectory`
+4. **补丁覆盖模板（桌面兼容模式）** = `dsh-plugin-desktop/cordis.patch.yml`：在 web bundle 之上 insert `desktop-shell / desktop-terminal / desktop-notifications / desktop-pnpm / desktop-profiles / desktop-updates`，并覆盖 `web-runtime` 为 `openBrowser: false / printUrl: false / surfaceContext: true / trustedHosts: []`。
+5. **插件形态薄壳先例** = `dsh-clean-desktop-shell`（Icather）：挂在现有 profile 上，提供系统托盘、单实例、后端活性监测 + 离线页 + 自动重连、托盘一键启停后端、桌面快捷方式、检查更新；Electron 运行时首次联网自动准备（约 1~2 分钟），不做任何视觉改动。
+## 4. 总体架构
 
 ```
-dshome锛坣pm 鍖咃紝profile bundle锛?鈹溾攢鈹€ cordis.patch.yml           # profile 绗?3 灞傝ˉ涓侊細缁勮涓嬮潰 4 涓缁?鈹溾攢鈹€ dshome/shell       (host)  # Electron 钖勫３锛氱獥鍙?鎵樼洏/鍗曞疄渚?鍚庣鐩戞祴/閫氱煡妗?鈹溾攢鈹€ dshome/core        (host)  # DSHOME 鏈嶅姟锛歝ommands / panels 娉ㄥ唽琛紙鏈潵鎻掍欢鐨勬墿灞曠偣锛?鈹溾攢鈹€ dshome/client-core (client)# 娴忚鍣ㄧ鏍稿績锛氭彃妲戒笌鍛戒护娉ㄥ唽锛屼笌 host 鏈嶅姟瀵归€?鈹斺攢鈹€ dshome/theme       (client)# DSHOME 涓婚锛堣鐩栧畼鏂?ui-theme锛?        鈻?        鈹?渚濊禆/琛屽紩鐢?  @deepseek-ai/dsh-web-app锛堢 2 灞傦細webserver / web-runtime / 瀹樻柟 client roster锛?        鈻?  @deepseek-ai/dsh-base 锛堢 1 灞傦細host 鏍稿績琛岋級
+dshome（npm 包，profile bundle）
+├─┬─ cordis.patch.yml           # profile 第 3 层补丁：组装下面 4 个行
+├─┬─ dshome/shell       (host)  # Electron 薄壳：窗口/托盘/单实例/后端监测/通知
+├─┬─ dshome/core        (host)  # DSHOME 服务：commands / panels 注册表（未来插件的扩展点）
+├─┬─ dshome/client-core (client)# 浏览器端核心：插槽与命令注册，与 host 服务对应
+└─┬─ dshome/theme       (client)# DSHOME 主题（覆盖官方 ui-theme）
+         │         │         │
+         │  依赖/行引用  │
+         ├─  @deepseek-ai/dsh-web-app（第 2 层：webserver / web-runtime / 官方 client roster）
+         └─  @deepseek-ai/dsh-base （第 1 层：host 核心行）
 ```
 
-鍚姩閾捐矾锛歚dsh --profile dshome` 鈫?composeProfile 渚濆簭搴旂敤 `dsh-base 鈫?dsh-web-app 鈫?dshome` 涓夊眰琛ヤ竵 鈫?host 鍚姩锛坵ebserver 缁戝畾涓撳睘绔彛锛夆啋 `dshome/shell` 鎷夎捣 Electron 绐楀彛鍔犺浇 `http://127.0.0.1:<port>` 鈫?娴忚鍣ㄧ Cordis 渚?`__DSH_BOOT__` roster 鍚姩瀹樻柟 UI + DSHOME 瑕嗙洊灞傘€?
-**鍙栬垗璇存槑**锛氶鏋堕樁娈靛鐢ㄥ畼鏂?web bundle 浣滀负娴忚鍣ㄩ潰锛堝吋瀹规ā寮忥級锛岀悊鐢憋細
-- 瀹樻柟瀵硅瘽/杈撳叆/瀹℃壒/璁剧疆鑳藉姏闆舵垚鏈户鎵匡紝绗﹀悎"楠ㄦ灦璺戦€?鐩爣锛?- dshome 灞傚彲闅忔椂瑕嗙洊浠绘剰琛岀殑 config銆佸仠鐢ㄥ畼鏂硅銆佹彃鍏ヨ嚜鏈?client 鎻掍欢鈥斺€斿悗缁?闀垮嚭鑷繁鐣岄潰"鐨勮矾寰勬槸鐜版垚鐨勶紙鏇挎崲 roster銆佹彃妲芥敞鍐屻€佽嚜缁樼粍浠跺潎鍙€愭鏇挎崲瀹樻柟琛屽疄鐜帮級锛?- 涓嶅鍒?`dsh-plugin-desktop` 鏈韩锛屽澹充笌閰嶇疆褰掑睘鍏ㄦ槸 DSHOME 鑷繁鐨勩€?
-## 5. 浠撳簱涓庡寘缁撴瀯锛堥鏋讹級
-
-鍗?npm 鍖咃紙`co type: module`锛夛紝鍏堢函 JS 鏈€灏忓寲锛岄渶瑕佹椂鍐嶈縼 TS锛?
+启动链路：`dsh --profile dshome` 的 composeProfile 依序应用 `dsh-base → dsh-web-app → dshome` 三层补丁 → host 启动（webserver 绑定专属端口）→ `dshome/shell` 拉起 Electron 窗口加载 `http://127.0.0.1:<port>` → 浏览器端 Cordis 用 `__DSH_BOOT__` roster 启动官方 UI + DSHOME 覆盖层。
+**取舍说明**：骨架阶段复用官方 web bundle 作为浏览器面（兼容模式），理由：
+- 官方对话/输入/审批/设置能力零成本继承，符合"骨架跑通"目标；
+- dshome 层可随时覆盖任意行的 config、停用官方行、插入自有 client 插件——"后续长出自己界面"的路径是现成的（替换 roster、插槽注册、自绘组件均可逐步替换官方行实现）；
+- 不复用 `dsh-plugin-desktop` 本身，外壳与配置归属全是 DSHOME 自己的。
+## 5. 仓库与包结构（骨架）
+一个 npm 包（`co type: module`），先纯 JS 最小化，需要时再迁 TS。
 ```
 dshome/
-鈹溾攢 package.json               # name: dshome锛沝sh.bundle.patch: ./cordis.patch.yml锛涘瓙璺緞 exports
-鈹溾攢 cordis.patch.yml           # 缁勮琛ヤ竵锛堟牳蹇冧氦浠樼墿锛岃 搂6锛?鈹溾攢 lib/
-鈹? 鈹溾攢 index.js                # 鍖呭叆鍙ｏ紙鍙┖澹筹紝浠呭湪闇€瑕佹椂鎸?host 鍒濆鍖栵級
-鈹? 鈹溾攢 host/
-鈹? 鈹? 鈹溾攢 shell.js             # dshome/shell锛欵lectron 绐楀彛/鎵樼洏/鍗曞疄渚?鐩戞祴/閫氱煡
-鈹? 鈹? 鈹斺攢 core.js              # dshome/core锛氭彁渚?ctx.dshome 鏈嶅姟锛坈ommands/panels 娉ㄥ唽琛級
-鈹? 鈹斺攢 client/
-鈹?    鈹溾攢 core.js              # dshome/client-core锛歴lots 娉ㄥ唽 + 鍛戒护妗?鈹?    鈹斺攢 theme.js             # dshome/theme锛氫富棰?token 瑕嗙洊
-鈹溾攢 scripts/
-鈹? 鈹溾攢 dev.mjs                 # 寮€鍙戝惊鐜細鏋勫缓 + 鍚姩 dsh --profile dshome
-鈹? 鈹斺攢 safe.mjs                # 鎭㈠妯″紡锛?-patch 涓存椂绂佺敤鍏ㄩ儴鑷湁鎻掍欢锛屽垽瀹氬穿婧冩潵婧愶紙瑙?搂13.5锛?鈹溾攢 docs/                      # 鏈柟妗?+ 瀹炴柦绗旇
-鈹斺攢 README.md
+├─ package.json               # name: dshome；dsh.bundle.patch: ./cordis.patch.yml；子路径 exports
+├─ cordis.patch.yml           # 组装补丁（核心交付物，见 §6）
+├─ lib/
+│  ├─ index.js                # 包入口（可空壳，仅在需要时做 host 初始化）
+│  ├─ host/
+│  │  ├─ shell.js             # dshome/shell：Electron 窗口/托盘/单实例/监测/通知
+│  │  └─ core.js              # dshome/core：提供 ctx.dshome 服务（commands/panels 注册表）
+│  └─ client/
+│     ├─ core.js              # dshome/client-core：slots 注册 + 命令面板
+│     └─ theme.js             # dshome/theme：主题 token 覆盖
+├─ scripts/
+│  ├─ dev.mjs                 # 开发循环：构建 + 启动 dsh --profile dshome
+│  └─ safe.mjs                # 恢复模式：--patch 临时禁用全部自有插件，判定崩溃来源（见 §13.5）
+├─ docs/                      # 本方案 + 实施笔记
+└─ README.md
 ```
 
-瀛愯矾寰勮寮曠敤锛坄dshome/shell` 绛夛級鐓ф妱 `dsh-plugin-desktop/terminal`銆乣dsh-plugin-desktop/notifications` 鐨勫懡鍚嶇害瀹氾紱瀹炴柦鏃朵互 loader 瀹炴祴涓哄噯琛ュ叏 `package.json exports` 瀛愯矾寰勩€?
-## 6. cordis.patch.yml 瑙勬牸锛堥鏋惰崏妗堬級
+子路径行引用（`dshome/shell` 等）照抄 `dsh-plugin-desktop/terminal`、`dsh-plugin-desktop/notifications` 的命名约定；实施时以 loader 实测为准补全 `package.json exports` 子路径。
+## 6. cordis.patch.yml 规格（骨架草案）
 
 ```yaml
-# dshome锛歱rofile dshome 鐨?bundle 琛ヤ竵锛堢 3 灞傦紝鐩栧湪 dsh-base + dsh-web-app 涔嬩笂锛?
-# 鈥斺€?鈶?澹充笌鑷湁鏈嶅姟锛坔ost锛夆€斺€?- insert:
+# dshome：profile dshome 的 bundle 补丁（第 3 层，盖在 dsh-base + dsh-web-app 之上）
+# —— 壳与自有服务（host）——
+- insert:
     - id: dshome-shell
       name: dshome/shell
       config:
         windowTitle: DSHOME
-        # 鍗曞疄渚嬨€佹墭鐩樸€佹椿鎬х洃娴嬨€佺绾块〉銆侀噸杩炪€佸揩鎹锋柟寮忋€佽嚜鍚紑鍏炽€侀€氱煡妗?    - id: dshome-core
+        # 单实例、托盘、活性监测、离线页、重连、快捷方式、自启开关、通知
+    - id: dshome-core
       name: dshome/core
 
-    # 鈥斺€?鈶?鑷湁 client 鎻掍欢锛坉sh.client 琛岋紝杩涘叆 __DSH_BOOT__ roster锛夆€斺€?    - id: dshome-client
+    # —— 自有 client 插件（dsh.client 行，进入 __DSH_BOOT__ roster）——
+    - id: dshome-client
       name: dshome/client-core
     - id: dshome-theme
       name: dshome/theme
 
-# 鈥斺€?鈶?瑕嗙洊瀹樻柟琛岋紙鏁翠綋鏇挎崲 config锛屼笉鍚堝苟锛夆€斺€?# 绐楀彛鐢?dshome/shell 鎺ョ锛屼笉鍐嶈嚜鍔ㄥ紑娴忚鍣?- id: web-runtime
+# —— 覆盖官方行（整体替换 config，不合并）——
+# 窗口由 dshome/shell 接管，不再自动开浏览器
+- id: web-runtime
   config:
     openBrowser: false
     printUrl: true
     surfaceContext: true
     trustedHosts: []
 
-# 涓撳睘绔彛锛屼笌鐜版湁 web profile锛?3120锛夌瓑骞跺瓨涓嶅啿绐侊紱鍚庣画鍙敼 webStartup 鍔ㄦ€佸垎閰?- id: webserver
+# 专属端口，与现有 web profile（3120）等并存不冲突；后续可改 webStartup 动态分配
+- id: webserver
   config:
     host: 127.0.0.1
     port: 3081
 
-# 涓枃鐣岄潰
+# 中文界面
 - id: locale
   config:
     locale: zh-CN
 
-# 鈥斺€?鈶?楠ㄦ灦 roster锛氭渶灏忓彲鐢ㄩ泦锛堝叾浣欏畼鏂硅鎸夐渶 insert 寮€鍚級鈥斺€?# 锛堝畼鏂?web-app 灞傚凡鎸傝浇鍏ㄩ噺锛涢鏋惰嫢璧?鏈€灏?roster"锛岀敤 disabled 鍏虫帀涓嶇敤鐨勮锛?#   鎴栫洿鎺ュ湪 dshome 灞傞噸寤虹簿绠€ roster銆傛帹鑽愬墠鑰咃細宸噺鍏抽棴锛屽ぉ鐒跺彲閫嗐€傦級
+# —— 骨架 roster：最小可用集（其余官方行按需 insert 开发）——
+# （官方 web-app 层已挂载全量；骨架若需要精简 roster，用 disabled 关掉不用的行，
+#   或直接在 dshome 层重建精简 roster。推荐前者：差量关闭，天然可逆）
 ```
 
-> 瀹炴柦娉ㄦ剰锛歳oster 閲囩敤"鍏煎妯″紡 + 宸噺鍏抽棴"杩樻槸"鑷缓绮剧畝 roster"锛屼互瀹炴柦鏃?dsh-cmdline 鐨?composeProfile 瀹炴祴缁撴灉瀹氬ず锛涗袱绉嶉兘鍦ㄥ畼鏂规満鍒跺唴銆傛柟妗堝€惧悜**鍏煎妯″紡宸噺鍏抽棴**锛堟敼鍔ㄦ渶灏忋€佹渶鍙€嗭級銆?
-## 7. 鍚勭粍浠惰鏍?
-### 7.1 dshome/shell锛坔ost锛夛細钖勫３灞?鑱岃矗锛堝弬鑰?dsh-clean-desktop-shell 鍔熻兘闈級锛?- Electron 绐楀彛锛氭棤杈规鎴栭粯璁よ竟妗嗗彲閫夛紝绐楀彛鏍囬 `DSHOME`锛屽叧闂獥鍙ｆ渶灏忓寲鍒版墭鐩橈紱
-- 绯荤粺鎵樼洏锛氱姸鎬佽彍鍗曪紙杩愯涓?鍚姩涓?鏈繍琛?閿欒锛夈€佸惎鍔?閲嶅惎/鍏抽棴鍚庣銆佹樉绀虹獥鍙ｃ€佸埛鏂般€侀€€鍑猴紱
-- 鍗曞疄渚嬮攣锛氶噸澶嶅惎鍔ㄥ彧鑱氱劍宸叉湁绐楀彛锛?- 鍚庣娲绘€х洃娴嬶細杞 webserver锛涙寕鎺夊嵆绐楀彛鍒?鏈繛鎺?绂荤嚎椤碉紝鎭㈠鑷姩閲嶈繛鍔犺浇锛?- 妗岄潰蹇嵎鏂瑰紡锛氬彲閫夊垱寤猴紙`dsh --profile dshome` 鍙弻鍑诲惎鍔ㄧ殑 .lnk锛夛紱
-- 寮€鏈鸿嚜鍚紑鍏筹紙Windows 娉ㄥ唽琛?Run 閿?/ lnk 鍒?Startup 鐩綍锛夛紱
-- 閫氱煡妗ワ細璁㈤槄 Host 渚т换鍔?鍥炲悎/瀹℃壒浜嬩欢锛屽脊绯荤粺閫氱煡锛堝叿浣撲簨浠跺悕瀹炴柦鏃跺弬鐓?`dsh-plugin-desktop/notifications` 婧愮爜锛夛紱
-- Electron 杩愯鏃剁瓥鐣ワ細寮€鍙戞湡 devDependency 鏈湴璺戯紱涓汉浣跨敤棣栨湡鐢?杩愯鏃舵寜闇€鍑嗗"锛坈lean-desktop-shell 鏂瑰紡锛夛紝浜у搧鍖栦簩鏈熸崲 Tauri 鏃剁Щ闄ゃ€?
-### 7.2 dshome/core锛坔ost锛夛細鎵╁睍鐐规湇鍔?杩欐槸"鍚庣画涓€鍒囩殕鎻掍欢"鐨勫湴鍩恒€傛彁渚?`ctx.dshome` 鏈嶅姟锛?
+> 实施注意：roster 采用"兼容模式 + 差量关闭"还是"自建精简 roster"，以实施时 dsh-cmdline 的 composeProfile 实测结果定夺；两种都在官方机制内。方案偏向**兼容模式差量关闭**（改动最小、最可逆）。
+## 7. 各组件规格
+### 7.1 dshome/shell（host）：薄壳层职责（参考 dsh-clean-desktop-shell 功能面）
+- Electron 窗口：无边框或默认边框可选，窗口标题 `DSHOME`，关闭窗口最小化到托盘；
+- 系统托盘：状态菜单（运行中/启动中/未运行/错误）、启动/重启/关闭后端、显示窗口、刷新、退出；
+- 单实例锁：重复启动只聚焦已有窗口；
+- 后端活性监测：轮询 webserver；挂掉即窗口显示"未连接"离线页，恢复自动重连加载；
+- 桌面快捷方式：可选创建（`dsh --profile dshome` 可双击启动的 .lnk）；
+- 开机自启开关（Windows 注册表 Run 键 / lnk 到 Startup 目录）；
+- 通知桥：订阅 Host 侧任务/回合/审批事件，弹系统通知（具体事件名实施时参考 `dsh-plugin-desktop/notifications` 源码）；
+- Electron 运行时策略：开发期 devDependency 本地跑；个人使用首期"运行时按需准备"（clean-desktop-shell 方式），产品化二期换 Tauri 时移除。
+### 7.2 dshome/core（host）：扩展点服务，这是"后续一切皆插件"的地基，提供 `ctx.dshome` 服务：
 ```js
 ctx.dshome = {
-  commands: { register({ id, label, run }) },   // 鍛戒护娉ㄥ唽琛紙濡?Ctrl+K 闈㈡澘鏁版嵁婧愶級
-  panels:   { register({ id, title, component }) }, // 闈㈡澘娉ㄥ唽琛紙渚ф爮/闄勫姞闈㈡澘浣嶏級
+  commands: { register({ id, label, run }) },   // 命令注册表（如 Ctrl+K 面板数据源）
+  panels:   { register({ id, title, component }) }, // 面板注册表（侧栏/附加面板位）
 }
 ```
-鏈潵鎵€鏈?DSHOME 鎻掍欢鍙緷璧栬繖涓湇鍔?+ 瀹樻柟 `dsh-client-ui-slots`锛堢涓夋柟娉ㄥ唽鏂版爣绛?浣嶇偣鐨勫畼鏂规満鍒讹紝瑙?`dsh-better-sidebar` 鍏堜緥锛夛紝涓嶅繀鏀?shell/core銆?
-### 7.3 dshome/client-core锛坈lient锛?- 娴忚鍣ㄧ鍚姩閽╁瓙锛氱瓑寰?cordis 灏辩华鍚庢敞鍐屾彃妲介」銆佸懡浠ら潰鏉垮崰浣嶏紱
-- 閫氳繃 connection/remote 涓?host 鐨?`ctx.dshome` 鏈嶅姟瀵归€氾紙鏂规硶锛氱粡瀹樻柟 api-gateway Remote 鏈哄埗娉ㄥ唽绔偣锛屽疄鏂芥椂瀵圭収 dsh-community-market 鐨?client/host 閫氫俊鏍蜂緥锛夈€?
-### 7.4 dshome/theme锛坈lient锛?- 楠ㄦ灦闃舵锛氳鍙栧畼鏂?`dsh-client-ui-theme` 鐨勪富棰?seam 骞惰鐩栵紙涓婚 token銆丆SS 鍙橀噺銆佹槑鏆椾袱濂椼€佸己璋冭壊锛夛紱
-- 鍏蜂綋 seam API 瀹炴柦鏃剁洿鎺ヨ `node_modules/@deepseek-ai/dsh-client-ui-theme/src`锛?- 甯傚満鐨偆鎻掍欢锛坄dsh-client-ui-skin-*`锛夌殑娉ㄥ叆鍐欐硶鏄幇鎴愬弬鐓с€?
-## 8. 渚濊禆娓呭崟锛堥拤姝?0.1.1-rc.2锛?
-| 渚濊禆 | 鐢ㄩ€?|
+未来所有 DSHOME 插件只依赖这个服务 + 官方 `dsh-client-ui-slots`（第三方注册新标签/位点的官方机制，见 `dsh-better-sidebar` 先例），不必改 shell/core。
+### 7.3 dshome/client-core（client）
+- 浏览器端启动钩子：等待 cordis 就绪后注册插槽项、命令面板占位；
+- 通过 connection/remote 与 host 的 `ctx.dshome` 服务对应（方法：经官方 api-gateway Remote 机制注册端点，实施时对照 dsh-community-market 的 client/host 通信样例）。
+### 7.4 dshome/theme（client）
+- 骨架阶段：读取官方的 `dsh-client-ui-theme` 的主题 seam 并覆盖（主题 token、CSS 变量、明暗两套、强调色）；
+- 具体 seam API 实施时直接读 `node_modules/@deepseek-ai/dsh-client-ui-theme/src`；
+- 市场皮肤插件（`dsh-client-ui-skin-*`）的注入写法是现成参照。
+## 8. 依赖清单（钉死 0.1.1-rc.2）
+| 依赖 | 用途 |
 |---|---|
-| `@deepseek-ai/dsh-base@^0.1.1-rc.2` | 绗?1 灞?host 鏍稿績锛?7 渚濊禆鐨勭粍瑁呰妭鐐癸級 |
-| `@deepseek-ai/dsh-web-app@^0.1.1-rc.2` | 绗?2 灞傛祻瑙堝櫒闈紙webserver/web-runtime/瀹樻柟 roster/frontend dist锛?|
-| `@deepseek-ai/cordis@4.0.1` | Cordis 杩愯妗嗘灦锛坧eer锛?|
-| `electron` | 澹崇獥鍙ｈ繍琛屾椂锛坉evDependency锛涜繍琛屾椂涓嬭浇绛栫暐鍙﹁锛?|
-| `react@18.3.1` | 鑷粯缁勪欢鏃舵墠闇€瑕侊紙瀹樻柟 renderer 鍚岀増鏈級 |
+| `@deepseek-ai/dsh-base@^0.1.1-rc.2` | 第 1 层 host 核心（77 依赖的组装节点） |
+| `@deepseek-ai/dsh-web-app@^0.1.1-rc.2` | 第 2 层浏览器面（webserver/web-runtime/官方 roster/frontend dist） |
+| `@deepseek-ai/cordis@4.0.1` | Cordis 运行框架（peer） |
+| `electron` | 壳窗口运行时（devDependency；运行时下载策略另设） |
+| `react@18.3.1` | 自绘组件时才需要（官方 renderer 同版本） |
 
-鍏朵綑瀹樻柟妯″潡锛坈lient-*/host-*锛夌敱 `dsh-web-app` 浼犻€掑甫鍏ワ紱DSHOME 闇€瑕侀澶栧紩鐢ㄧ殑鎸?roster 瑁佸壀鎯呭喌鍦ㄥ疄鏂芥湡琛ュ厖銆?
-## 9. 鍒嗛樁娈靛疄鏂借鍒掞紙姣忎竴姝ラ兘鍙敱 dsh 浠ｇ悊浜や粯骞惰嚜妫€锛?
-### Phase 0 路 鐜鍦板熀
-- 纭鏈満 `dsh` CLI 鍙敤锛圖SH Desktop 鑷甫锛沗dsh --version`锛夛紱
-- 纭 pnpm銆丯ode 24锛涘缓 `E:\DSH\dshome` 宸ョ▼鐩綍锛?- 楠岃瘉 `dsh plugin --profile dshome add <鏈湴璺緞>` 鏄惁鏀寔 file:/folder 褰㈠紡锛堝惁鍒欑敤 GitHub 璺緞锛夛紝璁板綍 CLI 瀹炴祴琛屼负锛?- **楠屾敹**锛歚dsh --profile dshome --help` 鍙В鏋愶紝鏃犳姤閿欍€?
-### Phase 1 路 楠ㄦ灦 bundle锛堟棤绐楀彛锛?- 鎼?package.json锛坉sh.bundle.patch銆乪xports 瀛愯矾寰勩€佷緷璧栵級+ 鏈€灏?`cordis.patch.yml`锛堝彧 insert dshome-core锛屽叾浣欒鐩栭」鐣欐敞閲婏級锛?- 璺?`dsh --profile dshome`锛屾祻瑙堝櫒鎵嬪姩璁块棶 `127.0.0.1:3081`锛?- **楠屾敹**锛氬畼鏂逛腑鏂?UI 鍙銆佸彲寤轰細璇濄€佸彲鍙戞秷鎭€佹ā鍨嬪彲閰嶇疆锛涗笌 `--profile web`锛?3120锛夊苟瀛樻棤鍐茬獊銆?
-### Phase 2 路 钖勫３
-- 瀹炵幇 `dshome/shell`锛堢獥鍙?鎵樼洏/鍗曞疄渚?鐩戞祴/绂荤嚎椤?閲嶈繛/蹇嵎鏂瑰紡/鑷惎寮€鍏筹級锛?- **楠屾敹**锛氬弻鍑诲揩鎹锋柟寮忓嚭绐楋紱鍏崇獥涓嶉€€鍑猴紱鎵樼洏鍙惎鍋滃悗绔紱鏉€鎺夊悗绔啋绂荤嚎椤碉紝閲嶅惎鈫掕嚜鍔ㄩ噸杩烇紱閲嶅鍚姩鍙仛鐒︺€?
-### Phase 3 路 涓婚 + 鎵╁睍鐐规紨绀?- 瀹炵幇 `dshome/theme`锛堟槑鏆?+ 寮鸿皟鑹诧紝鑲夌溂鍙鲸锛夛紱
-- 瀹炵幇 `dshome/client-core` + 涓€涓紨绀烘墿灞曪紙濡傛敞鍐屼竴涓?`/dshome-demo` 鍛戒护鎴栦晶鏍忛」锛夛紝璧?`ctx.dshome.commands` + 瀹樻柟 slots锛?- **楠屾敹**锛氫富棰樼敓鏁堬紱婕旂ず鎵╁睍鍙鍙敤锛涘啀瑁呬竴涓競鍦虹幇鎴?client 鎻掍欢锛堝鏌?skin锛夊埌 profile 涓嶅啿绐侊紙璇佹槑"鍚庣画鐨嗘彃浠?鎴愮珛锛夈€?
-### Phase 4 路 鏀跺熬
-- 琛?README锛堝畨瑁?鍚姩/寮€鍙戝惊鐜剼鏈?`scripts/dev.mjs`锛夛紱鏁寸悊瀹炴柦绗旇鍒?docs/锛?- 璺戦€?搂10 鍏ㄩ噺楠岃瘉娓呭崟锛?- 鍐欎簩鏈熻矾绾匡紙搂12锛夎惤搴撱€?
-### 9.1 璺戦€氬悗鐨勫紑鍙戝惊鐜紙濡備綍鍦ㄥ３閲屾寔缁凯浠ｏ級
+其余官方模块（client-*/host-*）由 `dsh-web-app` 传递带入；DSHOME 需要额外引用的按 roster 裁剪情况在实施期补充。
+## 9. 分阶段实施计划（每一步都可由 dsh 代理交付并自检）
+### Phase 0 · 环境地基
+- 确认本机 `dsh` CLI 可用（DSH Desktop 自带；`dsh --version`）；
+- 确认 pnpm、Node 24；建 `E:\DSH\dshome` 工程目录；
+- 验证 `dsh plugin --profile dshome add <本地路径>` 是否支持 file:/folder 形式（否则用 GitHub 路径），记录 CLI 实测行为；
+- **验收**：`dsh --profile dshome --help` 可解析，无报错。
+### Phase 1 · 骨架 bundle（无窗口）
+- 搭 package.json（dsh.bundle.patch、exports 子路径、依赖）+ 最小 `cordis.patch.yml`（只 insert dshome-core，其余覆盖项留注释）；
+- 跑 `dsh --profile dshome`，浏览器手动访问 `127.0.0.1:3081`；
+- **验收**：官方中文 UI 可见、可建会话、可发消息、模型可配置；与 `--profile web`（3120）并存无冲突。
+### Phase 2 · 薄壳
+- 实现 `dshome/shell`（窗口/托盘/单实例/监测/离线页/重连/快捷方式/自启开关）；
+- **验收**：双击快捷方式出窗；关窗不退出；托盘可启停后端；杀掉后端→离线页，重启→自动重连；重复启动只聚焦。
+### Phase 3 · 主题 + 扩展点演练
+- 实现 `dshome/theme`（明暗 + 强调色，肉眼可辨）；
+- 实现 `dshome/client-core` + 一个演示扩展（如注册一条 `/dshome-demo` 命令或侧栏项），用 `ctx.dshome.commands` + 官方 slots；
+- **验收**：主题生效；演示扩展可见可用；再装一个市场现成 client 插件（如皮肤）到 profile 不冲突（证明"后续皆插件"成立）。
+### Phase 4 · 收尾
+- 写 README（安装/启动/开发循环脚本 `scripts/dev.mjs`）；整理实施笔记到 docs/；
+- 跑通 §10 全量验证清单；
+- 写二期路线（§12）落库。
+### 9.1 跑通后的开发循环（如何在壳里持续迭代）
 
-绗竴鐗堣窇閫氬悗锛岀敤鎴峰彲鐩存帴鍦?DSHOME 涓婄户缁紭鍖栦笌寮€鍙戯紝鎸変笁灞傜儹鏇磋妭濂忥細
+第一版跑通后，用户可直接在 DSHOME 上继续优化与开发，按三层热更节奏：
 
-| 鏀瑰姩瀵硅薄 | 鐢熸晥鏂瑰紡 | 棰戠巼 |
+| 改动对象 | 生效方式 | 频率 |
 |---|---|---|
-| client 鎻掍欢锛堜富棰?闈㈡澘/鍛戒护/甯冨眬锛?| HMR 鐑洿鏂帮細`dev.mjs` 鐨?watcher + 瀹樻柟 `client-hmr` 琛岋紝鏀瑰畬鍗冲埛锛岀獥鍙ｄ笉鍏?| 绉掔骇 |
-| host 鎻掍欢锛堟墭鐩?鐩戞祴/閫氱煡妗?core锛?| 鎵樼洏涓€閿?閲嶅惎鍚庣"锛屽３娲绘€х洃娴嬭嚜鍔ㄩ噸杩炵獥鍙?| 閲嶅惎鍚庣 |
-| Electron 澹虫湰韬?| 寮€鍙戞ā寮?`electron .` 鐩磋繛宸茶窇鐨勫悗绔紝鏀瑰３涓嶅姩鍚庣 | 鍙噸鍚３ |
-| cordis.patch.yml / 渚濊禆鍙樻洿 | `--patch` 瑕嗙洊灞傚疄楠?鈫?纭鍚庡悎骞?鈫?閲嶅惎 profile锛坈heckpoint 鍙洖婊氾級 | 閲嶅惎 |
+| client 插件（主题/面板/命令/布局） | HMR 热更新：`dev.mjs` 的 watcher + 官方 `client-hmr` 行，改完即刷，窗口不关 | 秒级 |
+| host 插件（托盘/监测/通知/core） | 托盘"重启后端"，壳活性监测自动重连窗口 | 重启后端 |
+| Electron 壳本身 | 开发模式 `electron .` 直连已跑的后端，改壳不动后端 | 只重启壳 |
+| cordis.patch.yml / 依赖变更 | `--patch` 覆盖层实测，确认后合并，重启 profile（checkpoint 可回滚） | 重启 |
 
-**閾佸緥**锛堥槻姝㈣凯浠ｅ彉浜嬫晠锛夛細
-1. 鑷爺浠ｇ爜鍙繘 `dshome` 鍖呬笌鑷湁鎻掍欢锛沗node_modules/@deepseek-ai/*` 瀹樻柟 bundle **鍙**锛?2. 瀹為獙涓€寰嬭蛋 `--patch` 瑕嗙洊灞傦紝纭鍚庤惤鍦帮紱閰嶅悎 Recovery checkpoint 涓€閿洖婊氾紱
-3. 寮€鍙戝満鍦帮紙`dshome` + 宸ヤ綔鍖猴級涓?`--profile web` 闅旂锛屽畼鏂圭晫闈㈠缁堟槸瀹夊叏缃戯紱
-4. 鍙?dogfood锛氬湪 DSHOME 绐楀彛鍐呭紑浼氳瘽锛岃浠ｇ悊缁х画寮€鍙?DSHOME 鑷韩锛堜唬鐮佷骇鐗╄惤 `E:\DSH\dshome`锛夈€?
-**杈圭晫鎻愰啋**锛欻MR 浠呭湪 dev watcher 杩愯鏈熼棿鐢熸晥锛岀敓浜у舰鎬佹敼 client 浠ｇ爜闇€ rebuild + refresh锛沨ost/琛ヤ竵鍙樻洿蹇呴』閲嶅惎锛堜唬浠峰凡琚３鐨勮嚜鍔ㄩ噸杩炴姷娑堬級銆?
-## 10. 楠岃瘉娓呭崟锛堥鏋?璺戦€?瀹氫箟锛?
-- [ ] `dsh --profile dshome` 涓€鏉″懡浠ゅ彲鍚姩锛涚鍙?3081 涓婄嚎锛堟垨閰嶇疆鍊硷級
-- [ ] Electron 绐楀彛寮瑰嚭锛屾爣棰?DSHOME锛岄〉闈负涓枃瀹樻柟 UI + DSHOME 涓婚
-- [ ] 鑳芥柊寤轰細璇濆苟瀹屾垚涓€杞璇濓紱妯″瀷/鎻愪緵鏂硅缃彲鏀?- [ ] 鎵樼洏瀛樺湪锛涘崟瀹炰緥鐢熸晥锛涘叧绐楁渶灏忓寲鍒版墭鐩橈紱寮€鏈鸿嚜鍚紑鍏冲彲閫?- [ ] 鍚庣琚潃 鈫?绂荤嚎椤碉紱閲嶅惎鍚庣 鈫?鑷姩閲嶈繛
-- [ ] 浠诲姟瀹屾垚/闇€瑕佸鎵规椂寮圭郴缁熼€氱煡
-- [ ] 婕旂ず鎵╁睍锛堝懡浠?闈㈡澘锛夐€氳繃 dshome 鎵╁睍鐐规敞鍐屽苟鍙
-- [ ] **鏁呴殰婕旂粌**锛氭敞鍏ヤ竴涓晠鎰忔姏閿欑殑鑷湁鎻掍欢 鈫?鈶?`--profile web` 涓嶅彈褰卞搷 鈶?`scripts/safe.mjs` 绂佺敤璇ヨ鍚?DSHOME 姝ｅ父鍚姩 鈶?澹崇绾块〉 + 鎵樼洏閲嶅惎鍚庣鍙仮澶嶏紙瑙?搂13.5锛?- [ ] 涓庣幇鏈?`--profile web` 瀹炰緥骞跺瓨浜掍笉骞叉壈
-- [ ] 鏈満鍏朵粬 .lnk / 鍙屽嚮娴佺▼鍙敤
+**铁律**（防止迭代变事故）：
+1. 自研代码只进 `dshome` 包与自有插件；`node_modules/@deepseek-ai/*` 官方 bundle **只读**。
+2. 实验一律走 `--patch` 覆盖层，确认后落地；配合 Recovery checkpoint 一键回滚；
+3. 开发场地（`dshome` + 工作区）与 `--profile web` 隔离，官方界面始终是安全网；
+4. 要 dogfood：在 DSHOME 窗口内开会话，让代理继续开发 DSHOME 自身（代码产物落 `E:\DSH\dshome`）。
+**边界提醒**：HMR 仅在 dev watcher 运行期间生效，生产形态改 client 代码需 rebuild + refresh；host/补丁变更必须重启（代价已被壳的自动重连抵消）。
+## 10. 验证清单（骨架跑通的定义）
+- [ ] `dsh --profile dshome` 一条命令可启动；端口 3081 上线（或配置值）
+- [ ] Electron 窗口弹出，标题 DSHOME，页面为中文官方 UI + DSHOME 主题
+- [ ] 能新建会话并完成一轮对话；模型/提供方设置可改
+- [ ] 托盘存在；单实例生效；关窗最小化到托盘；开机自启开关可用
+- [ ] 后端被杀 → 离线页；重启后端 → 自动重连
+- [ ] 任务完成/需要审批时弹系统通知
+- [ ] 演示扩展（命令/面板）通过 dshome 扩展点注册并可见
+- [ ] **故障演练**：注入一个故意抛错的自有插件 → `--profile web` 不受影响 → `scripts/safe.mjs` 禁用该行 → DSHOME 正常启动 → 壳离线页 + 托盘重启后端可恢复（见 §13.5）
+- [ ] 与现有的 `--profile web` 实例并存互不干扰
+- [ ] 本机其他 .lnk / 双击流程可用
 
-## 11. 鎵╁睍鐐硅鑼冿紙鏈潵鎻掍欢鐨勬帴鍏ュ绾︼級
+## 11. 扩展点规范（未来插件的接入契约）
 
-| 鎻掍欢绫诲瀷 | 鎺ュ叆鏂瑰紡 | 鍏堜緥 |
+| 插件类型 | 接入方式 | 先例 |
 |---|---|---|
-| 涓婚/鐨偆 | `dsh.client` 娉ㄥ叆锛岃鍐?ui-theme seam | `dsh-client-ui-skin-*` 甯傚満鍖?|
-| 鍛戒护锛堝惈 Ctrl+K 闈㈡澘锛?| `ctx.dshome.commands.register(...)` | 瀹樻柟 ui-commands + dshome/core |
-| 渚ф爮/闄勫姞闈㈡澘 | 瀹樻柟 `dsh-client-ui-slots` 娉ㄥ唽浣嶇偣 / `ctx.dshome.panels.register(...)` | `dsh-better-sidebar` |
-| host 鑳藉姏锛堟墭鐩橀」銆侀€氱煡銆佺綉鍏筹級 | 琛?insert `name: <pkg>/<subpath>`锛屾敞鍏?dshome 鏈嶅姟鎴栧畼鏂规湇鍔?| `dsh-plugin-desktop/*` 绯诲垪 |
-| 鐩存帴瑁呭競鍦虹幇鎴愭彃浠?| `dsh plugin --profile dshome add <鍖?`锛堜笉鏀?dshome 浠ｇ爜锛?| 鈥斺€?|
+| 主题/皮肤 | `dsh.client` 注入，覆盖 ui-theme seam | `dsh-client-ui-skin-*` 市场插件 |
+| 命令（含 Ctrl+K 面板） | `ctx.dshome.commands.register(...)` | 官方 ui-commands + dshome/core |
+| 侧栏/附加面板 | 官方 `dsh-client-ui-slots` 注册位点 / `ctx.dshome.panels.register(...)` | `dsh-better-sidebar` |
+| host 能力（托盘项、通知、网关） | `- insert` `name: <pkg>/<subpath>`，注册 dshome 服务或官方服务 | `dsh-plugin-desktop/*` 系列 |
+| 直接装市场现成插件 | `dsh plugin --profile dshome add <包名>`（不改 dshome 代码） | —— |
 
-鍐嶅己璋冿細楠ㄦ灦蹇呴』鍦?Phase 1 灏辨妸 **鈶?profile/bundle 鏍囪瘑 鈶?cordis.patch.yml 鍒嗗眰 鈶?ctx.dshome 鏈嶅姟** 涓変釜鎵╁睍鐐圭珛浣忥紝鍚庣画鎻掍欢鎵?鍙瑁呭氨瑁?銆?
-## 12. 浜屾湡璺嚎鍥撅紙鎻掍欢鍖栵紝闈為鏋跺唴瀹癸級
+再强调：骨架必须在 Phase 1 就把 **"profile/bundle 标识 + cordis.patch.yml 分层 + ctx.dshome 服务"** 三个扩展点立住，后续插件"只说装就装"。
+## 12. 二期路线图（插件化，非骨架内容）
 
-1. **鍛戒护闈㈡澘**锛圕trl+K锛氬垏妯″瀷/鍒囧伐浣滅洰褰?寮€浼氳瘽锛夆啋 dshome 鎵╁睍鎻掍欢
-2. **浼氳瘽鏀惰棌/缃《**锛氫晶鏍忎綅鐐规敞鍐屾彃浠?3. **闄勫姞闈㈡澘**锛氬伐浣滅洰褰曟枃浠舵爲 / 浠诲姟鐪嬫澘 / token 鐢ㄩ噺灏忓崱鐗?鈫?panels 娉ㄥ唽琛ㄦ彃浠?4. **鎵嬫満杩滅▼璁块棶**锛氬弬鑰冨競鍦虹綉鍏崇被鎻掍欢锛坉sh-remote-* / dsh-mobile-pwa锛?5. **浜у搧鍖栧澹?*锛歍auri v2 鍗?exe锛堢豢鑹插垎鍙戯紝RFC 鏃惰瘎浼帮級锛屾垨 npm 鍙戝竷 `dshome` 渚涘競鍦哄畨瑁?6. **macOS**銆佹繁鑹?娴呰壊澶氫富棰樺寘銆佽嚜鏈夊墠绔粍浠堕€愭鏇挎崲瀹樻柟琛岋紙鍒╃敤 roster 鍙彃鎷旀€ф帹杩涘埌"鍏ㄨ嚜鏈夌晫闈?锛?
-## 13. 椋庨櫓涓庡绛?
-| 椋庨櫓 | 瀵圭瓥 |
+1. **命令面板**（Ctrl+K：切模型/切工作目录/开会话）→ dshome 扩展插件
+2. **会话收藏/置顶**：侧栏位点注册插件
+3. **附加面板**：工作目录文件树 / 任务看板 / token 用量小卡片（走 panels 注册表插件）
+4. **手机远程访问**：参考市场网关类插件（dsh-remote-* / dsh-mobile-pwa）
+5. **产品化外壳**：Tauri v2 的 exe（绿色分发，RFC 时评估），或 npm 发布 `dshome` 供市场安装
+6. **macOS**、深色/浅色多主题包、自有前端组件逐步替换官方行（利用 roster 可插拔，逐步推进到"全自有界面"）
+## 13. 风险与对策
+| 风险 | 对策 |
 |---|---|
-| bundle/鎻掍欢瀛楁璇箟涓庡畼鏂规枃妗ｆ湁鍑哄叆 | 瀹炴柦鏃朵互鏈満 `node_modules/@deepseek-ai/dsh-cmdline`銆乣dsh-app-boot` 婧愮爜涓?`dsh plugin` 瀹炴祴涓哄噯锛堟湰鏈哄嵆鏈?2.0.3 瀹屾暣瑙ｅ寘鍓湰锛?|
-| Electron 杩愯鏃堕娆′笅杞芥參/缃戠粶鍙楅檺 | 鎵嬪姩鏀剧疆杩愯鏃惰矾寰勯€夐」锛涙垨鍏堢敤绯荤粺娴忚鍣ㄩ獙璇?Phase 1 鍐嶈繘 Phase 2 |
-| 绔彛鍐茬獊锛堝涓?profile 鍚屾満锛?| DSHOME 涓撳睘榛樿绔彛 + webStartup 鍔ㄦ€佸垎閰嶅厹搴?|
-| 涓婃父 `0.1.1-rc.2` 鍗囩骇婕傜Щ | 璺熼殢 DSH Desktop 鐨?pin 绛栫暐锛屽崌鐗堣蛋鐙珛楠岃瘉 |
-| 涓婚 seam API 鏈煡缁嗚妭 | 璇?`node_modules/@deepseek-ai/dsh-client-ui-theme/src` 鍚庡疄鐜帮紙鏈夊競鍦?skin 鍏堜緥鍏滃簳锛?|
-| 鑷粯 UI 宸ヤ綔閲忓け鎺?| 楠ㄦ灦绂佹鑷粯锛涜嚜缁樹竴寰嬭繘浜屾湡骞惰蛋 roster 鏇挎崲璺嚎 |
+| bundle/插件字段语义与官方文档有出入 | 实施时以本机 `node_modules/@deepseek-ai/dsh-cmdline`、`dsh-app-boot` 源码与 `dsh plugin` 实测为准（本机即有 2.0.3 完整解包副本） |
+| Electron 运行时首次下载慢/网络受限 | 手动放置运行时路径选项；或先用系统浏览器验证 Phase 1 再进 Phase 2 |
+| 端口冲突（多个 profile 同机） | DSHOME 专属默认端口 + webStartup 动态分配兜底 |
+| 上游 `0.1.1-rc.2` 升级漂移 | 跟随 DSH Desktop 的 pin 策略，升版走独立验证 |
+| 主题 seam API 未知细节 | 读 `node_modules/@deepseek-ai/dsh-client-ui-theme/src` 后实现（有市场 skin 先例兜底） |
+| 自绘 UI 工作量失控 | 骨架禁止自绘；自绘一律进二期并走 roster 替换路线 |
 
-## 13.5 闃插穿婧冧笌鍙仮澶嶆€ц璁★紙楠ㄦ灦纭€ц姹傦級
+## 13.5 防崩溃与可恢复性设计（骨架硬性要求）
 
-**缁撹**锛氭彃浠跺仛宕╀簡 DSHOME 鑳芥甯稿惎鍔ㄢ€斺€斾絾杩欐槸璁捐淇濊瘉锛屼笉鏄嚜鍔ㄨ涓恒€傞鏋跺繀椤诲疄鐜颁互涓嬫姢鏍忥紝骞舵妸"鏁呴殰婕旂粌"鍒椾负楠屾敹椤癸紙搂10锛夈€?
-**瀹樻柟宸叉牳瀹炵殑鍦板熀**锛堟湰鏈?2.0.3 婧愮爜锛夛細
-- 閰嶇疆搴旂敤**浜嬪姟鍖?*锛氬け璐ヨ嚜鍔ㄥ洖婊氬埌"涓婁竴涓ソ鏍?锛坉sh-app-boot锛歚the last good tree remains active when rollback succeeds`锛夛紱
-- boot 瀹夎 **fail-loud Loader 瀹堝崼**锛屽惎鍔ㄩ敊璇ぇ澹板け璐ャ€佷笉鐣欏崐娈嬬姸鎬侊紙dsh-app-boot lib/index.js锛夛紱
-- loader 灞?*鑱氬悎閿欒 + 鍥炴粴**锛坈ordis-plugin-loader锛歟ntries 澶辫触 鈫?AggregateError 鈫?rollback锛夛紱
-- 瀹樻柟鎭㈠璇婃柇 `--dump-default-config`锛氬潖鐨勭敤鎴峰眰涔熻兘鍑鸿瘖鏂紙dsh-app-boot lib/index.js:535-536锛夛紱
-- DSH Desktop 鑷甫 recovery/setup-wizard 鐣岄潰涓?鍋ュ悍鍚姩 checkpoint"鏈哄埗锛坣ative-ui/recovery.html锛沝sh-community-market README锛夈€?
-**DSHOME 浜斿眰闃叉姢**锛?
-| 灞?| 鏈哄埗 | 褰掑睘 |
+**结论**：插件做崩了 DSHOME 能正常启动——但这是设计保证，不是自动行为。骨架必须实现以下护栏，并把"故障演练"列为验收项（§10）。
+**官方已核实的地基**（本机 2.0.3 源码）：
+- 配置应用**事务化**：失败自动回滚到"上一个好树"（dsh-app-boot：`the last good tree remains active when rollback succeeds`）；
+- boot 安装 **fail-loud Loader 守卫**，启动错误大声失败、不留半残状态（dsh-app-boot lib/index.js）；
+- loader 层**聚合错误 + 回滚**（cordis-plugin-loader：entries 失败 → AggregateError → rollback）；
+- 官方恢复诊断 `--dump-default-config`：坏的用户层也能出诊断（dsh-app-boot lib/index.js:535-536）；
+- DSH Desktop 自带 recovery/setup-wizard 界面与"健康启动 checkpoint"机制（native-ui/recovery.html；dsh-community-market README）。
+**DSHOME 五层防护**：
+| 层 | 机制 | 归属 |
 |---|---|---|
-| L0 鏁呴殰鍩熼殧绂?| 姣?profile 鐙珛杩涚▼锛涘３锛圗lectron锛変笌鍚庣锛圕ordis host锛夎繘绋嬪垎绂伙紝浜掍笉鎷栧灝 | 瀹樻柟 + DSHOME 澹?|
-| L1 浜嬪姟鍖栧惎鍔?| 閰嶇疆鍥炴粴鍒颁笂涓€涓ソ鏍?+ fail-loud 瀹堝崼 + 鎭㈠璇婃柇 | 瀹樻柟锛堢洿鎺ョ户鎵匡級 |
-| L2 琛岀骇鍙鐢?| 琛ヤ竵鍒嗗眰瑕嗙洊锛歚--patch` 瑕嗙洊灞備竴琛?`disabled: true` 鍗冲彲绂佺敤浠绘剰鑷湁鎻掍欢锛沗scripts/safe.mjs` 涓€閿?绂佺敤鍏ㄩ儴鑷湁鎻掍欢"鍚姩锛岀绾у垽瀹氬穿婧冩潵婧?| DSHOME 鑴氭湰 |
-| L3 澹冲眰娲绘€ф仮澶?| 鍚庣琚潃 鈫?绂荤嚎椤?鈫?鎵樼洏涓€閿噸鍚悗绔?鈫?鑷姩閲嶈繛 | DSHOME 澹?|
-| L4 鑷湁鎻掍欢鎶ゆ爮 | 鎻掍欢鐧昏鍏?try/catch + 鏈嶅姟闄嶇骇锛堟壘涓嶅埌瀹樻柟鏈嶅姟灏变笉娉ㄥ唽锛岀粷涓?throw 闃绘柇鍚姩锛夛紱client 鎻掍欢宕╂簝 鈫?闄嶇骇涓烘棤瀹氬埗瀹樻柟 UI锛?*涓嶆槸鐧藉睆** | DSHOME 浠ｇ爜瑙勮寖 |
+| L0 故障域隔离 | 每个 profile 独立进程；壳（Electron）与后端（Cordis host）进程分离，互不拖垮 | 官方 + DSHOME 壳 |
+| L1 事务化启动 | 配置回滚到上一个好树 + fail-loud 守卫 + 恢复诊断 | 官方（直接继承） |
+| L2 行级可禁用 | 补丁分层覆盖：`--patch` 覆盖层一行 `disabled: true` 即可禁用任意自有插件；`scripts/safe.mjs` 一键"禁用全部自有插件"启动，秒级判定崩溃来源 | DSHOME 脚本 |
+| L3 壳层活性恢复 | 后端被杀 → 离线页 → 托盘一键重启后端 → 自动重连 | DSHOME 壳 |
+| L4 自有插件护栏 | 插件登记进 try/catch + 服务降级（找不到官方服务就不注册，绝不 throw 阻断启动）；client 插件崩溃 → 降级为无定制官方 UI（**不是白屏**） | DSHOME 代码规范 |
 
-**宕╂簝鍒嗙骇涓庢仮澶嶈矾寰?*锛?- 鑷湁 client 鎻掍欢宕?鈫?L4 闄嶇骇 / L2 绂佺敤锛?- 鑷湁 host 鎻掍欢宕?鈫?L0 绂荤嚎椤?+ L2 绂佺敤鍚庨噸鍚紱
-- 閰嶇疆鎹熷潖 鈫?L1 鍥炴粴 / 瀹樻柟 recovery 涓庤瘖鏂紱
-- 涓婃父锛堝畼鏂?bundle锛夊眰闂 鈫?pin 鐗堟湰 + 鍗囩骇绛栫暐锛屼笉灞炰簬楠ㄦ灦鍙槻鑼冨洿銆?
-**鍙傝€冨厛渚嬶紙姣忓眰閮芥湁鐜版湁椤圭洰鑳屼功锛岄潪鑷垱锛?*锛?
-| 灞?| DSH 鐢熸€佸唴鍏堜緥锛堝凡鏍稿疄锛?| 鐢熸€佸閫氱敤鍋氭硶 |
+**崩溃分级与恢复路径**：
+- 自有 client 插件崩 → L4 降级 / L2 禁用；
+- 自有 host 插件崩 → L0 离线页 + L2 禁用后重启；
+- 配置损坏 → L1 回滚 / 官方 recovery 与诊断；
+- 上游（官方 bundle）层问题 → pin 版本 + 升级策略，不属于骨架可防范围。
+**参考先例（每层都有现有项目背书，非自创）**：
+| 层 | DSH 生态内先例（已核实） | 生态外通用做法 |
 |---|---|---|
-| L0 杩涚▼闅旂 | profile 鐙珛杩涚▼锛汥SH Desktop 涓?娓叉煋杩涚▼鍒嗙 | VS Code 鎵╁睍瀹夸富杩涚▼闅旂锛汣hrome process-per-extension锛汦lectron render-process-gone 閲嶅惎绐楀彛 |
-| L1 浜嬪姟鍖栧惎鍔?| dsh-app-boot "涓婁竴涓ソ鏍?鍥炴粴锛?*DSH Desktop 鐨?Recovery checkpoint**锛氭彃浠跺畨瑁?绉婚櫎鍓嶇敓鎴愭仮澶嶇偣锛屽け璐ユ彁绀?Use a Recovery checkpoint to restore the previous Profile state"锛坉sh-community-market/service.js:459/526锛夛紱desktop-cli.js:43 "Manual plugin commands and Market operations rely on unified checkpoints" | 娴忚鍣ㄩ厤缃牎楠屼繚鐣?last-good锛涘寘绠＄悊鍣ㄥ師瀛愬畨瑁?|
-| L2 琛岀骇鍙鐢?| patch 瑕嗙洊灞?disabled锛?*DSH Desktop 鑷甫"閲嶅惎鍒版仮澶嶆ā寮?**锛?api/desktop/restart/recovery + LifeBuoy 鑿滃崟椤癸紝lib/client.js:35756/35931锛?| VS Code `--disable-extensions`锛坰afe.mjs 鍗?DSH 鐗堬級锛汣hrome 宕╂簝鎵╁睍鑷姩 quarantine |
-| L3 澹冲眰娲绘€ф仮澶?| dsh-clean-desktop-shell 宸查獙璇侊細娲绘€х洃娴?+ 绂荤嚎椤?+ 鑷姩閲嶈繛 + 鎵樼洏閲嶅惎鍚庣 | Chrome 鏍囩宕╂簝鎭㈠椤碉紱Electron 娓叉煋杩涚▼宕╂簝鍏滃簳 |
-| L4 闄嶇骇鎶ゆ爮 | 瀹樻柟 renderer 涓?React 18锛涜嚜鏈夌粍浠跺寘 Error Boundary锛堝眬閮ㄥ穿婧冧笉鐧藉睆锛?| React Error Boundary锛涙祻瑙堝櫒鎵╁睍杩愯鏃堕敊璇殧绂伙紙鎵╁睍宕╂簝涓嶆嫋鍨〉闈級 |
+| L0 进程隔离 | profile 独立进程；DSH Desktop 中渲染进程分离 | VS Code 扩展宿主进程隔离；Chrome process-per-extension；Electron render-process-gone 重启窗口 |
+| L1 事务化启动 | dsh-app-boot "上一个好树"回滚；**DSH Desktop 的 Recovery checkpoint**：插件安装/移除前生成恢复点，失败提示 "Use a Recovery checkpoint to restore the previous Profile state"（dsh-community-market/service.js:459/526）；desktop-cli.js:43 "Manual plugin commands and Market operations rely on unified checkpoints" | 浏览器配置校验保留 last-good；包管理器原子安装 |
+| L2 行级可禁用 | patch 覆盖层 disabled；**DSH Desktop 自带"重启到恢复模式"**：api/desktop/restart/recovery + LifeBuoy 菜单项，lib/client.js:35756/35931 | VS Code `--disable-extensions`（safe.mjs 的 DSH 版）；Chrome 崩溃扩展自动 quarantine |
+| L3 壳层活性恢复 | dsh-clean-desktop-shell 已验证：活性监测 + 离线页 + 自动重连 + 托盘重启后端 | Chrome 标签崩溃恢复页；Electron 渲染进程崩溃兜底 |
+| L4 降级护栏 | 官方 renderer 用 React 18；自有组件包 Error Boundary（局部崩溃不白屏） | React Error Boundary；浏览器扩展运行时错误隔离（扩展崩溃不拖垮页面） |
 
-> 缁撹锛氭湰鏂规浜斿眰闃叉姢姣忎竴椤归兘鑳藉湪鐜版湁椤圭洰閲屾壘鍒板搴斿厛渚嬶紱楠ㄦ灦涓嶅彂鏄庢柊鏈哄埗锛屽彧鎶婂凡楠岃瘉妯″紡缁勮鍒?DSHOME 骞剁撼鍏ラ獙鏀躲€?
-**鎶ゆ爮缂栫爜瑙勮寖锛堥鏋朵唬鐮佸繀椤婚伒瀹堬級**锛?1. 鎵€鏈夎嚜鏈夋彃浠跺惎鍔ㄩ€昏緫 try/catch锛岄敊璇彧璁版棩蹇椾笉 rethrow锛?2. 渚濊禆瀹樻柟鏈嶅姟涓€寰?`ctx.get`/鍙€夎幏鍙栵紝缂哄け鍗宠烦杩囨敞鍐岋紱
-3. client 绔敞鍐岋紙slots/鍛戒护锛夊け璐ラ潤榛橀檷绾э紝淇濊瘉瀹樻柟 UI 鍙覆鏌擄紱
-4. 姣忎釜鑷湁鎻掍欢鐙珛鎴愯锛屽彲鍗曠嫭 `disabled`銆?
-## 14. 鍙傝€冩竻鍗曪紙鏈満鍙鐨勬潈濞佸弬鐓э級
+> 结论：本方案五层防护每一项都能在现有项目里找到对应先例；骨架不发明新机制，只把已验证模式组装进 DSHOME 并纳入验收。
+**护栏编码规范（骨架代码必须遵守）**：
+1. 所有自有插件启动逻辑 try/catch，错误只记日志不 rethrow；
+2. 依赖官方服务一律 `ctx.get`/可选获取，缺失即跳过注册；
+3. client 端注册（slots/命令）失败静默降级，保证官方 UI 可渲染；
+4. 每个自有插件独立成行，可单独 `disabled`。
+## 14. 参考清单（本机可读的权威参照）
 
-- 瀹樻柟 web 琛ヤ竵/roster锛歚E:\DSH\app.src\node_modules\@deepseek-ai\dsh-web-app\cordis.patch.yml`
-- 鍩哄骇灞傦細`E:\DSH\app.src\node_modules\@deepseek-ai\dsh-base\cordis.patch.yml`锛堝惈 77 渚濊禆鏍稿績琛岋級
-- 妗岄潰鍏煎妯″紡妯℃澘锛歚E:\DSH\app.src\cordis.patch.yml`
-- 瀹㈡埛绔敞鍏ュ０鏄庢牱渚嬶細`E:\DSH\app.src\node_modules\dsh-community-market\package.json`锛坉sh.client.inject 瀛楁锛?- 鎻掍欢褰㈡€佽杽澹冲姛鑳介潰锛欸itHub `Icather/dsh-clean-desktop-shell`锛圧EADME 宸叉牳瀹烇級
-- 甯傚満鐢熸€侊細1024Store `https://deepseek1024.com/api/v2/plugins`锛坈lient/terminal/mobile/desktop shell 鍒嗙被妫€绱級
-- 涓婃父瀹樻柟锛歚github.com/deepseek-ai/deepseek-harness`锛汥SH Desktop 绀惧尯瀹炵幇锛歚github.com/anywhere-labs/deepseek-harness-desktop`
+- 官方 web 补丁/roster：`E:\DSH\app.src\node_modules\@deepseek-ai\dsh-web-app\cordis.patch.yml`
+- 基座层：`E:\DSH\app.src\node_modules\@deepseek-ai\dsh-base\cordis.patch.yml`（含 77 依赖核心行）
+- 桌面兼容模式模板：`E:\DSH\app.src\cordis.patch.yml`
+- 客户端注入声明样例：`E:\DSH\app.src\node_modules\dsh-community-market\package.json`（dsh.client.inject 字段）
+- 插件形态薄壳功能面：GitHub `Icather/dsh-clean-desktop-shell`（README 已核实）
+- 市场生态：1024Store `https://deepseek1024.com/api/v2/plugins`（client/terminal/mobile/desktop shell 分类检索）
+- 上游官方：`github.com/deepseek-ai/deepseek-harness`；DSH Desktop 社区实现：`github.com/anywhere-labs/deepseek-harness-desktop`
 
 ---
 
-> 鏈枃妗ｅ嵆"瀹屾暣璁捐鏂规"銆傚疄鏂芥椂鎸?Phase 0鈫? 椤哄簭鎵ц锛屾瘡闃舵楠屾敹閫氳繃鍐嶈繘涓嬩竴闃舵锛涗换浣曚笌鏈枃妗?寰呭疄娴?鏍囨敞鍐茬獊鐨勫畼鏂硅涓猴紝浠ュ疄娴?+ 瀹樻柟婧愮爜涓哄噯骞跺洖濉湰鏂囨。銆?
+> 本文档即"完整设计方案"。实施时按 Phase 0→ 顺序执行，每阶段验收通过再进下一阶段；任何与本文档"待实施"标注冲突的官方行为，以实测 + 官方源码为准并回填本文档。
 ---
 
-## 15. 瀹炴柦璁板綍锛圥hase 0鈥? 瀹炴祴缁撹 2026-08-28锛?
-**缁撹鍏堣**锛歚dsh --profile dshome` 宸插湪鏈満鐢?*瀹樻柟 dsh CLI** 璺戦€氾紱`http://127.0.0.1:3081` 杩斿洖 200锛宍__DSH_BOOT__` 娉ㄥ叆瀹屾暣瀹樻柟 client roster锛?8 涓ā鍧楋級锛屼笌鐜版湁 web profile锛?3120锛夊苟瀛樹簰涓嶅共鎵般€備唬鐮佸湪 `E:\DSH\dshome`锛宲rofile 鍦?`C:\Users\kuro\.dsh\profiles\dshome`銆?
-### 15.1 "寰呭疄娴?椤圭洰闂幆
+## 15. 实施记录（Phase 0 起，实测结论 2026-08-28）
+**结论先行**：`dsh --profile dshome` 已在本机用**官方 dsh CLI** 跑通；`http://127.0.0.1:3081` 返回 200，`__DSH_BOOT__` 注入完整官方 client roster（38 个模块），与现有 web profile（3120）并存互不干扰。代码在 `E:\DSH\dshome`，profile 在 `C:\Users\kuro\.dsh\profiles\dshome`。
+### 15.1 "待实施"项目闭环
 
-| 寰呭疄娴嬮」 | 缁撹 |
+| 待实测项 | 结论 |
 |---|---|
-| profile 鐩綍缁撴瀯 | `$DSH_HOME/profiles/<name>/`锛歱ackage.json锛坄dsh.profile.bundles` 澹版槑琛ヤ竵灞傚簭锛? 鐢ㄦ埛灞?`cordis.patch.yml` + `cordis.yml`锛堝嬁鏀癸級+ `pnpm-workspace.yaml`锛涘姞杞藉櫒杩樹細璇?`$DSH_HOME/cordis.patch.yml`锛坔ome 灞傦級 |
-| 鍚姩鍛戒护 | `dsh --profile dshome [--no-open] [--port <n>\|0]`锛沗--port 0` 璁╃郴缁熸寫绌洪棽鍙?|
-| 绔彛绛栫暐 | **webserver 琛?config 涓嶈鍐欐绔彛**锛堜細閽冲埗 CLI 鍙傛暟锛夛紝涓€寰嬬粡 CLI `--port` |
-| locale | 涓嶈蛋琛ヤ竵瑕嗙洊琛岋細璁剧疆椤?`locale.preference: zh\|en`锛堢己鐪佽窡闅忔祻瑙堝櫒锛夛紝涓枃 UI 鐢辨祻瑙堝櫒 zh 鑷姩鐢熸晥 |
-| profile 渚濊禆 | **閲嶅ぇ鍙戠幇**锛欳LI 鍔犺浇鍣ㄤ粠 profile 鑷韩鐩綍瑙ｆ瀽鎵€鏈夎鍖?鈫?瀹樻柟 bundles 蹇呴』**鏄惧紡鍐欒繘 profile dependencies**锛坄dsh-base`/`dsh-web-app` 绮剧‘鐗堟湰锛? workspace `autoInstallPeers: true`銆倃eb/desktop 鐨勭┖ dependencies 妯″紡鍙湪 GUI锛坅pp.asar 鍐呯疆渚濊禆锛夋垚绔嬶紱鍚屾満 CLI 璺緞浼氭姤 `Cannot find package 鈥?imported from <profile>` |
-| dump 璇婃柇 | `--dump-config` / `--dump-default-config` 绂荤嚎缁勫悎鍙敤锛涚閬撴彁鍓嶅叧闂紙`Select-Object -First`锛変細閫犳垚 EPIPE 璇姤 exit 1锛岄潪鐪熷疄閿欒 |
+| profile 目录结构 | `$DSH_HOME/profiles/<name>/`：package.json（`dsh.profile.bundles` 声明补丁层序）、用户层 `cordis.patch.yml` + `cordis.yml`（勿改）+ `pnpm-workspace.yaml`；加载器还会读 `$DSH_HOME/cordis.patch.yml`（home 层） |
+| 启动命令 | `dsh --profile dshome [--no-open] [--port <n>\|0]`；`--port 0` 让系统挑空闲端口 |
+| 端口策略 | **webserver 的 config 不要写死端口**（会钳制 CLI 参数），一律经 CLI `--port` |
+| locale | 不走补丁覆盖行：设置里 `locale.preference: zh\|en`（缺省跟随浏览器），中文 UI 由浏览器 zh 自动生效 |
+| profile 依赖 | **重大发现**：CLI 加载器从 profile 自身目录解析所有行，所以官方 bundles 必须**显式写进 profile dependencies**（`dsh-base`/`dsh-web-app` 精确版本 + workspace `autoInstallPeers: true`。web/desktop 的空 dependencies 模式只在 GUI（app.asar 内置依赖）成立；同机 CLI 路径会报 `Cannot find package 'x' imported from <profile>` |
+| dump 诊断 | `--dump-config` / `--dump-default-config` 离线组合可用；管道提前关闭（`Select-Object -First`）会造成 EPIPE 误报 exit 1，非真实错误 |
 
-### 15.2 宸茬‘璁ょ殑瀹樻柟鏈哄埗锛堟簮鐮佺骇锛?
-- `runProfile` 鎶?`options.environment`锛坄loadLayeredEnv` 蹇収锛屽甫 `.get`锛夋敞鍐屼负 `launchEnvironment` 鏈嶅姟锛沴lm-deepseek 绛夌粡瀹冭鍙?`environment?.get(...)?.value`鈥斺€旇瘖鏂剼鏈?*涓嶈兘**浼犺８ `process.env`锛?- 鍚姩澶辫触鍙墦鍗伴《灞傛秷鎭紝瀛愰敊璇棌鍦?`error.errors`锛堣瘖鏂伐鍏凤細`dshome/probe.mjs`锛屽彲鎵撳嵃浠绘剰 profile 鐨勬繁灞傞敊璇級锛?- 澶辫触鍙戠敓鍦ㄨ鎸傝浇/瀵煎叆闃舵鏃讹紝鎶ラ敊鍚?`imported from <profile鐩綍>`锛屽彲鐩存帴瀹氫綅缂哄寘/缂?peers銆?
-### 15.3 宸茬煡闂涓庡绛?
-| 闂 | 瀵圭瓥 |
+### 15.2 已确认的官方机制（源码级）
+- `runProfile` 把 `options.environment`（`loadLayeredEnv` 快照，带 `.get`）注册为 `launchEnvironment` 服务；llm-deepseek 等经它读取 `environment?.get(...)?.value`——诊断脚本**不能**传裸 `process.env`；
+- 启动失败只打印顶层消息，子错误藏在 `error.errors`（诊断工具：`dshome/probe.mjs`，可打印任意 profile 的深层错误）；
+- 失败发生在行挂载/导入阶段时，报错含 `imported from <profile目录>`，可直接定位缺包/缺 peers。
+### 15.3 已知问题与对策
+| 问题 | 对策 |
 |---|---|
-| `pnpm install` 浼氫负 sharp 绛夎法骞冲彴鍙€?tarball 闀挎椂闂撮噸璇曪紙error 23锛?| 闈炶嚧鍛斤細渚濊禆鏍戣榻愬嵆鍙惎鍔紝鏃犻渶绛夐噸璇曠粨鏉燂紱蹇呰鏃舵崲闀滃儚 |
-| 鍘熺敓 module build 榛樿琚烦杩囷紙node-pty/koffi/protobufjs/@google/genai/dsh-subprocess-local锛?| Phase 1 鏃犵粓绔?鍘熺敓鑳藉姏锛屼笉鍙楀奖鍝嶏紱Phase 2 澹?缁堢鍓嶉渶 `allowBuilds: true` 鍚庨噸瑁呮垨 `pnpm approve-builds` |
-| dshome-core 鐨?info 鏃ュ織涓嶅嚭鐜颁簬 CLI stdout锛堟棩蹇楀幓鍚戝皝瑁咃級 | 琛屾寕杞芥棤鎶ラ敊鍗充负婵€娲伙紱Phase 3 鐢?UI 鍙鎬у仛杩愯鏃堕獙璇?|
-| 璋冭瘯娈嬬暀锛坧robe.mjs / probe-asar.mjs / wrapper.mjs / bisect-1.yml锛?| 淇濈暀涓鸿瘖鏂伐鍏凤紱`bisect-1.yml` 鍗?瑕嗙洊灞傜鐢?浜屽垎鐨勫疄璇?|
+| `pnpm install` 会为 sharp 等跨平台可选 tarball 长时间重试（error 23） | 非致命：依赖树装齐即可启动，无需等重试结束；必要时换镜像 |
+| 原生 module build 默认被跳过（node-pty/koffi/protobufjs/@google/genai/dsh-subprocess-local） | Phase 1 无终端等原生能力，不受影响；Phase 2 开终端前需 `allowBuilds: true` 后重装或 `pnpm approve-builds` |
+| dshome-core 的 info 日志不出现于 CLI stdout（日志去向封装） | 行挂载无报错即为已激活；Phase 3 用 UI 可见性做运行时验证 |
+| 调试残留（probe.mjs / probe-asar.mjs / wrapper.mjs / bisect-1.yml） | 保留为诊断工具；`bisect-1.yml` 是覆盖层禁用二分的实例 |
 
-### 15.4 甯哥敤鍛戒护
+### 15.4 常用命令
 
 ```
-dsh --profile dshome --no-open --port 3081   # 鍚姩锛堟闈㈠３鎺ュ叆鍓嶆帹鑽愶級
-dsh --profile dshome --port 0                # 绯荤粺鎸戠┖闂茬鍙?dsh --profile dshome --dump-config           # 鏌ョ湅缁勫悎鍚庣殑瀹屾暣鏍戯紙鍚敤鎴峰眰锛?node E:\DSH\dshome\scripts\dev.mjs           # 寮€鍙戝惊鐜紙绛変环鍚姩锛?node E:\DSH\dshome\scripts\safe.mjs          # 鎭㈠妯″紡锛堢鐢ㄥ叏閮ㄨ嚜鏈夋彃浠跺惎鍔級
+dsh --profile dshome --no-open --port 3081   # 启动（桌面壳接入前推荐）
+dsh --profile dshome --port 0                # 系统挑空闲端口
+dsh --profile dshome --dump-config           # 查看组合后的完整树（含用户层）
+node E:\DSH\dshome\scripts\dev.mjs           # 开发循环（等价启动）
+node E:\DSH\dshome\scripts\safe.mjs          # 恢复模式（禁用全部自有插件启动）
 ```
 
-**妗岄潰蹇嵎鏂瑰紡锛堝厤缁堢锛?*锛歚DSHOME.lnk`锛坵script 闅愯棌鍚姩 `scripts/launch.vbs` 鈫?鍚庣闅愯棌鎺у埗鍙拌繍琛?+ 绐楀彛鑷姩寮瑰嚭锛変笌 `DSHOME 鍋滄.lnk`锛坄scripts/stop.cmd`锛岀粨鏉?3081 鍚庣锛夈€傚惎鍔ㄥ櫒娴嬭瘯妯″紡锛歚DSHOME_LAUNCH_TEST=1` 鏃跺彧鍐欐爣璁版枃浠朵笉鍚姩銆?
-### 15.5 Phase 1 琛ュ厖楠岃瘉锛堢鍒扮鑱婂ぉ + 杩愯鏃惰В鏋愬喅绛栵級
+**桌面快捷方式（免终端）**：`DSHOME.lnk`（wscript 隐藏启动 `scripts/launch.vbs`，后端隐藏控制台运行 + 窗口自动弹出）与 `DSHOME 停止.lnk`（`scripts/stop.cmd`，结束 3081 后端）。启动器测试模式：`DSHOME_LAUNCH_TEST=1` 时只写标记文件不启动。
+### 15.5 Phase 1 补充验证（端到端聊天 + 运行时解析决策）
 
-**RPC 閫氶亾**锛堜笌娴忚鍣?UI 鍚屼竴鏉′紶杈擄級锛歚POST /api/<method>`锛屼俊灏?`{"type":"client-request","rpcId":"<string>","method":"<domain.method>","params":{...},"payload":{...}}`銆?- list/create 璧扮獎褰?`params`锛沺rompt 绛?`RequestPayload` 鏂规硶杩橀渶鎶婁笟鍔″璞″悓鏃舵斁杩?`payload` 妲斤紱
-- Host 椤讳负 loopback/鍚屾簮锛坄Origin` 鍚?host 鍗冲彲锛夛紱
-- `session.history` 杩斿洖 `value.events` 浜嬩欢娴侊細`assistant/chunk`锛坱ext-delta / usage / finish锛夈€乣assistant/message`銆乣turn/end`銆?
-**绔埌绔粨鏋?*锛歚session.create 鈫?session.prompt("璇峰彧鍥炲涓や釜瀛楋細浣犲ソ") 鈫?妯″瀷娴佸紡鍥炲"浣犲ソ"锛坧rovider opencode-go / deepseek-v4-flash锛岃鍙?home 鍑嵁涓庤矾鐢憋級鈫?turn/end`銆俙verify-chat.mjs` 缁跨伅锛坋xit 0锛夈€傝瘖鏂伐鍏凤細`probe-rpc.mjs`锛堜换鎰忔柟娉曪級銆乣probe-history.mjs`锛堜簨浠舵祦灏鹃儴锛夈€?
-**杩愯鏃惰В鏋愬喅绛栵紙鏈満 v1锛?*锛歴tandard/code/cordis/minimal 鍥涗釜 agent preset 寮曠敤绾?30 涓?`@deepseek-ai/dsh-tool-*` 鍖咃紝鍏朵腑灏戞暟鏈彂甯冨埌 npm锛堝 auto-peer 鐨?`dsh-compact` 404锛夛紝绾?pnpm 鏃犳硶瑁呴綈銆?*鏈満 v1 閲囩敤 junction 鏂规**锛?- `profiles/dshome/node_modules` 鈫?`E:\DSH\app.src\node_modules`锛坅pp.asar 瑙ｅ寘鍏ㄦ爲锛?99 涓?@deepseek-ai 鍖咃級锛?- `profiles/dshome/node_modules/dshome` 鈫?`E:\DSH\dshome`锛堝寘鏈綋锛夛紱
-- 鍘熺敓棰勭紪璇戯紙koffi / node-pty / sharp / node-addon-require-builtin锛変粠 `app.asar.unpacked\node_modules` 鎷疯礉杩涜鏍戯紱
-- 鍘?pnpm 鏍戝浠戒负 `node_modules.pnpm`銆?娉ㄦ剰锛歫unction 鎺ョ鍚?`dsh plugin add`锛堣蛋 pnpm锛変笉閫傜敤锛涗笂娓歌ˉ鍙戠己澶卞寘鍚庡簲鍥炲綊 pnpm 瀹夎銆傚惎鍔ㄥ懡浠や笉鍙樸€?
-### 15.6 Phase 2 钖勫３瀹炴柦璁板綍锛?026-08-28锛?
-**浜や粯**锛歚dsh --profile dshome` 鍚姩鍗宠嚜鍔ㄥ脊鍑?DSHOME 绐楀彛锛堝畼鏂?UI锛夛紝鎵樼洏甯搁┗銆佸崟瀹炰緥銆佸悗绔鏉€澹冲瓨娲诲苟鍒囩绾块〉銆佸悗绔仮澶嶈嚜鍔ㄩ噸杩炪€?
-**浠ｇ爜**锛?- `dshome/shell-app/`锛欵lectron 绐楀彛搴旂敤锛坢ain.cjs / offline.html / icon.png锛夆€斺€斿崟瀹炰緥閿併€乧lose 鏈€灏忓寲鍒版墭鐩樸€?s 杞娲绘€с€佺绾块〉 + 鑷姩閲嶈繛銆佹墭鐩橈紙鏄剧ず/鍒锋柊/鑷惎寮€鍏?閫€鍑猴級銆佹湰鍦伴€氱煡鐩戝惉锛坄DSHOME_NOTIFY_PORT`锛孭OST /notify锛寁1.1 鎺ョ嚎锛夛紱
-- `dshome/lib/host/shell.js`锛歨ost 鎻掍欢锛坄dshome/shell` 琛岋級锛屽悗绔氨缁悗 spawn GUI锛宍createRequire` 浠?dshome 鍖呮湰鍦拌В鏋?electron銆?- electron 渚濊禆锛歯pm registry 鏋佹參/澶辫触 鈫?npmmirror 鎵嬪姩涓嬭浇 138MB + tar 瑙ｅ寘鍒?`node_modules/electron/dist` + `path.txt=electron.exe`锛堣鏈哄疄褰曪紱鍏朵粬鏈哄櫒寤鸿 `npm i -D electron@43.4.0` 閰?`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`锛夈€?
-**涓変釜鍏抽敭鍧戯紙鍧囧凡淇級**锛?1. `dsh.cmd` 浼氭妸 `ELECTRON_RUN_AS_NODE=1` 甯﹁繘鐜 鈫?spawn GUI 鍓嶅繀椤诲垹闄わ紝鍚﹀垯 Electron 浠?node 妯″紡杩愯銆佷笉鍑虹獥鍙ｏ紱
-2. **蹇呴』 `detached: true` + `child.unref()`**锛氬惁鍒欏悗绔繘绋嬶紙鐖讹級閫€鍑?琚潃鏃跺３浼氶殢杩涚▼缁勯櫔钁紙瀹炴祴澶嶇幇鍚庝慨澶嶏級锛?3. 鍚庣閲嶅惎鏃舵彃浠朵細鍐嶆 spawn 鈫?闈犲３鐨?`requestSingleInstanceLock` 骞傜瓑锛氭柊瀹炰緥閫€鍑恒€佹棫绐楀彛鑷姩閲嶈繛锛堝崟瀹炰緥涓庢椿鎬х洃娴嬪崗鍚岋級銆?
-**楠岃瘉缁撴灉锛坔eadless 瀹炴祴锛?*锛氱獥鍙?spawn 鉁咃紱浜屾鍚姩鍗曞疄渚?1鈫? 鉁咃紱鏉€鍚庣 鈫?澹冲瓨娲?鉁咃紱閲嶅惎鍚庣 鈫?澹充笉閲嶅寮€銆佺鍙ｆ仮澶?鉁咃紱涓?web profile锛?3120锛夊苟瀛?鉁呫€傝瑙夐」锛堢晫闈?鎵樼洏/绂荤嚎椤?閫氱煡锛夊緟鐢ㄦ埛瀹炴満纭銆?
-**棣栬疆瀹炴満鍙嶉淇锛?鏈夌獥鍙ｄ絾鍚庣鏈繛鎺?锛?*锛?- **鏍瑰洜**锛歮ain.cjs 娲绘€ф娴嬪啓鎴?`Promise.race([fetch鈥? Promise.resolve(false)])`鈥斺€旂浜岄」绔嬪埢 resolve锛宺ace 鎭掕繑鍥?`false`锛宖etch 鏄庢槑 200 涔熸案杩滅绾裤€傚睘瀹炵幇 bug锛岄潪鏋舵瀯闂锛?- **淇**锛歚AbortController + setTimeout` 瓒呮椂瀹炵幇锛涚姸鎬佹満鏀?`isOnline`锛屾墭鐩樻枃妗堝悓姝ワ紱绂荤嚎椤?绔嬪嵆閲嶈瘯"鏀逛负瀵艰埅鍒板悗绔?URL锛涙柊澧炶娴嬫棩蹇?`%APPDATA%\dshome-shell\dshome-shell.log`锛堟瘡鏉?fetch/state/load 钀界洏锛屽悗缁帓闅滀笉鐬庣寽锛夛紱
-- **瀹屾暣閾捐矾瀹炴祴**锛氭潃鍚庣 鈫?`fetch fail 鈫?state offline`锛堢獥鍙ｅ垏绂荤嚎椤碉級锛涢噸鍚悗绔?鈫?3 绉掑唴 `fetch ok 鈫?state online 鈫?loaded url`锛堢獥鍙ｈ嚜鍔ㄩ噸杩烇級锛涘３淇濇寔鍗曚緥 1銆?- **绗簩鍧戯紙瀹炴満鍙嶉"杩樻槸鍚庣鏈繛鎺?锛夆€斺€旂鍙ｉ粯璁ゅ€?*锛氬畼鏂?webserver 榛樿绔彛鏄?**3080**锛坵eb-app patch `port ?? 3080`锛夛紝鑰屽３鐨勫厹搴曞啓姝讳簡 3081锛涘懡浠よ鏄惧紡 `--port 3081` 鏃朵竴鍒囨甯革紝**瑁歌窇 `dsh --profile dshome` 鍚庣缁?3080銆佺獥鍙ｇ湅 3081锛屽繀鐒剁绾?*銆備慨澶嶏細鎸夊畼鏂?`localWebUrl` 鎬濊矾锛屼粠 **`webServer` 鏈嶅姟璇荤湡瀹炵粦瀹氱鍙?*锛堝彲瑕嗙洊榛樿 / `--port N` / `--port 0` 绯荤粺鍒嗛厤锛夛紝鍏滃簳鏀?3080锛沀RL 鏀瑰湪 spawn 寤舵椂鍥炶皟閲岃В鏋愶紙淇濊瘉宸茬粦瀹氾級銆傛暀璁細绔彛绛夎繍琛屼簨瀹炰竴寰嬩粠鏈嶅姟璇伙紝涓嶇‖缂栫爜銆?
-### 15.7 Phase 3 鐨偆/鍝佺墝/閫氱煡/鏁呴殰婕旂粌璁板綍锛?026-08-28锛?
-**鈶?dshome-theme 瀹㈡埛绔毊鑲ゅ寘**锛坄E:\DSH\packages\dshome-theme`锛夛細
-- 鏈哄埗锛歝lient roster 鏉＄洰 = Loader 琛ヤ竵琛屽紩鐢ㄧ殑鍖?+ 鍖呭唴 `dsh.client` 澹版槑锛坧latform web锛夛紱client.js 浠?`window.__ModuleLoader__.load({id, factory})` 宸ュ巶褰㈡€佹墜鍐欙紙鏃犻渶鏋勫缓绠＄嚎锛夛紝缁?`/plugins/<id>/client.js` 鏈嶅姟锛?- 鐨偆 API锛堝畼鏂癸級锛歚theme.overrideTokens(source, { "--dsw-alias-brand-primary": {light, dark}, ... })`鈥斺€攖oken 鎴愬锛坙ight/dark锛夛紝鍒悕灞傝鐩栧嵆鏃剁敓鏁堬紱
-- 鍝佺墝鏇挎崲锛氱鐢?`ui-brand-official` 琛?+ `ctx.slots.register({name:"sidebar.brand.mark|sidebar.brand.name|conversation.hero.brand.mark"}, 缁勪欢)` 娉ㄥ唽 DSHOME 鍝佺墝锛圫VG 鍦嗚鏂瑰潡 + D锛岃摑鑹插彇鑷搧鐗?token锛夛紱
-- 瀹炴祴锛歳oster 鍚?`dshome-theme`锛坕d/url/rev锛夛紝`ui-brand-official` 娑堝け锛宑lient.js 200銆傚畼鏂瑰墠绔?token 鍚嶏紙鎻愬彇鑷?dist CSS锛夛細`--dsw-alias-brand-primary`銆乣--dsw-alias-button-primary-fill/-hover`銆乣--dsw-alias-state-business-primary` 绛夛紙鍏ㄩ儴 requiresLightAndDark锛夈€?
-**鈶?閫氱煡妗?v1**锛氬３鍐呭湪 32123锛坄DSHOME_NOTIFY_PORT`锛夌洃鍚?POST /notify锛涘湪绾?绂荤嚎鐘舵€佸垏鎹㈡椂澹宠嚜韬脊绯荤粺閫氱煡锛堢偣鍑诲彲鍞よ捣绐楀彛锛夈€傚洖鍚堢粨鏉熺瓑涓氬姟浜嬩欢鐨勬帴绾跨暀 v1.1锛堜簨浠舵簮闇€鍐嶆帰绱級銆?
-**鈶?鏁呴殰婕旂粌锛埪?0 楠屾敹椤瑰疄璇侊級**锛?- `--patch drill-bad.yml`锛堟彃鍏ヤ笉瀛樺湪鍖?`dshome-no-such-plugin-package`锛夆啋 鍚姩澶辫触锛屾姤閿欑簿纭埌鍖呭悕锛坄Cannot find package 鈥?imported from <profile>`锛夛紱
-- `--patch drill-fix.yml`锛坄- id: dshome-broken; disabled: true`锛夆啋 **姝ｅ父鍚姩**锛?090 鐩戝惉锛夈€傚潖鎻掍欢琛岀骇绂佺敤鍗冲彲鎭㈠锛屾棤闇€鏀逛唬鐮?鍗歌浇锛泈eb profile 涓嶅彈褰卞搷銆?
-**鈶?鍏抽敭鏁欒鈥斺€攃lient factory 蹇呴』杩斿洖鎻掍欢鏈綋 + 鏈嶅姟绾?inject**锛?- **绗竴灞?*锛氭祻瑙堝櫒鏉愭枡鍖栨満鍒跺彇鐨勬槸 **`factory(require)` 鐨勮繑鍥炲€?*锛堝畼鏂规枃妗ｅ師鏂?`factory(require) 鈫?exports`锛夛紝瀹樻柟妯″潡缁撳熬閮藉啓 `exports.apply=apply; 鈥? return module.exports;`銆傛棭鏈?dshome-theme client.js 婕忎簡 `return` 鈫?绐楀彛渚?invalid plugin received undefined"锛?- **绗簩灞?*锛氬搧鐗屾Ы娉ㄥ唽杩樿姹傛彃浠?*鏈嶅姟绾ф敞鍏?*锛氬畼鏂瑰搧鐗?`const inject = ["slots"]; exports.inject = inject;`鈥斺€斿彧渚濊禆 `dsh.client.inject`锛堝寘绾т緷璧栵級涓嶅锛宍ctx.slots` 鍦?apply 鍓嶄笉娉ㄥ叆灏变笉鍙敤锛屾姤 `cannot get property "slots"`锛涗竴鍒囩収瀹樻柟 `ctx.slots.inject(...)` 宓屽鐢熸垚鍣ㄦā寮?+ `yield ctx.slots.register(...)` 鎵嶅０鏄庡紡鎴愮珛锛?- 杩欎袱灞傞兘鍙湪**鐪熷疄娴忚鍣ㄨ繍琛屾椂**鏆撮湶锛坔ost 鍚姩/椤甸潰鏈嶅姟/roster 鍏ㄧ豢锛夛紝鎺掗殰闈?**CDP**锛歚electron shell-app --remote-debugging-port=9222` + `cdp-inspect.mjs`/`cdp-verify.mjs`锛堣 DOM 鏂囨湰銆佹姄 console 璀﹀憡銆佺鐢ㄧ紦瀛橀噸杞介獙璇侊級銆俙check-theme-client.mjs` 鏃犲ご鏂█ factory 杩斿洖鍊?+ inject銆?---
+**RPC 通道**（与浏览器 UI 同一条传输）：`POST /api/<method>`，信体 `{"type":"client-request","rpcId":"<string>","method":"<domain.method>","params":{...},"payload":{...}}`。
+- list/create 走窄接口 `params`；prompt 等 `RequestPayload` 方法还需把业务对象同时放进 `payload` 槽；
+- Host 须为 loopback/同源（`Origin` 是 host 即可）；
+- `session.history` 返回 `value.events` 事件流：`assistant/chunk`（text-delta / usage / finish）、`assistant/message`、`turn/end`。
+**端到端结果**：`session.create → session.prompt("请只回复两个字：你好") → 模型流式回复"你好"（provider opencode-go / deepseek-v4-flash，读 home 凭据与路由）→ turn/end`。`verify-chat.mjs` 绿灯（exit 0）。诊断工具：`probe-rpc.mjs`（任意方法）、`probe-history.mjs`（事件流尾部）。
+**运行时解析决策（本机 v1）**：standard/code/cordis/minimal 四个 agent preset 引用约 30 个 `@deepseek-ai/dsh-tool-*` 包，其中少数未发布到 npm（如 auto-peer 的 `dsh-compact` 404），故 pnpm 无法装齐。**本机 v1 采用 junction 方案**：
+- `profiles/dshome/node_modules` 指到 `E:\DSH\app.src\node_modules`（app.asar 解包全树，199 个 @deepseek-ai 包）；
+- `profiles/dshome/node_modules/dshome` 指到 `E:\DSH\dshome`（包本体）；
+- 原生预编译（koffi / node-pty / sharp / node-addon-require-builtin）从 `app.asar.unpacked\node_modules` 拷贝进该树；
+- 原 pnpm 树备份为 `node_modules.pnpm`。注意：junction 接管后 `dsh plugin add`（走 pnpm）不适用；上游补发缺失包后应回归 pnpm 安装。启动命令不变。### 15.6 Phase 2 薄壳实施记录（2026-08-28）
+**交付**：`dsh --profile dshome` 启动即自动弹出 DSHOME 窗口（官方 UI），托盘常驻、单实例、后端被杀壳存活并切离线页、后端恢复自动重连。
+**代码**：
+- `dshome/shell-app/`：Electron 窗口应用（main.cjs / offline.html / icon.png）；单实例锁、close 最小化到托盘、3s 轮询活性、离线页 + 自动重连、托盘（显示/刷新/自启开关/退出）、本地通知监听（`DSHOME_NOTIFY_PORT`，POST /notify，v1.1 接线）；
+- `dshome/lib/host/shell.js`：host 插件（`dshome/shell` 行），后端就绪后 spawn GUI，`createRequire` 从 dshome 包本地解析 electron；
+- electron 依赖：npm registry 极慢/失败 → npmmirror 手动下载 138MB + tar 解包到 `node_modules/electron/dist` + `path.txt=electron.exe`（该机实录；其他机器建议 `npm i -D electron@43.4.0` 配 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
+**三个关键坑（均已修）**：
+1. `dsh.cmd` 会把 `ELECTRON_RUN_AS_NODE=1` 带进环境 → spawn GUI 前必须删除，否则 Electron 以 node 模式运行、不出窗口；
+2. **必须 `detached: true` + `child.unref()`**：否则后端进程（父）被杀时壳会随进程组陪葬（实测复现后修复）；
+3. 后端重启时插件会再次 spawn → 靠壳的 `requestSingleInstanceLock` 幂等：新实例退出、旧窗口自动重连（单实例与活性监测协同）。
+**验证结果（headless 实测）**：窗口 spawn ✅；二次启动单实例 1 个 ✅；杀后端 → 壳存活 ✅；重启后端 → 壳不重复开发、端口恢复 ✅；与 web profile（3120）并存 ✅。视觉项（界面/托盘/离线页/通知）待用户实机确认。
+**首轮实机反馈修复（"有窗口但后端未连接"）**：
+- **根因**：main.cjs 活性检测写成 `Promise.race([fetch, Promise.resolve(false)])`——第二项立刻 resolve，race 恒返回 `false`，fetch 明明 200 也永远离线。属实现 bug，非架构问题；
+- **修复**：`AbortController + setTimeout` 超时实现；状态机加 `isOnline`，托盘文案同步；离线页"立即重试"改为导航到后端 URL；新增观测日志 `%APPDATA%\dshome-shell\dshome-shell.log`（每次 fetch/state/load 落盘，后续排障不瞎猜）；
+- **完整链路实测**：杀后端 → `fetch fail → state offline`（窗口切离线页）；重启后端 → 3 秒内 `fetch ok → state online → loaded url`（窗口自动重连）；壳保持单例 1 个。
+- **第二坑（实机反馈"还是后端未连接"）——端口默认值**：官方 webserver 默认端口是 **3080**（web-app patch `port ?? 3080`），而壳的兜底写死了 3081；命令行显式 `--port 3081` 时一切正常，**裸跑 `dsh --profile dshome` 后端在 3080、窗口看 3081，必然离线**。修复：按官方 `localWebUrl` 思路，从 **`webServer` 服务读真实绑定端口**（可覆盖默认 / `--port N` / `--port 0` 系统分配），兜底改 3080；URL 改在 spawn 延时回调里解析（保证已绑定）。教训：端口等运行事实一律从服务读，不硬编码。
+### 15.7 Phase 3 皮肤/品牌/通知/故障演练记录（2026-08-28）
+**新增 dshome-theme 客户端皮肤包**（`E:\DSH\packages\dshome-theme`）：
+- 机制：client roster 条目 = Loader 补丁行引用的包 + 包内 `dsh.client` 声明（platform web）；client.js 用 `window.__ModuleLoader__.load({id, factory})` 工厂形态手写（无需构建管线），经 `/plugins/<id>/client.js` 服务化；
+- 皮肤 API（官方）：`theme.overrideTokens(source, { "--dsw-alias-brand-primary": {light, dark}, ... })`——token 成对（light/dark），别名层覆盖即时生效；
+- 品牌替换：禁用 `ui-brand-official` 行 + `ctx.slots.register({name:"sidebar.brand.mark|sidebar.brand.name|conversation.hero.brand.mark"}, 组件)` 注册 DSHOME 品牌（SVG 圆角方块 + D，蓝色取自品牌 token）；
+- 实测：roster 含 `dshome-theme`（id/url/rev），`ui-brand-official` 消失，client.js 200。官方前端 token 名（提取自 dist CSS）：`--dsw-alias-brand-primary`、`--dsw-alias-button-primary-fill/-hover`、`--dsw-alias-state-business-primary` 等（全部 requiresLightAndDark）。
+**新增通知 v1**：壳内在 32123（`DSHOME_NOTIFY_PORT`）监听 POST /notify；在连接/离线状态切换时壳自身弹系统通知（点击可唤起窗口）。回合结束等业务事件的接线留 v1.1（事件源需再探索）。
+**新增故障演练（§10 验收项实证）**：
+- `--patch drill-bad.yml`（插入不存在的 `dshome-no-such-plugin-package`）→ 启动失败，报错精确到包名（`Cannot find package 'x' imported from <profile>`）；
+- `--patch drill-fix.yml`（`- id: dshome-broken; disabled: true`）→ **正常启动**（3090 监听）。坏插件行级禁用即可恢复，无需改代码/卸载；web profile 不受影响。
+**新增关键教训——client factory 必须返回插件本体 + 服务级 inject**：
+- **第一坑**：浏览器材料化机制取的是 **`factory(require)` 的返回值**（官方文档原话 `factory(require) → exports`），官方模块结尾都写 `exports.apply=apply; 且 return module.exports;`。早期 dshome-theme client.js 漏了 `return` → 窗口报 "invalid plugin received undefined"；
+- **第二坑**：品牌槽注册还要求插件**服务级注入**：官方品牌写 `const inject = ["slots"]; exports.inject = inject;`——只依赖 `dsh.client.inject`（包级依赖）不够，`ctx.slots` 在 apply 前不注入就不可用，报 `cannot get property "slots"`；一切照官方 `ctx.slots.inject(...)` 嵌套生成器模式 + `yield ctx.slots.register(...)` 才声明式成立；
+- 这两层都只在**真实浏览器运行时**暴露（host 启动/页面服务/roster 全绿），排障用 **CDP**：`electron shell-app --remote-debugging-port=9222` + `cdp-inspect.mjs`/`cdp-verify.mjs`（读 DOM 文本、抓 console 警告、禁用缓存重载验证）。`check-theme-client.mjs` 无头断言 factory 返回值 + inject。
+
+---
 
 ## 15.8 主线 A 第一刀（Ctrl+K 命令面板）实施记录（2026-08-29）
 
