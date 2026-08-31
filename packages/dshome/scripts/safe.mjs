@@ -5,12 +5,14 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const portArg = process.argv.indexOf('--port');
-const port = portArg >= 0 ? process.argv[portArg + 1] : '3081';
+const port = portArg >= 0 ? process.argv[portArg + 1] : '3099';
 
-// 自有插件全清单（与 dshome 包 cordis.patch.yml 的 insert 行一一对应）
+// 自有插件全清单（与 dshome 包 cordis.patch.yml 的 insert 行一一对应；
+// 新增 host/client 行时必须同步此清单，否则安全模式兜不住该插件）。
 const OWN_PLUGIN_IDS = [
   'dshome-core',
   'dshome-shell',
@@ -19,6 +21,7 @@ const OWN_PLUGIN_IDS = [
   'dshome-notify',
   'dshome-plugin-manager',
   'dshome-desktop',
+  'dshome-plugin-center',
 ];
 
 const dir = mkdtempSync(join(tmpdir(), 'dshome-safe-'));
@@ -30,7 +33,12 @@ const rows = [
 ];
 writeFileSync(overlay, rows.join('\n'), 'utf8');
 
-const child = spawn('dsh', ['--profile', 'dshome', '--patch', overlay, '--no-open', '--port', port], {
+// 用当前 node + 仓库内 dsh bin.js 直跑，不依赖 PATH 里的 dsh 命令。
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, '..', '..', '..');
+const dshBin = join(repoRoot, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
+
+const child = spawn(process.execPath, [dshBin, '--profile', 'dshome', '--patch', overlay, '--no-open', '--port', port], {
   stdio: 'inherit',
   env: process.env,
 });
