@@ -17,14 +17,27 @@ dshome-monorepo/
 ```
 
 ## 上手（两台都这样）
+
+### 方式一：一键脚本（推荐，新设备/干净环境）
+```bat
+git clone https://github.com/furinko/DSHOME.git
+cd DSHOME
+setup-dev.cmd
+```
+
+`setup-dev.cmd` 会自动完成：
+- 下载免安装版 **node 24.19.0**（npmmirror 镜像 + sha256 校验）到 `%LOCALAPPDATA%\dshome-dev`（不碰系统、无需管理员权限）
+- 安装 **pnpm 10** 到同一目录（自包含，删除该目录即完全卸载，无 PATH/注册表残留）
+- 自动跑 `pnpm install`（装依赖，workspace 链接三包）+ `pnpm run setup`（下载 electron 二进制，镜像加速）
+- 幂等：重复运行秒过，不重复下载
+
+### 方式二：手动（已有 node/pnpm 环境）
 ```bash
 git clone https://github.com/furinko/DSHOME.git
 cd DSHOME
 pnpm install        # 装依赖（workspace 链接三包）
-pnpm setup          # 下载 electron 二进制（pnpm 默认跳过 postinstall；此脚本用镜像加速）
+pnpm run setup      # 下载 electron 二进制（pnpm 默认跳过 postinstall；此脚本用镜像加速）
 ```
-- 改 `packages/dshome` 等源码 → 另一台 `git pull` → 即生效（`workspace:*` 互引，无 `file:+junction` 的 churn/删源码问题）。
-- 铁律：需要市场真实安装时，别在 dsh 的 profile 目录里跑 `pnpm`；发布/装插件走「发布 + 版本依赖」或 GitHub 源。
 
 ## 发布给他人（GitHub tag）
 ```bash
