@@ -6,7 +6,7 @@ rem To stop: tray menu -> Exit (or close DSHOME window and tray).
 set "DSH_HOME=%~dp0"
 rem Auto-detect local dev node (installed by setup-dev.cmd) without touching user PATH.
 if exist "%LOCALAPPDATA%\dshome-dev\node\node.exe" (
-  set "PATH=%LOCALAPPDATA%\dshome-dev\node;%PATH%"
+  set "PATH=%LOCALAPPDATA%\dshome-dev\node;C:\Windows\System32;C:\Windows;%PATH%"
 )
 set "DSHOME_BACKEND_CMD=node %DSH_HOME%node_modules\@deepseek-ai\dsh\lib\bin.js --profile dshome --no-open --port 3099"
 if not defined DEEPSEEK_API_KEY (

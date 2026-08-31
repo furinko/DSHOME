@@ -31,3 +31,12 @@ dsh-server.log
 
 # dsh credentials store (API keys, zero-credential rule)
 .credentials.yaml
+
+# dsh-evolve private workspace (own git repo + memory mirror + backups)
+evolve-workspace/
+
+# dsh-evolve usage stats sidecar (changes on every load)
+skills/.evolve-usage.json
+
+# dev launcher backups
+开发启动.cmd.bak-*
