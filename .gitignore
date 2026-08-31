@@ -40,3 +40,8 @@ skills/.evolve-usage.json
 
 # dev launcher backups
 开发启动.cmd.bak-*
+
+# dshome runtime state (regenerated on boot)
+.agent-presets/
+.dshw-*.json
+profiles/*/.dsh-market/
