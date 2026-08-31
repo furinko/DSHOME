@@ -264,3 +264,54 @@ AggregateError ... ≥1 个 entry create 失败
   - **正确写法**：组件用渲染器注入的 **`props.useSnapshot`**（勿用 `useSyncExternalStore`）+ 元素全用 **`react_jsx_runtime.jsx(...)`**（本 bundle 无 JSX 转译）；`settingsScope` 用 `ctx.get("settingsScope")`，缺失则不注册；全程 try/catch + 组件体防御（无 controller/useSnapshot/数据就 `return null`）。**完整可照做的重建代码 + host 加 `protected` 的改动，见 `E:\DSH\DSHOME-SETTINGS-UI-RECONSTRUCT.md`（已与当前 client.js 同步，含回退路径）。**
 - **node_modules 健康/一致**（已验证：关键依赖可解析、无孤儿残留、无独立 .pnpm 存储、无 tmp 目录）；**「pnpm 重装干净」在本机做不了**（`file:` 依赖 ERR_PNPM_ENOENT，其安全绕过=churn 源，已避免）。**铁律：别再在本机 profile 目录跑 `pnpm add`/`pnpm install`**。
 - **可恢复快照**：`E:\DSH\build-stage\dshome-node-snapshot\`（`profile-package.json`/`profile-pnpm-lock.yaml`/`profile-cordis.patch.yml`/`junctions.txt` + `dshome-package.json`/`dshome-cordis.patch.yml`/`dshome-theme-*`/`dshome-palette-package.json`）；`junctions.txt` 里写明删 junction 用 `Remove-Item`（不带 -Recurse）、勿用 `rmdir /s /q`。
+## 十六、市场迁移 dshmarket + desktop 服务接口冲突（2026-08-29 晚）
+
+### 背景
+旧市场链（dsh-community-market → dshome/desktop 替身服务）已废弃。本次将市场切换为社区 dshmarket（★149，npm 包名 dshmarket，v1.38.1），并安装 dsh-whale-widget（DeepSeek 余额鲸鱼挂件）。**重要：本节环境是 E:\DSHOME（monorepo + nodeLinker hoisted + workspace:* 依赖），与上文大部分记录的旧环境 E:\DSH（file: 依赖 + junction）不同，旧铁律勿套用到新环境。**
+
+### 当前 profile 最终状态（E:\DSHOME\profiles\dshome）
+- bundles（5 个）：@deepseek-ai/dsh-base, @deepseek-ai/dsh-web-app, dshome, dshmarket, dsh-whale-widget
+- 依赖：dshmarket ^1.38.1（npm 源）、dsh-whale-widget ^0.2.10（npm 源）
+- 市场 UI 入口：设置 → Plugin Market（dshmarket）
+- 鲸鱼挂件：右下角（dsh-whale-widget，npm 0.2.10）
+- **dshome/desktop 已禁用**（见下）——profile cordis.patch.yml 追加：
+  `- id: dshome-desktop
+    disabled: true`
+- 备份：package.json.pre-workshop.bak / pre-dshmarket.bak / pre-cleanup.bak / cordis.patch.yml.pre-desktop-off.bak；git 已跟踪 package.json + pnpm-lock.yaml，可回滚
+
+### ⚠️ 关键坑：service.runPlugin is not a function（已解决）
+- **根因**：dshmarket 检测到 desktopProfiles 服务存在就走 DSH Desktop 分支（src/index.ts:62→87），调用 desktopPnpm.runPlugin(...)；而 DSHOME 的 dshome/desktop 提供的是**旧接口 { run }**（为已卸载的官方市场设计），没有 runPlugin 方法 → 报错。
+- **修复**：禁用 dshome/desktop 插件。dshmarket 检测不到桌面服务后回退**普通 dsh plugin CLI 路径**（README 明确 'Ordinary DSH keeps the existing CLI path above'）——该路径已验证可用（装 dshmarket / whale-widget 都成功，5~12s）。
+- **恢复**：若将来重装官方 dsh-community-market，需把 profile cordis.patch.yml 里 dshome-desktop 的 disabled: true 去掉。
+- **教训**：DSHOME 的 dshome/desktop 替身服务只兼容旧官方市场接口；第三方市场（dshmarket）期望 DSH Desktop 新契约（runPlugin），接口不匹配时宁可直接禁用替身走 CLI。
+
+### 本次安装/卸载实录（全部成功）
+- 装 dsh-plugin-workshop（github 源）→ 体验：无安装功能（仅浏览+手动命令）→ 已卸
+- 卸 @sanqi-normal/dsh-webui-market-plugin（旧市场）→ 依赖/lock/node_modules 全清
+- 装 dshmarket ^1.38.1（npm 源）→ bundles 第 4 个
+- 装 dsh-whale-widget ^0.2.10（npm 源）→ bundles 第 5 个
+- 组合验证：dsh --profile dshome --dump-config 每次均 exit 0
+
+### 待办
+- 重启 profile 后验收：Plugin Market 安装功能恢复正常（不再报 runPlugin 错）、右下角鲸鱼挂件出现。
+- 可选：把本节并入 DSHOME-DESIGN.md；清理 4 个 .bak 备份（确认稳定后）。
+### 改动归属（重要：哪些改动不会被更新覆盖）
+- 禁用 dshome/desktop 的修复在 **profile cordis.patch.yml**（DSHOME 自己的配置），不在 dshmarket 包里——dshmarket 更新（dsh plugin update / 面板更新）只动 node_modules/dshmarket + package.json 版本 + lock，**不会碰 cordis.patch.yml**，修复不会被覆盖。
+- DEEPSEEK_API_KEY 凭据在 **/.credentials.yaml**（被 .gitignore 忽略，零凭据原则），同样不受任何插件更新影响。
+- 唯一会丢失改动的场景：**删 profile 目录重装**（正常更新流程不会）。
+
+### 版本锁定与升级顺序（重要）
+- profile 依赖版本写法（2026-08-29 晚）：dshmarket **^1.38.1**（latest=1.38.1，无更新可拉）、dsh-whale-widget **^0.2.10**、dsh-better-sidebar **0.17.1（精确锁定）**、DSH 核心全部 **0.1.1-rc.2**。
+- **better-sidebar 0.17.1 的 peer 是 ^0.1.0-rc.8，兼容 DSH 0.1.1-rc.2；但 GitHub main 的 0.18.0-alpha.0 peer 是 ^0.1.2-alpha.2，不兼容当前 DSH——切勿手动升级 better-sidebar 到 0.18.0-alpha.0，除非先升 DSH 核心。**
+- 正确升级顺序：先升 @deepseek-ai/dsh* 到 0.1.2-alpha.2 → 再升 better-sidebar。
+- 可选加固：把 dshmarket / dsh-whale-widget 也改成精确版本（去掉 ^），防止意外自动升级。
+
+### 本会话补充实录
+- 装 dsh-better-sidebar 0.17.1（npm 源）：dshmarket 面板默认走 GitHub 源会报 nothing installable（prepare 构建被 pnpm 拦截），**改走 npm 源（自带预构建 lib）即成功**；node-pty 构建已在根 pnpm-workspace.yaml allowBuilds 放行。
+- 修复鲸鱼挂件未配置 API：小鲸鱼硬编码读 DEEPSEEK_API_KEY（lib/index.js:1527），DSHOME 只有 DSHOME_USER_KEY → 在 .credentials.yaml 补 DEEPSEEK_API_KEY（复用原值）；凭据 describe() 返回 source=file、writable=true，**模型设置输入框仍可编辑**（只有环境变量提供时才会锁定只读）。
+- 安全确认：.credentials.yaml 被 .gitignore 排除（git check-ignore 命中），git 未跟踪、历史无泄露；已删所有 .bak 残留。
+- react-dom 19.2.8 vs react 18.3.1 peer 警告：官方链原有（trajectory→@tanstack/react-virtual 引入 19），装 better-sidebar 前就存在，GUI 一直正常；如重启后白屏再考虑 overrides 锁 18。
+
+### 待办（更新）
+- 重启 profile 后验收：Plugin Market 安装、鲸鱼挂件余额、better-sidebar 右侧栏（终端页如报 node-pty 加载失败跑 pnpm rebuild node-pty）。
+- 可选：把本节并入 DSHOME-DESIGN.md。

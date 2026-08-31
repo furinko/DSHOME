@@ -5,3 +5,7 @@
 - id: llm-deepseek
   config:
     apiKeyEnv: DSHOME_USER_KEY
+# 禁用 dshome/desktop: 其 desktopPnpm 服务接口 ({ run }) 与 dshmarket 期望的 { runPlugin } 不匹配,
+# 导致安装报 service.runPlugin is not a function; dshmarket 检测不到桌面服务时回退普通 dsh plugin CLI 路径。
+- id: dshome-desktop
+  disabled: true
