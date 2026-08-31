@@ -23,6 +23,9 @@
     # dshome-plugin-manager（block 1）：已装插件 列表 + 启/停。
     - id: dshome-plugin-manager
       name: dshome/plugin-manager
+    # dshome-plugin-center（client）：左侧边栏插件管理中心（sidebar.footer.action 入口）。
+    - id: dshome-plugin-center
+      name: dshome-plugin-center
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。

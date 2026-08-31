@@ -24,7 +24,8 @@
     "client": {
       "inject": [
         "dshome-theme",
-        "dshome-palette"
+        "dshome-palette",
+        "dshome-plugin-center"
       ],
       "platform": "web"
     }
@@ -35,6 +36,8 @@
   },
   "dependencies": {
     "dshome-theme": "workspace:*",
+    "dshome-palette": "workspace:*",
+    "dshome-plugin-center": "workspace:*",
     "@deepseek-ai/schemastery": "3.18.1",
     "@deepseek-ai/dsh-settings": "0.1.1-rc.2"
   },

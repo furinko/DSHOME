@@ -41,6 +41,7 @@
     "dshmarket": "^1.38.1",
     "dshome": "workspace:*",
     "dshome-palette": "workspace:*",
+    "dshome-plugin-center": "workspace:*",
     "dshome-theme": "workspace:*"
   },
   "dsh": {

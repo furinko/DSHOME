@@ -37,6 +37,7 @@
     "@deepseek-ai/dsh-web-app": "0.1.1-rc.2",
     "dshome": "file:E:/DSH/packages/dshome",
     "dshome-palette": "file:E:/DSH/packages/dshome-palette",
+    "dshome-plugin-center": "file:E:/DSH/packages/dshome-plugin-center",
     "dshome-theme": "file:E:/DSH/packages/dshome-theme",
     "dsh-better-sidebar": "0.17.1",
     "dsh-evolve": "file:E:/DSH/vendor/dsh-evolve-0.4.2.tgz",

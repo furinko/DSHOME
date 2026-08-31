@@ -23,6 +23,12 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: 3.18.1
         version: 3.18.1
+      dshome-palette:
+        specifier: workspace:*
+        version: link:../dshome-palette
+      dshome-plugin-center:
+        specifier: workspace:*
+        version: link:../dshome-plugin-center
       dshome-theme:
         specifier: workspace:*
         version: link:../dshome-theme
@@ -32,6 +38,8 @@ importers:
         version: 43.4.0
 
   packages/dshome-palette: {}
+
+  packages/dshome-plugin-center: {}
 
   packages/dshome-theme: {}
 
@@ -154,6 +162,9 @@ importers:
       dshome-palette:
         specifier: workspace:*
         version: link:../../packages/dshome-palette
+      dshome-plugin-center:
+        specifier: workspace:*
+        version: link:../../packages/dshome-plugin-center
       dshome-theme:
         specifier: workspace:*
         version: link:../../packages/dshome-theme
