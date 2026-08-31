@@ -66,6 +66,12 @@ window.__ModuleLoader__.load({
       ".dshome-pc-empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:42px 16px;text-align:center;font-size:12px;color:var(--dsw-alias-label-tertiary,#6b7a99)}",
       ".dshome-pc-empty-ico{font-size:26px;opacity:.5}",
       ".dshome-pc-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2147483001;padding:9px 18px;border-radius:99px;font-size:12.5px;color:#fff;background:rgba(16,20,30,.94);box-shadow:0 8px 30px rgba(0,0,0,.35);display:none;animation:dshome-pc-fade .15s ease}",
+      // 侧边栏入口（footer.action）
+      ".dshome-pc-entry{display:inline-flex;align-items:center;gap:8px;height:34px;padding:3px 11px 3px 3px;border-radius:10px;border:none;cursor:pointer;background:transparent;transition:background .15s,transform .1s}",
+      ".dshome-pc-entry:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.08))}",
+      ".dshome-pc-entry:active{transform:scale(.96)}",
+      ".dshome-pc-entry-ico{flex:none;width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#5b7bff,#3e5bf0);color:#fff;box-shadow:0 2px 8px rgba(77,107,254,.35)}",
+      ".dshome-pc-entry-label{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary,#4a5a78)}",
     ].join("");
 
     // ── 状态 ─────────────────────────────────────────────────────────────────
@@ -270,28 +276,27 @@ window.__ModuleLoader__.load({
     }
 
     // ── 入口按钮（sidebar.footer.action 槽组件：props.wide = 展开/折叠）──────
+    // 品牌蓝渐变图标块 + 悬停反馈 + 按压缩放；折叠态只显示图标块。
     function PluginCenterAction(props) {
       var wide = !!(props && props.wide);
       return react_jsx_runtime.jsx("button", {
         type: "button",
         title: "插件管理",
         onClick: open,
-        style: {
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          gap: 6, height: 28, padding: wide ? "0 10px" : "0", minWidth: wide ? "auto" : 28,
-          borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, lineHeight: 1,
-          color: "var(--dsw-alias-label-secondary, #4a5a78)",
-          background: "transparent",
-        },
+        className: "dshome-pc-entry",
+        style: { padding: wide ? "3px 11px 3px 3px" : "3px" },
         children: [
-          react_jsx_runtime.jsx("svg", {
-            width: 15, height: 15, viewBox: "0 0 24 24", fill: "none",
-            stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round",
-            children: react_jsx_runtime.jsx("path", {
-              d: "M14 7V5a2 2 0 1 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-3h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2z",
+          react_jsx_runtime.jsx("span", {
+            className: "dshome-pc-entry-ico",
+            children: react_jsx_runtime.jsx("svg", {
+              width: 15, height: 15, viewBox: "0 0 24 24", fill: "none",
+              stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round",
+              children: react_jsx_runtime.jsx("path", {
+                d: "M14 7V5a2 2 0 1 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-3h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2z",
+              }),
             }),
           }),
-          wide ? react_jsx_runtime.jsx("span", { style: { fontSize: 12 }, children: "插件管理" }) : null,
+          wide ? react_jsx_runtime.jsx("span", { className: "dshome-pc-entry-label", children: "插件管理" }) : null,
         ],
       });
     }
