@@ -29,8 +29,13 @@
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。
+    # 默认 disabled（2026-09-01 起产品默认，原 L4 覆盖并入）：desktopPnpm 接口
+    # { run } 与 dshmarket 期望的 { runPlugin } 不匹配，启用会报
+    # service.runPlugin is not a function；禁用后 dshmarket 检测不到桌面服务，
+    # 回退普通 dsh plugin CLI 路径（已验证可用）。
     - id: dshome-desktop
       name: dshome/desktop
+      disabled: true
 
 # -- 覆盖官方行（整体替换 config，不合并）--
 - id: web-runtime
@@ -40,12 +45,21 @@
     surfaceContext: true
     trustedHosts: []
 
-# 专属默认端口：与官方 web（3080）错开；CLI --port 仍优先。
+# 专属默认端口：与官方 web（3080）错开（旧基线 3081 已弃，2026-09-01 对齐 3099）；
+# launcher（DSHOME.exe / 开发启动.cmd）显式 --port 3099 同值；CLI --port 仍优先。
 - id: webserver
   config:
     host: !!js ctx.webStartup.host ?? '127.0.0.1'
-    port: !!js ctx.webStartup.port ?? 3081
+    port: !!js ctx.webStartup.port ?? 3099
 
 # 官方品牌由 dshome-theme 的品牌槽替代。
 - id: ui-brand-official
   disabled: true
+
+# 解锁 UI 填 API Key（2026-09-01 起产品默认，原 L4 覆盖并入）：apiKeyEnv 指向不存在的
+# 变量名（DSHOME_USER_KEY），官方 UI 判定「引用的 env 无值 → 需要用户提供」→ 输入框可编辑，
+# 用户填的 key 存 dsh 凭证库（dsh-credentials-local），之后自动解析。
+# 若 apiKeyEnv 指向真实存在的环境变量，UI 会锁定只读「由启动环境提供」。
+- id: llm-deepseek
+  config:
+    apiKeyEnv: DSHOME_USER_KEY

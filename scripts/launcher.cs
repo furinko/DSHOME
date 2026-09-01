@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 // DSHOME 统一启动器（源码布局 / 安装布局通用，逻辑与 开发启动.cmd 一致）
 //   - DSH_HOME = 本 exe 所在目录
-//   - PATH 前置：%LOCALAPPDATA%\dshome-dev\node（开发）或 <home>\runtime（安装包自带 node）
+//   - PATH 前置：node 目录（%LOCALAPPDATA%\dshome-dev\node 开发 / <home>\runtime 安装包）+ C:\Windows\System32;C:\Windows（bsdtar 修复，同 开发启动.cmd）
 //   - 设 DSHOME_BACKEND_CMD（后端由 Electron 壳拉起/守护）
 //   - 启动 Electron 壳 <home>\packages\dshome\shell-app
 // 构建：scripts\build-launchers.cmd（csc，零第三方依赖）
@@ -26,11 +26,14 @@ static class DSHOMELauncher
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "dshome-dev", "node");
         string runtimeDir = Path.Combine(home, "runtime");
+        // 与 开发启动.cmd 对齐：node 目录之后前置 System32/Windows，
+        // 保证 tar 命中 bsdtar（dsh-evolve 备份/回滚/fold 依赖，GNU tar 不支持 Windows 绝对路径）。
+        const string SysDir = "C:\\Windows\\System32;C:\\Windows;";
         string path = Environment.GetEnvironmentVariable("PATH") ?? "";
         if (File.Exists(Path.Combine(nodeDev, "node.exe")))
-            path = nodeDev + ";" + path;
+            path = nodeDev + ";" + SysDir + path;
         else if (File.Exists(Path.Combine(runtimeDir, "node.exe")))
-            path = runtimeDir + ";" + path;
+            path = runtimeDir + ";" + SysDir + path;
         Environment.SetEnvironmentVariable("PATH", path);
         Environment.SetEnvironmentVariable("DSH_HOME", home);
 
@@ -52,6 +55,7 @@ static class DSHOMELauncher
                 "electron=" + electron,
                 "shellApp=" + shellApp,
                 "backendCmd=" + backendCmd,
+                "PATH=" + path,
             });
             File.WriteAllText(
                 Path.Combine(Path.GetTempPath(), "dshome-launcher-selfcheck.txt"),

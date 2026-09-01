@@ -14,8 +14,8 @@ import { fileURLToPath } from 'node:url';
 /** Stable Cordis plugin name (row: `name: dshome/shell`). */
 export const name = 'dshome-shell';
 
-/** 官方 webserver 默认端口 3080；DSHOME 用专属默认 3081（补丁 webserver 行兜底一致）。 */
-const DEFAULT_PORT = 3081;
+/** 官方 webserver 默认端口 3080；DSHOME 专属默认 3099（补丁 webserver 行兜底一致；launcher 显式 --port 3099，旧基线 3081 已弃）。 */
+const DEFAULT_PORT = 3099;
 /** 本地通知监听端口（壳内 POST /notify；0 = 关闭）。 */
 const NOTIFY_PORT = Number(process.env.DSHOME_NOTIFY_PORT || 32123);
 

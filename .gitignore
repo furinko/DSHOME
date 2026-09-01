@@ -46,6 +46,7 @@ skills/.evolve-usage.json
 .agent-presets/
 .dshw-*.json
 profiles/*/.dsh-market/
+router-standard/
 
 # 发布构建产物（Inno payload + setup exe）
 build-stage/

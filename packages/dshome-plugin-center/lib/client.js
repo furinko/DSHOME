@@ -80,12 +80,22 @@ window.__ModuleLoader__.load({
     var filters = { q: "", cat: "全部", state: "全部" };
     var root, panel, listEl, searchEl, catSel, stateSel, countEl, toastEl;
     var mounted = false;
+    var styleInjected = false; // STYLE 只注入一次；入口按钮启动即渲染，样式必须在激活时就位
 
     function el(tag, cls, text) {
       var n = document.createElement(tag);
       if (cls) n.className = cls;
       if (text !== undefined) n.textContent = text;
       return n;
+    }
+    // 设计系统样式注入：幂等。必须在入口按钮首次渲染前就位（apply 时调用），
+    // 否则 sidebar 里的按钮会以裸样式渲染（无 inline-flex / 圆角 / 渐变图标块）。
+    function ensureStyle() {
+      if (styleInjected) return;
+      styleInjected = true;
+      var css = el("style");
+      css.textContent = STYLE;
+      document.head.appendChild(css);
     }
     function svg(pathD, size) {
       var ns = "http://www.w3.org/2000/svg";
@@ -153,7 +163,7 @@ window.__ModuleLoader__.load({
           if (filters.state === "protected") { if (!(p.protected && p.enabled)) return false; }
           else if (p.phase !== filters.state) return false;
         }
-        if (q && (p.moduleName || "").toLowerCase().indexOf(q) < 0 && (p.entryId || "").toLowerCase().indexOf(q) < 0) return false;
+        if (q && (p.moduleName || "").toLowerCase().indexOf(q) < 0 && (p.entryId || "").toLowerCase().indexOf(q) < 0 && (p.displayName || "").toLowerCase().indexOf(q) < 0) return false;
         return true;
       });
     }
@@ -184,10 +194,10 @@ window.__ModuleLoader__.load({
       // 分类色块（首字母）
       var dot = el("div", "dshome-pc-dot " + catDotCls(p.category), catLetter(p.category));
       r.appendChild(dot);
-      // 名称 + 一句话说明（描述优先；无描述显示 entryId 兜底；moduleName 进悬停提示）
+      // 名称 + 一句话说明（displayName 优先；无描述显示 entryId 兜底；真实模块路径进悬停提示）
       var main = el("div", "dshome-pc-main");
-      var nameEl = el("div", "dshome-pc-name", p.moduleName);
-      nameEl.title = p.entryId;
+      var nameEl = el("div", "dshome-pc-name", p.displayName || p.moduleName);
+      nameEl.title = p.moduleName;
       main.appendChild(nameEl);
       main.appendChild(el("div", "dshome-pc-desc", p.description || p.entryId));
       r.appendChild(main);
@@ -225,8 +235,7 @@ window.__ModuleLoader__.load({
     function close() { root.style.display = "none"; }
     function mount() {
       mounted = true;
-      var css = el("style"); css.textContent = STYLE;
-      document.head.appendChild(css);
+      ensureStyle();
       root = el("div", "dshome-pc-root");
       root.onclick = function (e) { if (e.target === root) close(); };
       panel = el("div", "dshome-pc-panel");
@@ -309,6 +318,7 @@ window.__ModuleLoader__.load({
     var inject = ["slots"];
     function apply(ctx) {
       try {
+        ensureStyle(); // 入口按钮启动即渲染：样式必须先于 sidebar 首帧就位
         ctx.slots.inject("sidebar.footer.action", function () {
           return ctx.slots.register({
             name: "sidebar.footer.action",

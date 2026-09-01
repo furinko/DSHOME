@@ -23,7 +23,7 @@ dsh-evolve v0.4.2 is installed as an active plugin in the DSHOME dshome profile 
 ## Backup and smoke test
 - Use `bsdtar` for dsh-evolve backups.
 - The development launcher (`开发启动.cmd`) has already been updated to prepend `System32` to PATH, which fixes GNU tar's Windows path defect.
-- Smoke checklist lives at `docs/DSHOME-EVOLVE-SMOKE.md`.
+- Smoke checklist lives at `docs/integrations/EVOLVE-SMOKE.md`.
 
 ## Memory panel placement (framework note)
 - The memory panel registers in the `settings.section` slot by default (hardcoded in dsh-evolve's client).

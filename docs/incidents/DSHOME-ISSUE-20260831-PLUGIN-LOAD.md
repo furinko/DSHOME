@@ -79,17 +79,13 @@ module.exports = {
 | 完整启动 | `开发启动.cmd` | ✅ Electron 多进程（5 个）+ node 后端同时存活 |
 | 端口 | `Get-NetTCPConnection -LocalPort 3099` | ✅ LISTENING |
 
-> ⚠️ `pnpm run build` **不可用**：仓库 6 个 workspace 包均未声明 `build` script（`ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT`），源码直跑架构，「能启动」即「构建通过」。
+> ⚠️ 记录时 `pnpm run build` **不可用**：workspace 包均未声明 `build` script（`ERR_PNPM_RECURSIVE_RUN_NO_SCRIPT`），源码直跑架构，「能启动」即「构建通过」。后续已落地 `scripts/syntax-check.mjs` + `scripts/smoke.mjs` 并接入根 `package.json` 的 `build`/`smoke`/`verify`（见 ISSUE-002 §7-4）。
 
 ## 7. 预防措施（建议）
 
 1. **（已做）沉淀协议规范**：client-only 插件的 host 根入口一律 `{ name, apply() {} }`，见本文件 §4；同类新包照抄 palette，不写裸对象。
-2. **（建议）启动自检**：新加/改动任何被 `cordis.patch.yml` insert 或 `bundles` 引用的包后，**必须先裸跑后端**（§3.2 命令）确认 `dsh web:` 输出，再双击 `开发启动.cmd`。
-3. **（建议，待用户拍板）给根 `package.json` 加 `build` script**，把验证变成可执行命令，例如全仓语法检查：
-   ```json
-   "build": "pnpm -r exec node --check lib/index.cjs"
-   ```
-   零运行时副作用，未来可接 CI。
+2. **（已做）启动自检**：新加/改动任何被 `cordis.patch.yml` insert 或 `bundles` 引用的包后，**必须先裸跑后端**（§3.2 命令）确认 `dsh web:` 输出，再双击 `开发启动.cmd`。
+3. **（已做）验证脚本化**：根 `package.json` 已有 `build`（`node scripts/syntax-check.mjs`，全仓插件入口语法检查）与 `smoke`（裸跑断言，含 `--expect-fail` 阴性自测）。
 
 ## 8. 涉及文件
 
@@ -97,4 +93,4 @@ module.exports = {
 |---|---|
 | `packages/dshome-plugin-center/lib/index.cjs` | 修复（`M`，待提交） |
 | `packages/dshome/cordis.patch.yml` | 引用方（未改动，insert 行为正确） |
-| 本文档 | 新增（`docs/DSHOME-ISSUE-20260831-PLUGIN-LOAD.md`，待提交） |
+| 本文档 | 新增（`docs/incidents/DSHOME-ISSUE-20260831-PLUGIN-LOAD.md`，待提交） |

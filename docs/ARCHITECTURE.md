@@ -14,10 +14,12 @@ E:\DSHOME\（monorepo，pnpm workspace）
 ├─ packages/
 │  ├─ dshome/            # 主 bundle：host 插件 + client 插件 + Electron shell-app + 部署脚本
 │  ├─ dshome-theme/      # 客户端皮肤（品牌 token + 设置 UI：通知开关、插件管理分区）
-│  └─ dshome-palette/    # Ctrl+K 命令面板
-├─ profiles/dshome/      # 本机开发 profile（package.json + cordis.patch.yml 被跟踪为部署参考）
+│  ├─ dshome-palette/    # Ctrl+K 命令面板
+│  └─ dshome-plugin-center/  # 插件管理中心（client-only，sidebar 入口）
+├─ profile-template/     # 示例 profile 脚手架（deploy-new-device.cmd 的模板源）
+├─ profiles/dshome/      # 本机开发 profile（package.json + cordis.patch.yml 被跟踪为部署参考；patch 现为本机覆盖位，产品覆盖在 L3）
 ├─ vendor/               # 仓库内依赖（dsh-evolve tgz，消除 GitHub 下载依赖）
-├─ docs/                 # 灵魂记忆体系文档（行为层 / 冒烟 / 归档方案）
+├─ docs/                 # 文档中心（分类导航见 docs/README.md：架构/灵魂/集成/事故/部署）
 ├─ AGENTS.md             # 灵魂行为层：每会话注入的纪律与记忆指针（$DSH_HOME/AGENTS.md）
 └─ soul/Learn.md         # 行为学习模板（笨鱼鱼💢 / 好鱼鱼🐱，条目本机私有不推仓库）
 ```
@@ -29,7 +31,7 @@ dsh --profile dshome 启动时 composeProfile 依序应用：
 L1  @deepseek-ai/dsh-base      核心行（session/llm/tools/skill-filesystem/agent-loop…）
 L2  @deepseek-ai/dsh-web-app   浏览器面（webserver/web-runtime/官方 client roster）
 L3  dshome/cordis.patch.yml    自有 host 插件 + web-runtime/webserver 覆盖
-L4  profiles/dshome/cordis.patch.yml  本机覆盖（apiKeyEnv 技巧、禁用 dshome-desktop）
+L4  profiles/dshome/cordis.patch.yml  本机覆盖位（预留；apiKeyEnv 技巧、禁用 dshome-desktop 已并入 L3）
 行语义：后层同 id 整体替换 config（不合并）；- insert 追加；disabled: true 停用基座行。
 ```
 
@@ -66,7 +68,7 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖（apiKeyEnv 技巧、禁用 d
 行为层  soul/Learn.md    批评→「笨鱼鱼💢」/表扬→「好鱼鱼🐱」即时记录（双写 evolve lesson）
 运维层  skills/dsh-evolve-integration  结晶的运维知识技能
 ```
-细节见 `docs/DSHOME-SOUL-BEHAVIOR.md`、`docs/DSHOME-EVOLVE-SMOKE.md`。
+细节见 `docs/soul/SOUL-BEHAVIOR.md`、`docs/integrations/EVOLVE-SMOKE.md`。
 
 ## 6. 数据与存储（均在 DSH_HOME 下）
 
@@ -76,6 +78,8 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖（apiKeyEnv 技巧、禁用 d
 | `storages/` | storage domain（会话缓存、evolve 记忆 JSON） | ❌ ignore |
 | `evolve-workspace/` | dsh-evolve 私有工作区（MEMORY.md 镜像 + 独立 git + 备份） | ❌ ignore |
 | `settings.yaml` | plugin-manager 管理视图（含 apiKeyEnv 配置） | ❌ ignore |
+| `router-standard/` | router 预设运行时诊断状态（last-mount / bash-diag / stages，开机再生） | ❌ ignore |
+| `updates.json` | Electron 壳版本源（version/url/sha256，updater.cjs 从 GitHub raw 固定拉取） | ✅ 发布清单（随版本发布同步） |
 | `AGENTS.md` / `soul/` / `skills/` | 灵魂层（模板提交，**具体条目本机私有**） | ✅ 模板提交 |
 
 ## 7. 部署模型（三条路径各司其职）
@@ -93,8 +97,8 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖（apiKeyEnv 技巧、禁用 d
 | 决策 | 原因 |
 |---|---|
 | 端口 **3099** | 与官方 web（3080）错开；旧基线 3081 已弃（stop.cmd 已同步） |
-| `apiKeyEnv: DSHOME_USER_KEY`（指向**不存在**的 env） | 官方 UI 判定"引用的 env 无值 → 需用户提供" → 输入框可编辑；key 存 dsh 凭证库。若指向真实 env 则 UI 锁定只读 |
-| 禁用 `dshome/desktop` | 其 desktopPnpm 接口 `{ run }` 与 dshmarket 期望的 `{ runPlugin }` 不匹配 → service.runPlugin is not a function；禁用后 dshmarket 回退普通 `dsh plugin` CLI 路径（已验证可用） |
+| `apiKeyEnv: DSHOME_USER_KEY`（指向**不存在**的 env） | 官方 UI 判定"引用的 env 无值 → 需用户提供" → 输入框可编辑；key 存 dsh 凭证库。若指向真实 env 则 UI 锁定只读（2026-09-01 起该覆盖在 L3 随包分发，新设备默认生效） |
+| 禁用 `dshome/desktop` | 其 desktopPnpm 接口 `{ run }` 与 dshmarket 期望的 `{ runPlugin }` 不匹配 → service.runPlugin is not a function；禁用后 dshmarket 回退普通 `dsh plugin` CLI 路径（已验证可用）（2026-09-01 起该禁用并入 L3 随包分发） |
 | dsh-evolve **vendor** 进仓库 | 作者无 npm 包；vendor 后 pnpm install 全本地，作者删库/网络不可达均不影响部署 |
 | 插件启停写 **patch 文件**（非 settings.yaml） | patch 是加载真相；settings.yaml 只是 plugin-manager 的管理视图（**两者可能漂移，排查以 patch 为准**） |
 | 版本全锁定 `0.1.1-rc.2` | 上游 DSH 一致性；升级 = 全量 bump（preset-pkgs.txt） |

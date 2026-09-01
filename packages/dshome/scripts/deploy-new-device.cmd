@@ -16,8 +16,8 @@ if exist "%PROFILE%\package.json" (
     echo Skipping install (remove the folder to redeploy).
 ) else (
     mkdir "%PROFILE%" 2>nul
-    copy /y "%~dp0..\profile-template\package.json" "%PROFILE%\package.json" >nul
-    copy /y "%~dp0..\profile-template\pnpm-workspace.yaml" "%PROFILE%\pnpm-workspace.yaml" >nul
+    copy /y "%~dp0..\..\profile-template\package.json" "%PROFILE%\package.json" >nul
+    copy /y "%~dp0..\..\profile-template\pnpm-workspace.yaml" "%PROFILE%\pnpm-workspace.yaml" >nul
     rem Re-point the E:/DSH placeholder in the copied profile to this clone's real path.
     node -e "const f=process.argv[1],path=require('path'),a=path.resolve(process.argv[2]).replace(/\\/g,'/'),c=require('fs').readFileSync(f,'utf8'),o=c.split('E:/DSH').join(a);require('fs').writeFileSync(f,o)" "%PROFILE%\package.json" "%REPO%"
     pushd "%PROFILE%"

@@ -22,6 +22,9 @@ const DESC_CN = {
   'dshome/desktop': '桌面服务兼容层（接口与 dshmarket 不匹配，已禁用）',
   'dshome-plugin-center': '插件管理中心（本面板）',
   'dshome-plugin-api': '插件管理控制面（/api/dshome/plugins）',
+  // 本地预设插件（router-standard 等；moduleName 形如 ./router-bootstrap-v34.mjs?v=N）
+  'router-bootstrap': 'router-standard 预设核心：阶段化工具解锁 / 交付门禁',
+  'gitbash-executor': 'Git for Windows Bash 私有 shell 服务（win32 真 Git Bash）',
   // 核心 / 官方常用
   'cordis:include': '插件加载入口（Cordis 核心）',
   '@deepseek-ai/dsh-base': 'DSH 基础层：会话 / LLM / 工具等核心行',
@@ -103,7 +106,29 @@ const DESC_CN = {
   'dsh-evolve': '跨会话记忆 + 技能固化（审批门 / 零token召回）',
   'dsh-whale-widget': 'DeepSeek 余额鲸鱼挂件',
   'dsh-better-sidebar': '侧边栏工作台增强（文件 / 终端 / 子代理 tab）',
+  '@nanmicoder/dsh-agent-teams': '多agent团队协作（AgentTeams，社区插件）',
+  'dsh-status-rotator': '回合状态轮播（"Deep diving…" 换成打字机动画彩虹渐变梗文案，JSON 可配）',
 };
+
+/** 本地文件插件归一化：`./router-bootstrap-v34.mjs?v=88` → `router-bootstrap`
+ * （去缓存戳 / 路径前缀 / 扩展名 / 版本别名；对 sync-preset --bump 免疫）。 */
+function normalizePluginId(moduleName) {
+  let n = String(moduleName || '').replace(/\?v=\d+$/, '');
+  n = n.startsWith('./') ? n.slice(2) : n;
+  n = n.replace(/\.mjs$/, '');
+  return n.replace(/-v\d+$/, '');
+}
+
+/** 展示名（本地预设插件）：插件 id + 中文语义后缀；无映射时保持 moduleName（UI 兜底）。 */
+const DISPLAY_CN = {
+  'router-bootstrap': 'router-bootstrap（渐进式工具解锁路由）',
+  'gitbash-executor': 'gitbash-executor（Git Bash 执行器）',
+};
+
+/** 插件展示名（供插件管理 UI；悬停提示仍可看真实模块路径）。 */
+function displayName(moduleName) {
+  return DISPLAY_CN[normalizePluginId(moduleName)] ?? undefined;
+}
 
 /** 读取包 package.json 的 description（英文兜底；找不到返回空）。 */
 function pkgDescription(moduleName) {
@@ -129,9 +154,9 @@ function pkgDescription(moduleName) {
   return '';
 }
 
-/** 插件一句话说明：中文映射 → 包英文 description → 空。 */
+/** 插件一句话说明：中文映射（含本地文件插件的归一化 id）→ 包英文 description → 空。 */
 function describe(moduleName) {
-  const cn = DESC_CN[moduleName];
+  const cn = DESC_CN[moduleName] ?? DESC_CN[normalizePluginId(moduleName)];
   if (cn) return cn;
   return pkgDescription(moduleName);
 }
@@ -154,6 +179,7 @@ export function isProtected(moduleName) {
 export function classify(m) {
   if (m.startsWith('dshome')) return '自制';
   if (m.startsWith('@deepseek-ai/') || m.startsWith('cordis:')) return '内置';
+  if (m.startsWith('./')) return '自制'; // 本地预设文件插件（router-standard 等）
   return '下载';
 }
 
@@ -214,6 +240,7 @@ export function snapshot(ctx) {
     entries.push({
       entryId: entry.id,
       moduleName: entry.options.name,
+      displayName: displayName(entry.options.name),
       description: describe(entry.options.name),
       enabled: !entry.disabled,
       category: classify(entry.options.name),

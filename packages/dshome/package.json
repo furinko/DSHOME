@@ -1,7 +1,7 @@
 {
   "name": "dshome",
   "version": "0.2.0",
-  "description": "DSHOME: a personal DeepSeek Harness desktop client bundle (skeleton). Name pun: DSH + HOME — your own home for DSH.",
+  "description": "DSHOME: a personal DeepSeek Harness desktop client bundle. Name pun: DSH + HOME — your own home for DSH.",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -13,8 +13,6 @@
     "./notify": "./lib/host/notify.js",
     "./plugin-manager": "./lib/host/plugin-manager.js",
     "./desktop": "./lib/host/desktop.js",
-    "./client-core": "./lib/client/core.js",
-    "./theme": "./lib/client/theme.js",
     "./package.json": "./package.json"
   },
   "dsh": {
