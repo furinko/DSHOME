@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "main": "lib/index.cjs",
+  "dependencies": {
+    "croner": "^10.0.1"
+  },
   "exports": {
     ".": "./lib/index.cjs",
     "./client": "./lib/client.js",

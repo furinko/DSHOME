@@ -6,6 +6,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { DshCron } = require('./cron.cjs');
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
@@ -576,5 +577,22 @@ module.exports = {
       },
     };
     try { ctx.plugin?.(routesPlugin); } catch (e) { ctx.logger?.('dshome').warn(`dshome-mind disabled: ${e?.message ?? e}`); }
+
+    // ── cron 自治：定时拉起 agent 会话执行任务（照 dsh-scheduler 蓝图）─────
+    try {
+      ctx.inject(['webServer'], (hostCtx) => {
+        let cron;
+        try {
+          cron = new DshCron(hostCtx);
+          cron.start();
+          hostCtx.logger?.('dshome')?.info?.('dshome-mind cron ready');
+        } catch (e) {
+          hostCtx.logger?.('dshome')?.warn?.(`dshome-mind cron init failed: ${e?.message ?? e}`);
+          cron?.clear?.();
+          return () => {};
+        }
+        return () => cron.clear();
+      });
+    } catch (e) { ctx.logger?.('dshome').warn(`dshome-mind cron disabled: ${e?.message ?? e}`); }
   },
 };
