@@ -153,7 +153,7 @@ function startBackend() {
     stderrBuffer = (stderrBuffer + d.toString()).slice(-4000);
   });
   backend.on('exit', (code, signal) => {
-    logLine({ backend: 'exit', code, signal, safe: safeMode });
+    logLine({ backend: 'exit', code, signal, safe: safeMode, errTail: stderrBuffer.split('\n').slice(-8).join('\n') });
     backend = null;
     if (quitting) return;
     scheduleRestart();
