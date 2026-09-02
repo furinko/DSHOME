@@ -7,6 +7,12 @@ license: internal
 metadata:
   tags: [import, 导入, 即插即用, artifact, 蒸馏包]
   related: [mind/README.md, mind/L1/Memory.md, mind/L1/Tree.md]
+contract:
+  id: import-artifact
+  triggers: [直接丢给你, 导入, 蒸馏包, artifact]
+  inputs: [路径, 粘贴内容, 压缩包]
+  outputs: [归类放置, 索引更新, 汇报]
+  deps: [mind/README.md, mind/L1/Tree.md, mind/L1/Memory.md]
 ---
 
 # import-artifact — 导入协议
