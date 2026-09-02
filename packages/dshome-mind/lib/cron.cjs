@@ -66,6 +66,7 @@ class DshCron {
   }
   start() {
     for (const t of this.tasks) this.schedule(t);
+    this.catchUpMissed(); // 重启时补跑关机期间错过的任务
     this.timer = setInterval(() => this.reload(), 60000); // 每分钟扫新任务/改动
   }
   schedule(task) {
@@ -75,6 +76,11 @@ class DshCron {
       const job = new Cron(task.cron, { protect: true, ...tz }, () => {
         executeTask(this.hostCtx, task).then((r) => {
           console.log('[dshome-cron]', task.id, r.status, r.error || `session=${r.sessionId || ''}`);
+          // 记录实际触发时间（供 missed 补跑判定）
+          if (r.status === 'created') {
+            task.lastRunAt = new Date().toISOString();
+            saveCron(this.tasks);
+          }
           // 一次性任务：跑完自动移除 + 停表
           if (task.once && r.status === 'created') {
             this.unschedule(task.id);
@@ -86,6 +92,23 @@ class DshCron {
       this.jobs.set(task.id, job);
       return true;
     } catch { return false; }
+  }
+  /** 重启补跑：上次实际跑过（有 lastRunAt）之后有"该触发点"已过去 → 错过，立即补跑一次。 */
+  catchUpMissed() {
+    for (const t of this.tasks) {
+      const job = this.jobs.get(t.id);
+      if (!job) continue;
+      if (!t.lastRunAt) { t.lastRunAt = new Date().toISOString(); saveCron(this.tasks); continue; }
+      const next = job.nextRun(new Date(t.lastRunAt));
+      if (next && next < new Date()) {
+        console.log('[dshome-cron] catch-up missed:', t.id, '->', next.toISOString());
+        executeTask(this.hostCtx, t).then((r) => {
+          console.log('[dshome-cron] catch-up', t.id, r.status);
+          t.lastRunAt = new Date().toISOString();
+          saveCron(this.tasks);
+        }).catch((e) => console.error('[dshome-cron] catch-up error', e));
+      }
+    }
   }
   unschedule(id) {
     const j = this.jobs.get(id);
