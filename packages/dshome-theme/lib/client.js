@@ -16,7 +16,7 @@ window.__ModuleLoader__.load({
     let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
     /** 当前 DSHOME 版本（发布版本号：与 packages/dshome package.json version、updates.json、DSHOME.iss MyAppVersion 一致；发版时勿忘同步——曾漏更停留在 v0.1.0）。 */
-    const DSHOME_VERSION = "v0.2.0";
+    const DSHOME_VERSION = "v0.3.0";
 
     /** 侧栏品牌标记：暂用官方鲸鱼图标（DSHOME 自有图标定稿后替换）。 */
     function DshomeMark({ size = 24, className }) {

@@ -5,7 +5,7 @@
 ;   ② 启动入口 exe 化：快捷方式/装后启动直接指向 {app}\DSHOME.exe（布局无关启动器，无控制台闪烁）
 ;   ③ Uninstallable=yes + CreateUninstallRegKey=no：生成卸载 exe（unins000.exe）但零注册表残留
 #define MyAppName "DSHOME"
-#define MyAppVersion "0.2.0"
+#define MyAppVersion "0.3.0"
 #define MyAppPublisher "furinko"
 ; 启动入口：DSHOME.exe（scripts\launcher.cs 编译的布局无关启动器，逻辑同 开发启动.cmd；
 ; Electron 壳在 <home>\packages\dshome\shell-app，后端由壳拉起/守护）
