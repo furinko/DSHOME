@@ -81,6 +81,20 @@ if (cmd === 'snapshot') {
   const m = readMetrics();
   console.log('[evolve-log] 可测信号（发生事件时 bump 记账）:');
   for (const k of KNOWN_METRICS) console.log(`  ${k}: ${m[k] || 0}`);
+} else if (cmd === 'health') {
+  // 自主元进化自检：鱼鱼做事/进化中自己跑它，命中信号 → 自主触发元进化（不等收工/用户）
+  const src = existsSync(LOG) ? readFileSync(LOG, 'utf8') : '';
+  const logRows = src.split('\n').filter((l) => l.startsWith('|') && !l.includes('时间')).length;
+  const invalid = (src.match(/↳回测:[^\n]*无效[^\n]*/g) || []).length;
+  const m = readMetrics();
+  console.log('[evolve-log] 元进化自检（自主信号）:');
+  console.log(`  进化记录 ${logRows} 条 · 无效回测 ${invalid} 条 · 信号 ${JSON.stringify(m)}`);
+  let hit = false;
+  if (invalid >= 2) { console.log('  ⚠️ 机制连续无效(≥2) → 自主元进化：回滚/换思路'); hit = true; }
+  if (logRows >= 15) { console.log('  ⚠️ 进化记录偏多 → 审视是否僵化/该深度体检'); hit = true; }
+  if ((m.corrections || 0) >= 3) { console.log('  ⚠️ 被纠正 ≥3 次 → 审视我的行为/判断机制'); hit = true; }
+  if (logRows >= 8 && (m['repeat-mistakes'] || 0) >= 2) { console.log('  ⚠️ 改得多却重复踩坑 → 审视进化是否有效'); hit = true; }
+  if (!hit) console.log('  ✅ 机制健康，无需元进化');
 } else {
   console.error('用法: node scripts/evolve-log.mjs snapshot <path> | log "<对象>|<为什么改>|<改了啥>"');
   process.exit(1);
