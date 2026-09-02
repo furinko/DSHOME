@@ -213,13 +213,23 @@ window.__ModuleLoader__.load({
           it.reasons.forEach(function (r) {
             card.appendChild(el("div", "dshome-mind-gov-reason", "⚠️ " + r.hint));
           });
+          if (it.assigned) {
+            card.appendChild(el("div", "dshome-mind-gov-reason", "🤝 已交给鱼鱼处理中（收工时处理，完成后汇报）"));
+            govEl.appendChild(card);
+            return;
+          }
           var row = el("div", "dshome-mind-gov-actions");
-          var arc = el("button", "dshome-mind-gov-arch", "🗄 归档 → history");
+          var task = el("button", "dshome-mind-gov-ok", "🤝 让鱼鱼处理");
           var keep = el("button", "dshome-mind-gov-no", "⏭ 保留（不再提示）");
+          var arc = el("button", "dshome-mind-gov-arch", "🗄 归档 → history");
+          row.appendChild(task);
           row.appendChild(keep);
           row.appendChild(arc);
           card.appendChild(row);
           govEl.appendChild(card);
+          task.addEventListener("click", function () {
+            postJSON("/api/mind/curate/assign", { file: it.file }).then(function (r) { reload(); });
+          });
           keep.addEventListener("click", function () {
             postJSON("/api/mind/curate/keep", { file: it.file }).then(function (r) { reload(); });
           });

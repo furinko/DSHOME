@@ -278,10 +278,27 @@ function keepCurate(relPath) {
   fs.writeFileSync(curateKeptFile(), JSON.stringify({ files: kept }, null, 2));
   return { ok: true, kept: kept.length };
 }
+/** 作业队列：用户点「让鱼鱼处理」的候选，鱼鱼收工时检查执行。 */
+const curateJobsFile = () => path.join(mindPrivateDir(), '.curate-jobs.json');
+function readJobs() {
+  try { return JSON.parse(fs.readFileSync(curateJobsFile(), 'utf8')).jobs || []; }
+  catch { return []; }
+}
+function assignCurate(relPath) {
+  const safe = String(relPath || '').replace(/^\/+/, '');
+  const src = path.join(mindPrivateDir(), 'L3', 'index', safe);
+  if (!fs.existsSync(src) || !fs.statSync(src).isFile()) return { ok: false, error: 'not-found' };
+  const jobs = readJobs();
+  if (!jobs.some((j) => j.file === safe)) jobs.push({ file: safe, at: new Date().toISOString(), status: 'assigned' });
+  fs.mkdirSync(mindPrivateDir(), { recursive: true });
+  fs.writeFileSync(curateJobsFile(), JSON.stringify({ jobs }, null, 2));
+  return { ok: true, jobs: jobs.length };
+}
 function listCurate() {
   const files = [];
   walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
   const kept = new Set(readKept());
+  const jobs = new Map(readJobs().map((j) => [j.file, j]));
   const items = [];
   const tagSeen = new Map();
   for (const f of files) {
@@ -306,7 +323,7 @@ function listCurate() {
         reasons.push({ type: 'dup-tags', hint: `与 ${prev} 同 kind+tags，疑似重复，建议合并` });
       } else tagSeen.set(key, name);
     }
-    if (reasons.length && !kept.has(f.rel)) items.push({ file: f.rel, zone: 'private', name, rel, size, reasons });
+    if (reasons.length && !kept.has(f.rel)) items.push({ file: f.rel, zone: 'private', name, rel, size, reasons, assigned: jobs.has(f.rel) });
   }
   return items;
 }
@@ -504,6 +521,19 @@ function makeMindRoutes() {
         try {
           const body = await readJsonBody(req);
           const out = keepCurate(body?.file);
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/curate/assign`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = assignCurate(body?.file);
           json(res, out.ok ? 200 : 404, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
