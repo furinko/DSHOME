@@ -470,14 +470,15 @@ window.__ModuleLoader__.load({
     // （chat 整页滚是官方模式）——面板必须锁在 scrollBody 的【可视高度】内：图内部滚、
     // 详情与图等高、页面不滚。动态测真正滚动容器（找 overflow-y auto/scroll 的祖先）。
     function fitViewport(host) {
-      // 取高度最小的滚动容器 = 真正的可视滚动区（若 host 外层有高度随内容变的
-      // 包装容器先命中，其 clientHeight 是内容高，会把面板撑长——最小者兜底）。
+      // 只认"真正可视滚动区"：overflow auto/scroll 且 clientHeight ≤ 视口的容器。
+      // 内容撑高的大容器 clientHeight 会超过视口（不是固定可视区），直接排除；
+      // 否则"最小者"会误选内容撑高容器 → 面板被撑长。
       function findScroller() {
         var best = null;
         var el = host.parentElement;
         while (el && el !== document.body) {
           var ov = getComputedStyle(el).overflowY;
-          if (ov === "auto" || ov === "scroll") {
+          if ((ov === "auto" || ov === "scroll") && el.clientHeight > 0 && el.clientHeight <= window.innerHeight + 2) {
             if (!best || el.clientHeight < best.clientHeight) best = el;
           }
           el = el.parentElement;
