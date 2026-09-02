@@ -39,6 +39,20 @@ window.__ModuleLoader__.load({
       ".dshome-mind-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:11.5px;line-height:1.65;color:var(--dsw-alias-label-secondary,#4a5a78);font-family:Consolas,'Cascadia Mono',monospace}",
       ".dshome-mind-graph{cursor:grab}",
       ".dshome-mind-graph.panning{cursor:grabbing;user-select:none}",
+      ".dshome-mind-vswitch{display:inline-flex;gap:2px;background:var(--dsw-alias-border-l1,#e3e9f3);border-radius:9px;padding:2px}",
+      ".dshome-mind-vswitch button{border:none;background:transparent;color:var(--dsw-alias-label-tertiary,#6b7a99);font-size:11.5px;font-weight:600;padding:4px 11px;border-radius:7px;cursor:pointer;white-space:nowrap}",
+      ".dshome-mind-vswitch button.on{background:var(--dsw-alias-bg-layer-2,#fff);color:var(--dsw-alias-brand-primary,#4D6BFE);box-shadow:0 1px 3px rgba(0,0,0,.1)}",
+      ".dshome-mind-gov{flex:1;min-height:0;overflow-y:auto;padding:10px 14px 24px;background:var(--dsw-alias-bg-layer-1,#fbfcfe)}",
+      ".dshome-mind-gov-head{font-size:12px;font-weight:600;color:var(--dsw-alias-label-tertiary,#6b7a99);margin:2px 2px 12px}",
+      ".dshome-mind-gov-card{border:1px solid var(--dsw-alias-border-l1,#e3e9f3);border-radius:11px;padding:10px 12px;margin-bottom:10px;background:var(--dsw-alias-bg-layer-2,#fff)}",
+      ".dshome-mind-gov-card .dshome-mind-chips{margin-bottom:0}",
+      ".dshome-mind-gov-name{font-size:13px;font-weight:600;margin-bottom:6px;word-break:break-all}",
+      ".dshome-mind-gov-reason{font-size:11.5px;color:var(--dsw-alias-state-warn-primary,#b8860b);margin:3px 0}",
+      ".dshome-mind-gov-actions{display:flex;gap:8px;margin-top:8px}",
+      ".dshome-mind-gov-ok{padding:4px 13px;border-radius:8px;border:none;background:rgba(47,191,143,.16);color:#1e9e73;font-size:12px;font-weight:600;cursor:pointer}",
+      ".dshome-mind-gov-no{padding:4px 13px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2,#d3dcea);background:transparent;color:var(--dsw-alias-label-tertiary,#6b7a99);font-size:12px;cursor:pointer}",
+      ".dshome-mind-gov-arch{padding:4px 13px;border-radius:8px;border:none;background:rgba(240,180,41,.18);color:#b8860b;font-size:12px;font-weight:600;cursor:pointer}",
+      ".dshome-mind-gov-ok:hover,.dshome-mind-gov-arch:hover{filter:brightness(.97)}",
       ".dshome-mind-empty{padding:30px 14px;text-align:center;font-size:12px;color:var(--dsw-alias-label-tertiary,#6b7a99)}",
       ".dshome-mind-graph-node{cursor:pointer}",
       ".dshome-mind-graph-node text{user-select:none}",
@@ -128,6 +142,87 @@ window.__ModuleLoader__.load({
           panel.innerHTML = "";
           panel.appendChild(el("div", "dshome-mind-empty", "⚠️ 读取失败: " + e));
         });
+    }
+
+    // ── 治理视图：待放行 / 整理候选 ───────────────────────────────────────────
+    function postJSON(url, body) {
+      return fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(function (r) { return r.json(); });
+    }
+    function govChips(parts) {
+      var c = el("div", "dshome-mind-chips");
+      parts.forEach(function (p) { if (p) c.appendChild(el("span", "dshome-mind-chip", p)); });
+      return c;
+    }
+    function renderPending(govEl, reload) {
+      govEl.innerHTML = "";
+      govEl.appendChild(el("div", "dshome-mind-gov-head", "⏳ 待放行 — 鱼鱼提议的记忆，你放行后才入正式库"));
+      fetch("/api/mind/pending").then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) throw new Error(d.error);
+        if (!d.items || !d.items.length) {
+          govEl.appendChild(el("div", "dshome-mind-empty", "🎉 没有待放行的记忆"));
+          return;
+        }
+        d.items.forEach(function (it) {
+          var card = el("div", "dshome-mind-gov-card");
+          card.appendChild(govChips([
+            (it.kind || "note") + "/imp" + (it.importance || 2),
+            it.topic ? "主题: " + it.topic : "主题: general",
+            it.proposedBy ? "提议: " + it.proposedBy : "",
+            it.proposedAt || "",
+          ]));
+          var body = it.content || "";
+          var pre = el("pre", "dshome-mind-pre", body.length > 500 ? body.slice(0, 500) + "\n…" : body);
+          pre.style.margin = "8px 0 2px";
+          card.appendChild(pre);
+          var row = el("div", "dshome-mind-gov-actions");
+          var ok = el("button", "dshome-mind-gov-ok", "✓ 放行入 L3");
+          var no = el("button", "dshome-mind-gov-no", "✗ 拒绝");
+          row.appendChild(ok); row.appendChild(no);
+          card.appendChild(row);
+          govEl.appendChild(card);
+          ok.addEventListener("click", function () {
+            postJSON("/api/mind/pending/approve", { file: it.file }).then(function () { reload(); });
+          });
+          no.addEventListener("click", function () {
+            postJSON("/api/mind/pending/reject", { file: it.file }).then(function () { reload(); });
+          });
+        });
+      }).catch(function (e) {
+        govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
+      });
+    }
+    function renderCurate(govEl, reload) {
+      govEl.innerHTML = "";
+      govEl.appendChild(el("div", "dshome-mind-gov-head", "🧹 整理建议 — 扫描 L3 的膨胀候选，可归档回收"));
+      fetch("/api/mind/curate").then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) throw new Error(d.error);
+        if (!d.items || !d.items.length) {
+          govEl.appendChild(el("div", "dshome-mind-empty", "🧹 L3 很干净，暂无整理候选"));
+          return;
+        }
+        d.items.forEach(function (it) {
+          var card = el("div", "dshome-mind-gov-card");
+          var nm = el("div", "dshome-mind-gov-name", "📄 " + it.name + " · " + it.rel);
+          card.appendChild(nm);
+          it.reasons.forEach(function (r) {
+            card.appendChild(el("div", "dshome-mind-gov-reason", "⚠️ " + r.hint));
+          });
+          var row = el("div", "dshome-mind-gov-actions");
+          var arc = el("button", "dshome-mind-gov-arch", "🗄 归档 → history");
+          row.appendChild(arc);
+          card.appendChild(row);
+          govEl.appendChild(card);
+          arc.addEventListener("click", function () {
+            postJSON("/api/mind/curate/archive", { file: it.file }).then(function () { reload(); });
+          });
+        });
+      }).catch(function (e) {
+        govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
+      });
     }
 
     // ── 图谱布局 + SVG ───────────────────────────────────────────────────────
@@ -393,8 +488,16 @@ window.__ModuleLoader__.load({
       header.appendChild(stat);
       host.appendChild(header);
 
-      // toolbar：搜索 + 图例 + 缩放
+      // toolbar：视图切换 + 搜索 + 图例 + 缩放
       var toolbar = el("div", "dshome-mind-toolbar");
+      var viewSw = el("div", "dshome-mind-vswitch");
+      var btns = {};
+      [["graph", "📊 图谱"], ["pending", "⏳ 待放行"], ["curate", "🧹 整理"]].forEach(function (v) {
+        var b = el("button", v[0] === "graph" ? "on" : "", v[1]);
+        btns[v[0]] = b;
+        viewSw.appendChild(b);
+      });
+      toolbar.appendChild(viewSw);
       var search = el("input", "dshome-mind-search");
       search.placeholder = "搜索节点…";
       toolbar.appendChild(search);
@@ -415,14 +518,43 @@ window.__ModuleLoader__.load({
       toolbar.appendChild(zoom);
       host.appendChild(toolbar);
 
-      // main：图 + 详情
+      // main：图 + 详情 / 治理
       var main = el("div", "dshome-mind-main");
       var graphWrap = el("div", "dshome-mind-graph");
       var detail = el("div", "dshome-mind-detail");
       detail.appendChild(el("div", "dshome-mind-empty", "点击图谱节点查看内容"));
+      var govEl = el("div", "dshome-mind-gov");
+      govEl.style.display = "none";
       main.appendChild(graphWrap);
       main.appendChild(detail);
+      main.appendChild(govEl);
       host.appendChild(main);
+
+      // 视图切换：图谱 / 待放行 / 整理
+      state.view = "graph";
+      var govLoaded = { pending: false, curate: false };
+      function showView(mode) {
+        state.view = mode;
+        Object.keys(btns).forEach(function (k) { btns[k].className = k === mode ? "on" : ""; });
+        var isGov = mode === "pending" || mode === "curate";
+        graphWrap.style.display = isGov ? "none" : "";
+        detail.style.display = isGov ? "none" : "";
+        govEl.style.display = isGov ? "" : "none";
+        legend.style.display = mode === "graph" ? "" : "none";
+        zoom.style.display = mode === "graph" ? "" : "none";
+        search.placeholder = mode === "graph" ? "搜索节点…" : (mode === "pending" ? "筛选待放行…" : "筛选整理候选…");
+        stat.textContent = mode === "graph" && state.graphStat ? state.graphStat : "";
+        if (isGov && !govLoaded[mode]) {
+          govLoaded[mode] = true;
+          if (mode === "pending") renderPending(govEl, loadPending);
+          else renderCurate(govEl, loadCurate);
+        }
+      }
+      function loadPending() { renderPending(govEl, loadPending); }
+      function loadCurate() { renderCurate(govEl, loadCurate); }
+      Object.keys(btns).forEach(function (k) {
+        btns[k].addEventListener("click", function () { showView(k); });
+      });
 
       // 拖拽平移画布（空白/层带拖动；节点上留给点击）
       var pan = null;
@@ -465,6 +597,7 @@ window.__ModuleLoader__.load({
         .then(function (g) {
           if (!g.ok) throw new Error(g.error);
           stat.textContent = g.nodes.length + " 节点 · " + g.edges.length + " 关联";
+          state.graphStat = stat.textContent;
           renderGraph(g, graphWrap, function (n) {
             openDetail(n.zone, n.rel);
           }, state);
@@ -473,6 +606,17 @@ window.__ModuleLoader__.load({
           stat.textContent = "加载失败";
           graphWrap.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
         });
+
+      // 治理计数徽标（图谱 stat 之外的待放行/整理数量）
+      function refreshCounts() {
+        fetch("/api/mind/pending").then(function (r) { return r.json(); }).then(function (d) {
+          btns.pending.textContent = "⏳ 待放行" + (d.ok && d.items && d.items.length ? " (" + d.items.length + ")" : "");
+        }).catch(function () {});
+        fetch("/api/mind/curate").then(function (r) { return r.json(); }).then(function (d) {
+          btns.curate.textContent = "🧹 整理" + (d.ok && d.items && d.items.length ? " (" + d.items.length + ")" : "");
+        }).catch(function () {});
+      }
+      refreshCounts();
 
       host.__mindState = state;
     }

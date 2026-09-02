@@ -186,6 +186,136 @@ function buildGraph() {
   return { ok: true, nodes, edges };
 }
 
+// ── 治理：待放行（pending）与整理候选（curate）──────────────────────────────
+const pendingDir = () => path.join(mindPrivateDir(), 'tasks', 'pending');
+const trashDir = () => path.join(mindPrivateDir(), 'TRASH');
+const historyDir = () => path.join(mindPrivateDir(), 'L3', 'history');
+
+function fmValue(content, key) {
+  const m = /^---\n([\s\S]*?)\n---/.exec(content || '');
+  if (!m) return '';
+  const r = new RegExp('(?:^|\\n)\\s*' + key + ':\\s*([^\\n]+)').exec(m[1]);
+  return r ? r[1].trim().replace(/^['"]|['"]$/g, '') : '';
+}
+function todayStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+/** 目标文件名：原名已带 YYYY-MM-DD_ 前缀则不再重复加；否则补日期前缀。 */
+function stampedName(original, suffix) {
+  const base = path.basename(String(original || '')).replace(/\.md$/, '');
+  const prefix = /^\d{4}-\d{2}-\d{2}_/.test(base) ? '' : todayStamp() + '_';
+  return prefix + base + (suffix || '') + '.md';
+}
+
+/** 待放行列表：扫描 tasks/pending/*.md。 */
+function listPending() {
+  const dir = pendingDir();
+  const items = [];
+  if (!fs.existsSync(dir)) return items;
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith('.md')) continue;
+    const full = path.join(dir, f);
+    let content = '';
+    try { content = fs.readFileSync(full, 'utf8'); } catch { continue; }
+    const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+    items.push({
+      file: f,
+      kind: fmValue(content, 'kind') || 'note',
+      importance: fmValue(content, 'importance') || '2',
+      scope: fmValue(content, 'scope') || 'project',
+      topic: fmValue(content, 'topic') || '',
+      proposedBy: fmValue(content, 'proposedBy') || '',
+      proposedAt: fmValue(content, 'proposedAt') || '',
+      content: body.slice(0, 600),
+    });
+  }
+  items.sort((a, b) => String(b.file).localeCompare(String(a.file)));
+  return items;
+}
+
+/** 放行：pending/<file> → L3/index/<topic>/<日期>_<file>。 */
+function approvePending(file) {
+  const safe = path.basename(String(file || ''));
+  const src = path.join(pendingDir(), safe);
+  if (!/\.md$/.test(safe) || !fs.existsSync(src)) return { ok: false, error: 'not-found' };
+  const content = fs.readFileSync(src, 'utf8');
+  const topic = fmValue(content, 'topic') || 'general';
+  const targetDir = path.join(mindPrivateDir(), 'L3', 'index', topic);
+  fs.mkdirSync(targetDir, { recursive: true });
+  const target = path.join(targetDir, stampedName(safe));
+  fs.renameSync(src, target);
+  return { ok: true, movedTo: `L3/index/${topic}/${path.basename(target)}` };
+}
+
+/** 拒绝：pending/<file> → mind-private/TRASH/。 */
+function rejectPending(file) {
+  const safe = path.basename(String(file || ''));
+  const src = path.join(pendingDir(), safe);
+  if (!/\.md$/.test(safe) || !fs.existsSync(src)) return { ok: false, error: 'not-found' };
+  fs.mkdirSync(trashDir(), { recursive: true });
+  const target = path.join(trashDir(), stampedName(safe));
+  fs.renameSync(src, target);
+  return { ok: true, movedTo: `TRASH/${path.basename(target)}` };
+}
+
+/** 整理候选扫描（L3/index 全部内容文件）。 */
+const CURATE_OVERSIZED = 20 * 1024;   // >20KB：建议蒸馏/拆分
+const CURATE_THIN = 400;              // <400B：薄条目，建议合并/归档
+function listCurate() {
+  const files = [];
+  walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
+  const items = [];
+  const tagSeen = new Map();
+  for (const f of files) {
+    let content = '';
+    try { content = fs.readFileSync(f.full, 'utf8'); } catch { continue; }
+    const size = Buffer.byteLength(content, 'utf8');
+    const name = path.basename(f.rel).replace(/\.md$/, '');
+    const rel = f.rel.replace(/^L3\/index\//, '');
+    const reasons = [];
+    if (size > CURATE_OVERSIZED) reasons.push({ type: 'oversized', hint: `${(size / 1024).toFixed(0)}KB 超长，建议蒸馏成速查或拆分` });
+    if (size < CURATE_THIN) reasons.push({ type: 'thin', hint: '内容过薄，建议并入同主题或归档' });
+    if (/PENDING|待办|TODO/i.test(content) && /PENDING/i.test(content)) reasons.push({ type: 'pending-flag', hint: '含 PENDING 遗留标记，建议处理' });
+    // 同 tags 疑似重复（同 kind + 完全相同 tags）
+    const kind = fmValue(content, 'kind');
+    const tagsRaw = /(?:^|\n)\s*tags:\s*\[([^\]]*)\]/.exec(/^---\n([\s\S]*?)\n---/.exec(content)?.[1] || '');
+    const tags = tagsRaw ? tagsRaw[1].split(',').map((s) => s.trim().replace(/['"\[\]]/g, '')).filter(Boolean).sort().join(',') : '';
+    if (tags && kind) {
+      const key = `${kind}|${tags}`;
+      if (tagSeen.has(key)) {
+        const prev = tagSeen.get(key);
+        reasons.push({ type: 'dup-tags', hint: `与 ${prev} 同 kind+tags，疑似重复，建议合并` });
+      } else tagSeen.set(key, name);
+    }
+    if (reasons.length) items.push({ file: f.rel, zone: 'private', name, rel, size, reasons });
+  }
+  return items;
+}
+
+/** 归档整理候选：L3/index/<path> → L3/history/<日期>_<名>_归档.md。 */
+function archiveCurate(relPath) {
+  const safe = String(relPath || '').replace(/^\/+/, '');
+  const src = path.join(mindPrivateDir(), 'L3', 'index', safe);
+  if (!fs.existsSync(src) || !fs.statSync(src).isFile()) return { ok: false, error: 'not-found' };
+  fs.mkdirSync(historyDir(), { recursive: true });
+  const base = path.basename(safe).replace(/\.md$/, '');
+  const target = path.join(historyDir(), stampedName(base, '_归档'));
+  fs.renameSync(src, target);
+  return { ok: true, movedTo: `L3/history/${path.basename(target)}` };
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => { size += c.length; if (size > 65536) { reject(new Error('body-too-large')); req.destroy(); return; } chunks.push(c); });
+    req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new Error('bad-json')); } });
+    req.on('error', reject);
+  });
+}
+
 // ── 路由 ────────────────────────────────────────────────────────────────────
 function makeMindRoutes() {
   const guard = (req, res) => {
@@ -234,6 +364,65 @@ function makeMindRoutes() {
         if (!guard(req, res)) return;
         try {
           json(res, 200, buildGraph());
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/pending`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try { json(res, 200, { ok: true, items: listPending() }); }
+        catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/pending/approve`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = approvePending(body?.file);
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/pending/reject`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = rejectPending(body?.file);
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/curate`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try { json(res, 200, { ok: true, items: listCurate() }); }
+        catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/curate/archive`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = archiveCurate(body?.file);
+          json(res, out.ok ? 200 : 404, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },

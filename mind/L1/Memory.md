@@ -70,3 +70,11 @@
 
 - 出厂模板在 `mind\L3\`；**运行时记忆一律写 `mind-private\L3\`**（同名私有优先）
 - 隐私红线：真实记忆内容永不写入出厂区、永不推送
+
+## 八、pending 待放行协议（记忆写入门）
+
+- **流程**：提议记忆（鱼鱼识别到值得长期记的结论）→ 先写 `mind-private\tasks\pending\<日期>_<名>.md`（frontmatter：kind/importance/scope/topic/tags/proposedBy/proposedAt）→ 用户在图谱面板「⏳ 待放行」区逐条操作
+- **放行 ✓** → 移入 `L3\index\<topic>\`（记得更新该主题 `_index.md`）
+- **拒绝 ✗** → 移入 `mind-private\TRASH\`（不删只移，可恢复）
+- **为什么**：不自动落正式库——记忆要经用户点头（对应 dsh-evolve 时代的审批门，纯文件实现）
+- 例外：用户**直接要求记录**的内容（"记一下/存下来"）→ 实时落盘，不进 pending
