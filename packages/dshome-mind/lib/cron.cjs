@@ -23,14 +23,15 @@ async function executeTask(hostCtx, task) {
     }
     const sessionId = randomUUID();
     const defaultModel = hostCtx.get('agentDefaultModel')?.currentSelection?.();
+    const modelChoice = task.model || defaultModel; // 任务可指定便宜模型跑自治会话（省 token）
     const { agent } = await agents.create({
       sessionId,
       meta: { cwd: task.cwd ?? process.cwd() },
-      ...(defaultModel ? {
+      ...(modelChoice ? {
         setup: (agentCtx) => {
           // 低层 agents.create 不装模型选择，系统提示 {{model}} 会 undefined
           const { installModelSelection } = require('@deepseek-ai/dsh-agent');
-          installModelSelection(agentCtx, { current: defaultModel, assembled: undefined });
+          installModelSelection(agentCtx, { current: modelChoice, assembled: undefined });
         },
       } : {}),
     });
