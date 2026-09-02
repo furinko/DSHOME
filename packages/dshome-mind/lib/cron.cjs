@@ -71,6 +71,8 @@ class DshCron {
   }
   schedule(task) {
     this.unschedule(task.id);
+    // 停用任务：保留在 tasks（可再启用），但不建 job（不触发）
+    if (task.enabled === false) return true;
     try {
       const tz = typeof task.timezone === 'string' ? { timezone: task.timezone } : {};
       const job = new Cron(task.cron, { protect: true, ...tz }, () => {
@@ -125,6 +127,45 @@ class DshCron {
     this.jobs.clear();
     if (this.timer) clearInterval(this.timer);
   }
+  // ── 面板管理：增/删/启停/列表 ──────────────────────────────────────────────
+  nextRunFor(id) {
+    const job = this.jobs.get(id);
+    return job ? (job.nextRun() ? job.nextRun().toISOString() : null) : null;
+  }
+  list() {
+    return this.tasks.map((t) => ({ ...t, enabled: t.enabled !== false, nextRun: this.nextRunFor(t.id) }));
+  }
+  add(task) {
+    const id = task.id || ('cron-' + require('crypto').randomUUID().slice(0, 8));
+    if (!task.cron || !task.prompt) return { ok: false, error: 'cron+prompt required' };
+    if (this.tasks.some((t) => t.id === id)) return { ok: false, error: 'id exists' };
+    const t = { ...task, id, enabled: task.enabled !== false };
+    this.tasks.push(t);
+    this.schedule(t);
+    saveCron(this.tasks);
+    return { ok: true, id };
+  }
+  remove(id) {
+    const before = this.tasks.length;
+    this.unschedule(id);
+    this.tasks = this.tasks.filter((t) => t.id !== id);
+    if (this.tasks.length === before) return { ok: false, error: 'not-found' };
+    saveCron(this.tasks);
+    return { ok: true, removed: id };
+  }
+  toggle(id) {
+    const t = this.tasks.find((x) => x.id === id);
+    if (!t) return { ok: false, error: 'not-found' };
+    t.enabled = t.enabled === false ? true : false;
+    this.schedule(t); // enabled 则建 job，停用则不建（schedule 内已判）
+    saveCron(this.tasks);
+    return { ok: true, id, enabled: t.enabled };
+  }
 }
 
-module.exports = { DshCron, loadCron, saveCron, executeTask, CRON_FILE };
+// ── 模块级实例存取（/api/mind/cron 路由访问当前调度器）─────────────────────
+let __instance = null;
+function setCronInstance(i) { __instance = i; }
+function getCronInstance() { return __instance; }
+
+module.exports = { DshCron, loadCron, saveCron, executeTask, CRON_FILE, setCronInstance, getCronInstance };

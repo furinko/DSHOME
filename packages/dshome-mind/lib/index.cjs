@@ -6,7 +6,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { DshCron } = require('./cron.cjs');
+const { DshCron, setCronInstance, getCronInstance } = require('./cron.cjs');
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
@@ -583,6 +583,61 @@ function makeMindRoutes() {
     },
     {
       kind: 'exact',
+      path: `${API_PREFIX}/cron`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const cron = getCronInstance();
+          json(res, 200, { ok: true, tasks: cron ? cron.list() : [] });
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/cron/add`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req);
+          const cron = getCronInstance();
+          if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
+          const out = cron.add({ id: b?.id, cron: b?.cron, prompt: b?.prompt, cwd: b?.cwd, once: !!b?.once, catchUp: !!b?.catchUp, timezone: b?.timezone });
+          json(res, out.ok ? 200 : 400, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/cron/remove`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req);
+          const cron = getCronInstance();
+          if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
+          json(res, 200, cron.remove(b?.id));
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/cron/toggle`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req);
+          const cron = getCronInstance();
+          if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
+          json(res, 200, cron.toggle(b?.id));
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
       path: `${API_PREFIX}/dup-check`,
       handler: async (req, res) => {
         if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
@@ -626,6 +681,7 @@ module.exports = {
         let cron;
         try {
           cron = new DshCron(hostCtx);
+          setCronInstance(cron); // 供 /api/mind/cron 路由实时管理
           cron.start();
           hostCtx.logger?.('dshome')?.info?.('dshome-mind cron ready');
         } catch (e) {

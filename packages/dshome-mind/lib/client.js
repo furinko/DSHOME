@@ -195,6 +195,41 @@ window.__ModuleLoader__.load({
         govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
       });
     }
+    function renderCron(govEl, reload) {
+      govEl.innerHTML = "";
+      govEl.appendChild(el("div", "dshome-mind-gov-head", "⏰ 定时任务 — cron 自治：到点自动拉起 agent 会话执行。对话里说『每天 9 点做 X』我帮你加"));
+      fetch("/api/mind/cron").then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) throw new Error(d.error);
+        if (!d.tasks || !d.tasks.length) {
+          govEl.appendChild(el("div", "dshome-mind-empty", "暂无定时任务"));
+        }
+        (d.tasks || []).forEach(function (t) {
+          var card = el("div", "dshome-mind-gov-card");
+          card.appendChild(el("div", "dshome-mind-gov-name", "⏱ " + t.id + " · " + t.cron + (t.enabled ? "" : "（已停用）")));
+          card.appendChild(el("div", "dshome-mind-gov-reason", (t.prompt || "").slice(0, 140)));
+          card.appendChild(el("div", "dshome-mind-gov-reason", t.nextRun ? "下次: " + t.nextRun.replace("T", " ").slice(0, 16) : "（无下次）"));
+          var row = el("div", "dshome-mind-gov-actions");
+          var tg = el("button", "dshome-mind-gov-arch", t.enabled ? "⏸ 停用" : "▶ 启用");
+          var del = el("button", "dshome-mind-gov-no", "🗑 删除");
+          row.appendChild(tg); row.appendChild(del); card.appendChild(row); govEl.appendChild(card);
+          tg.addEventListener("click", function () { postJSON("/api/mind/cron/toggle", { id: t.id }).then(function () { reload(); }); });
+          del.addEventListener("click", function () { if (window.confirm("删除定时任务 " + t.id + "？")) postJSON("/api/mind/cron/remove", { id: t.id }).then(function () { reload(); }); });
+        });
+        var add = el("div", "dshome-mind-gov-card");
+        add.appendChild(el("div", "dshome-mind-gov-name", "➕ 添加任务"));
+        var inpCron = el("input", "dshome-mind-search"); inpCron.placeholder = "cron 五字段（如 0 9 * * *）";
+        var inpPrompt = el("input", "dshome-mind-search"); inpPrompt.placeholder = "到点执行的任务 prompt";
+        var addBtn = el("button", "dshome-mind-gov-ok", "➕ 添加");
+        add.appendChild(inpCron); add.appendChild(inpPrompt); add.appendChild(addBtn); govEl.appendChild(add);
+        addBtn.addEventListener("click", function () {
+          if (!inpCron.value.trim() || !inpPrompt.value.trim()) return;
+          postJSON("/api/mind/cron/add", { cron: inpCron.value.trim(), prompt: inpPrompt.value.trim() }).then(function () { reload(); });
+        });
+      }).catch(function (e) {
+        govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
+      });
+    }
+
     function renderCurate(govEl, reload) {
       govEl.innerHTML = "";
       var head = el("div", "dshome-mind-gov-head", "🧹 整理建议 — 扫描 L3 的膨胀候选");
@@ -527,7 +562,7 @@ window.__ModuleLoader__.load({
       var toolbar = el("div", "dshome-mind-toolbar");
       var viewSw = el("div", "dshome-mind-vswitch");
       var btns = {};
-      [["graph", "📊 图谱"], ["pending", "⏳ 待放行"], ["curate", "🧹 整理"]].forEach(function (v) {
+      [["graph", "📊 图谱"], ["pending", "⏳ 待放行"], ["curate", "🧹 整理"], ["cron", "⏰ 定时"]].forEach(function (v) {
         var b = el("button", v[0] === "graph" ? "on" : "", v[1]);
         btns[v[0]] = b;
         viewSw.appendChild(b);
@@ -570,7 +605,7 @@ window.__ModuleLoader__.load({
       function showView(mode) {
         state.view = mode;
         Object.keys(btns).forEach(function (k) { btns[k].className = k === mode ? "on" : ""; });
-        var isGov = mode === "pending" || mode === "curate";
+        var isGov = mode === "pending" || mode === "curate" || mode === "cron";
         graphWrap.style.display = isGov ? "none" : "";
         detail.style.display = isGov ? "none" : "";
         govEl.style.display = isGov ? "" : "none";
@@ -581,11 +616,13 @@ window.__ModuleLoader__.load({
         // 治理视图共用一个容器：每次切入都重渲染，避免残留上一个视图的内容
         if (isGov) {
           if (mode === "pending") renderPending(govEl, loadPending);
-          else renderCurate(govEl, loadCurate);
+          else if (mode === "curate") renderCurate(govEl, loadCurate);
+          else renderCron(govEl, loadCronView);
         }
       }
       function loadPending() { renderPending(govEl, loadPending); }
       function loadCurate() { renderCurate(govEl, loadCurate); }
+      function loadCronView() { renderCron(govEl, loadCronView); }
       Object.keys(btns).forEach(function (k) {
         btns[k].addEventListener("click", function () { showView(k); });
       });
