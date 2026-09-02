@@ -277,7 +277,6 @@ function listCurate() {
     const reasons = [];
     if (size > CURATE_OVERSIZED) reasons.push({ type: 'oversized', hint: `${(size / 1024).toFixed(0)}KB 超长，建议蒸馏成速查或拆分` });
     if (size < CURATE_THIN) reasons.push({ type: 'thin', hint: '内容过薄，建议并入同主题或归档' });
-    if (/PENDING|待办|TODO/i.test(content) && /PENDING/i.test(content)) reasons.push({ type: 'pending-flag', hint: '含 PENDING 遗留标记，建议处理' });
     // 同 tags 疑似重复（同 kind + 完全相同 tags）
     const kind = fmValue(content, 'kind');
     const tagsRaw = /(?:^|\n)\s*tags:\s*\[([^\]]*)\]/.exec(/^---\n([\s\S]*?)\n---/.exec(content)?.[1] || '');
@@ -304,6 +303,58 @@ function archiveCurate(relPath) {
   const target = path.join(historyDir(), stampedName(base, '_归档'));
   fs.renameSync(src, target);
   return { ok: true, movedTo: `L3/history/${path.basename(target)}` };
+}
+
+// ── 近重复检测（bigram-Jaccard，照 dsh-evolve search 思路，防"同事实存两份"）──
+function tokenize(text) {
+  const s = String(text).toLowerCase();
+  const tokens = new Set();
+  const cjk = s.match(/[\u4e00-\u9fff]/g) || [];
+  for (let i = 0; i + 1 < cjk.length; i++) tokens.add(cjk[i] + cjk[i + 1]);
+  (s.match(/[a-z0-9][a-z0-9_\-./]+/g) || []).forEach((w) => tokens.add(w));
+  return tokens;
+}
+function jaccard(a, b) {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+/** 扫 topic 目录（+ user-rules 兜底），目标文件按 ## 条目切块逐块比对（防长文件稀释）。 */
+function dupCheck(topic, content) {
+  const hits = [];
+  const dirs = [];
+  if (topic) dirs.push(path.join(mindPrivateDir(), 'L3', 'index', topic));
+  const ur = path.join(mindPrivateDir(), 'L3', 'index', 'user-rules');
+  if (topic !== 'user-rules' && fs.existsSync(ur)) dirs.push(ur);
+  const q = tokenize(content);
+  for (const dir of dirs) {
+    const files = [];
+    walkContentMd(dir, '', '', files);
+    for (const f of files) {
+      let text = '';
+      try { text = fs.readFileSync(f.full, 'utf8'); } catch { continue; }
+      const body = text.replace(/^---\n[\s\S]*?\n---\n?/, '');
+      // 按 ## 条目切块（主题文件是条目合集）；无 ## 则整文件为一块
+      const sections = body.split(/\n(?=## )/).map((s) => s.trim()).filter(Boolean);
+      let best = null;
+      for (const sec of sections) {
+        const score = jaccard(q, tokenize(sec));
+        if (!best || score > best.score) best = { score, sec };
+      }
+      if (best && best.score >= 0.12) {
+        const title = (best.sec.split('\n')[0] || '').replace(/^#+/, '').trim();
+        hits.push({
+          file: f.rel || path.basename(f.full),
+          score: Math.round(best.score * 100),
+          section: title.slice(0, 60),
+          snippet: best.sec.replace(/\s+/g, ' ').slice(0, 140),
+        });
+      }
+    }
+  }
+  hits.sort((a, b) => b.score - a.score);
+  return hits.slice(0, 5);
 }
 
 function readJsonBody(req) {
@@ -423,6 +474,21 @@ function makeMindRoutes() {
           const body = await readJsonBody(req);
           const out = archiveCurate(body?.file);
           json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/dup-check`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const topic = typeof body?.topic === 'string' ? body.topic.trim() : '';
+          const content = typeof body?.content === 'string' ? body.content : '';
+          if (!content) return json(res, 400, { ok: false, error: 'content required' });
+          json(res, 200, { ok: true, hits: dupCheck(topic, content) });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },

@@ -217,7 +217,13 @@ window.__ModuleLoader__.load({
           card.appendChild(row);
           govEl.appendChild(card);
           arc.addEventListener("click", function () {
-            postJSON("/api/mind/curate/archive", { file: it.file }).then(function () { reload(); });
+            // 整文件归档是重操作：先确认（误归档可经 history 找回，但避免手滑）
+            if (!window.confirm("把整个文件「" + it.name + "」移入 history 归档？\n（不删只移，可手动移回）")) return;
+            postJSON("/api/mind/curate/archive", { file: it.file }).then(function (r) {
+              var tip = el("div", "dshome-mind-gov-reason", r && r.ok ? "✅ 已归档 → " + r.movedTo + "（history 可找回）" : "⚠️ 归档失败");
+              govEl.insertBefore(tip, govEl.firstChild.nextSibling);
+              setTimeout(function () { reload(); }, 600);
+            });
           });
         });
       }).catch(function (e) {
@@ -464,12 +470,26 @@ window.__ModuleLoader__.load({
           host.style.height = Math.max(380, (window.innerHeight || 900) - 260) + "px";
         }
       }
+      var lastSb = null;
+      function apply() {
+        var sb = findScroller();
+        if (sb) {
+          host.style.height = Math.max(320, sb.clientHeight - 2) + "px";
+          if (lastSb !== sb) { lastSb = sb; if (ro) { try { ro.observe(sb); } catch (err) {} } }
+        } else {
+          host.style.height = Math.max(380, (window.innerHeight || 900) - 260) + "px";
+        }
+      }
       apply();
+      // 布局稳定后二次校正（初次测量可能早于会话区排版完成）
+      var t1 = setTimeout(apply, 120);
+      var t2 = setTimeout(apply, 500);
       var ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(apply) : null;
       var sessionRoot = host.closest("[data-phase]");
       if (ro && sessionRoot) ro.observe(sessionRoot);
       window.addEventListener("resize", apply);
       return function () {
+        clearTimeout(t1); clearTimeout(t2);
         if (ro) ro.disconnect();
         window.removeEventListener("resize", apply);
       };
@@ -532,7 +552,6 @@ window.__ModuleLoader__.load({
 
       // 视图切换：图谱 / 待放行 / 整理
       state.view = "graph";
-      var govLoaded = { pending: false, curate: false };
       function showView(mode) {
         state.view = mode;
         Object.keys(btns).forEach(function (k) { btns[k].className = k === mode ? "on" : ""; });
@@ -544,8 +563,8 @@ window.__ModuleLoader__.load({
         zoom.style.display = mode === "graph" ? "" : "none";
         search.placeholder = mode === "graph" ? "搜索节点…" : (mode === "pending" ? "筛选待放行…" : "筛选整理候选…");
         stat.textContent = mode === "graph" && state.graphStat ? state.graphStat : "";
-        if (isGov && !govLoaded[mode]) {
-          govLoaded[mode] = true;
+        // 治理视图共用一个容器：每次切入都重渲染，避免残留上一个视图的内容
+        if (isGov) {
           if (mode === "pending") renderPending(govEl, loadPending);
           else renderCurate(govEl, loadCurate);
         }
