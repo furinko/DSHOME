@@ -422,6 +422,40 @@ function searchMind(query, limit = 6) {
   return hits.slice(0, limit);
 }
 
+// ── 待办（project.md「下一步」区 `- [ ]` 行）───────────────────────────────
+function todoFile() { return path.join(mindPrivateDir(), 'Project', 'DSHOME', 'project.md'); }
+function readTodos() {
+  const f = todoFile(); if (!fs.existsSync(f)) return [];
+  const todos = [];
+  for (const line of fs.readFileSync(f, 'utf8').split('\n')) {
+    const m = /^\s*-\s*\[( |x)\]\s*(.*)$/.exec(line);
+    if (m) todos.push({ text: m[2], done: m[1] === 'x' });
+  }
+  return todos;
+}
+function mutateTodos(op, arg) {
+  const f = todoFile(); const body = fs.readFileSync(f, 'utf8');
+  const lines = body.split('\n');
+  const idxs = [];
+  lines.forEach((line, i) => { if (/^\s*-\s*\[( |x)\]/.test(line)) idxs.push(i); });
+  let changed = false;
+  if (op === 'add') {
+    let tail = lines.length - 1;
+    let inTodo = false;
+    lines.forEach((line, i) => { if (!inTodo && line.startsWith('## 下一步')) inTodo = true; else if (inTodo && line.startsWith('## ')) { tail = i - 1; inTodo = false; } });
+    if (idxs.length && idxs[idxs.length - 1] > tail - 3) tail = idxs[idxs.length - 1];
+    lines.splice(tail + 1, 0, '- [ ] ' + arg);
+    changed = true;
+  } else if (op === 'toggle' || op === 'remove') {
+    const i = idxs[Number(arg)];
+    if (i === undefined) return { ok: false, error: 'bad index' };
+    if (op === 'toggle') { lines[i] = lines[i].replace(/\[( |x)\]/, function (m, s) { return (s === ' ' ? '[x]' : '[ ]'); }); changed = true; }
+    else { lines.splice(i, 1); changed = true; }
+  }
+  if (changed) fs.writeFileSync(f, lines.join('\n'));
+  return { ok: true, todos: readTodos() };
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -633,6 +667,53 @@ function makeMindRoutes() {
           const cron = getCronInstance();
           if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
           json(res, 200, cron.toggle(b?.id));
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/todos`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try { json(res, 200, { ok: true, todos: readTodos() }); }
+        catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/todos/add`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req);
+          if (!b?.text) return json(res, 400, { ok: false, error: 'text required' });
+          json(res, 200, mutateTodos('add', b.text.trim()));
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/todos/toggle`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req);
+          json(res, 200, mutateTodos('toggle', b?.index));
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/todos/remove`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req);
+          json(res, 200, mutateTodos('remove', b?.index));
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },

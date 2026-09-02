@@ -195,6 +195,32 @@ window.__ModuleLoader__.load({
         govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
       });
     }
+    function renderTodos(govEl, reload) {
+      govEl.innerHTML = "";
+      govEl.appendChild(el("div", "dshome-mind-gov-head", "📋 待办 — project.md「下一步」清单（自主巡检发现的问题也入这）"));
+      fetch("/api/mind/todos").then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.ok) throw new Error(d.error);
+        if (!d.todos || !d.todos.length) govEl.appendChild(el("div", "dshome-mind-empty", "🎉 没有待办"));
+        (d.todos || []).forEach(function (t, i) {
+          var card = el("div", "dshome-mind-gov-card");
+          var row = el("div", "dshome-mind-gov-actions");
+          var cb = el("input"); cb.type = "checkbox"; cb.checked = !!t.done;
+          var label = el("span", null, (t.done ? "✅ " : "⬜ ") + t.text);
+          var del = el("button", "dshome-mind-gov-no", "🗑");
+          row.appendChild(cb); row.appendChild(label); row.appendChild(del);
+          card.appendChild(row); govEl.appendChild(card);
+          cb.addEventListener("change", function () { postJSON("/api/mind/todos/toggle", { index: i }).then(function () { reload(); }); });
+          del.addEventListener("click", function () { if (window.confirm("删除这条待办？")) postJSON("/api/mind/todos/remove", { index: i }).then(function () { reload(); }); });
+        });
+        var add = el("div", "dshome-mind-gov-card");
+        add.appendChild(el("div", "dshome-mind-gov-name", "➕ 添加待办"));
+        var inp = el("input", "dshome-mind-search"); inp.placeholder = "新待办内容";
+        var addBtn = el("button", "dshome-mind-gov-ok", "➕ 添加");
+        add.appendChild(inp); add.appendChild(addBtn); govEl.appendChild(add);
+        addBtn.addEventListener("click", function () { if (!inp.value.trim()) return; postJSON("/api/mind/todos/add", { text: inp.value.trim() }).then(function () { reload(); }); });
+      }).catch(function (e) { govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e))); });
+    }
+
     function renderCron(govEl, reload) {
       govEl.innerHTML = "";
       govEl.appendChild(el("div", "dshome-mind-gov-head", "⏰ 定时任务 — cron 自治：到点自动拉起 agent 会话执行。对话里说『每天 9 点做 X』我帮你加"));
@@ -562,7 +588,7 @@ window.__ModuleLoader__.load({
       var toolbar = el("div", "dshome-mind-toolbar");
       var viewSw = el("div", "dshome-mind-vswitch");
       var btns = {};
-      [["graph", "📊 图谱"], ["pending", "⏳ 待放行"], ["curate", "🧹 整理"], ["cron", "⏰ 定时"]].forEach(function (v) {
+      [["graph", "📊 图谱"], ["pending", "⏳ 待放行"], ["curate", "🧹 整理"], ["cron", "⏰ 定时"], ["todos", "📋 待办"]].forEach(function (v) {
         var b = el("button", v[0] === "graph" ? "on" : "", v[1]);
         btns[v[0]] = b;
         viewSw.appendChild(b);
@@ -605,7 +631,7 @@ window.__ModuleLoader__.load({
       function showView(mode) {
         state.view = mode;
         Object.keys(btns).forEach(function (k) { btns[k].className = k === mode ? "on" : ""; });
-        var isGov = mode === "pending" || mode === "curate" || mode === "cron";
+        var isGov = mode === "pending" || mode === "curate" || mode === "cron" || mode === "todos";
         graphWrap.style.display = isGov ? "none" : "";
         detail.style.display = isGov ? "none" : "";
         govEl.style.display = isGov ? "" : "none";
@@ -617,12 +643,14 @@ window.__ModuleLoader__.load({
         if (isGov) {
           if (mode === "pending") renderPending(govEl, loadPending);
           else if (mode === "curate") renderCurate(govEl, loadCurate);
-          else renderCron(govEl, loadCronView);
+          else if (mode === "cron") renderCron(govEl, loadCronView);
+          else renderTodos(govEl, loadTodosView);
         }
       }
       function loadPending() { renderPending(govEl, loadPending); }
       function loadCurate() { renderCurate(govEl, loadCurate); }
       function loadCronView() { renderCron(govEl, loadCronView); }
+      function loadTodosView() { renderTodos(govEl, loadTodosView); }
       Object.keys(btns).forEach(function (k) {
         btns[k].addEventListener("click", function () { showView(k); });
       });
