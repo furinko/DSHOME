@@ -197,7 +197,9 @@ window.__ModuleLoader__.load({
     }
     function renderCurate(govEl, reload) {
       govEl.innerHTML = "";
-      govEl.appendChild(el("div", "dshome-mind-gov-head", "🧹 整理建议 — 扫描 L3 的膨胀候选，可归档回收"));
+      var head = el("div", "dshome-mind-gov-head", "🧹 整理建议 — 扫描 L3 的膨胀候选");
+      head.appendChild(el("div", "dshome-mind-gov-reason", "操作说明：归档=移入 history（可找回）；保留=以后不再提示；合并/蒸馏/改写等内容级处理→在对话里告诉鱼鱼来做"));
+      govEl.appendChild(head);
       fetch("/api/mind/curate").then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) throw new Error(d.error);
         if (!d.items || !d.items.length) {
@@ -213,9 +215,14 @@ window.__ModuleLoader__.load({
           });
           var row = el("div", "dshome-mind-gov-actions");
           var arc = el("button", "dshome-mind-gov-arch", "🗄 归档 → history");
+          var keep = el("button", "dshome-mind-gov-no", "⏭ 保留（不再提示）");
+          row.appendChild(keep);
           row.appendChild(arc);
           card.appendChild(row);
           govEl.appendChild(card);
+          keep.addEventListener("click", function () {
+            postJSON("/api/mind/curate/keep", { file: it.file }).then(function (r) { reload(); });
+          });
           arc.addEventListener("click", function () {
             // 整文件归档是重操作：先确认（误归档可经 history 找回，但避免手滑）
             if (!window.confirm("把整个文件「" + it.name + "」移入 history 归档？\n（不删只移，可手动移回）")) return;

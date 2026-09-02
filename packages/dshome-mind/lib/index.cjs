@@ -262,10 +262,26 @@ function rejectPending(file) {
 
 /** 整理候选扫描（L3/index 全部内容文件）。 */
 const CURATE_OVERSIZED = 20 * 1024;   // >20KB：建议蒸馏/拆分
-const CURATE_THIN = 400;              // <400B：薄条目，建议合并/归档
+const CURATE_THIN = 400;              // <400B：合集文件过薄提示（单记忆文件除外）
+const curateKeptFile = () => path.join(mindPrivateDir(), '.curate-kept.json');
+function readKept() {
+  try { return JSON.parse(fs.readFileSync(curateKeptFile(), 'utf8')).files || []; }
+  catch { return []; }
+}
+function keepCurate(relPath) {
+  const safe = String(relPath || '').replace(/^\/+/, '');
+  const src = path.join(mindPrivateDir(), 'L3', 'index', safe);
+  if (!fs.existsSync(src) || !fs.statSync(src).isFile()) return { ok: false, error: 'not-found' };
+  const kept = readKept();
+  if (!kept.includes(safe)) kept.push(safe);
+  fs.mkdirSync(mindPrivateDir(), { recursive: true });
+  fs.writeFileSync(curateKeptFile(), JSON.stringify({ files: kept }, null, 2));
+  return { ok: true, kept: kept.length };
+}
 function listCurate() {
   const files = [];
   walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
+  const kept = new Set(readKept());
   const items = [];
   const tagSeen = new Map();
   for (const f of files) {
@@ -275,8 +291,10 @@ function listCurate() {
     const name = path.basename(f.rel).replace(/\.md$/, '');
     const rel = f.rel.replace(/^L3\/index\//, '');
     const reasons = [];
+    // 单记忆文件（YYYY-MM-DD_ 前缀，pending 放行产物）短是正常的，不判 thin
+    const isSingle = /^\d{4}-\d{2}-\d{2}_/.test(name);
     if (size > CURATE_OVERSIZED) reasons.push({ type: 'oversized', hint: `${(size / 1024).toFixed(0)}KB 超长，建议蒸馏成速查或拆分` });
-    if (size < CURATE_THIN) reasons.push({ type: 'thin', hint: '内容过薄，建议并入同主题或归档' });
+    if (size < CURATE_THIN && !isSingle) reasons.push({ type: 'thin', hint: '合集内容过薄，建议并入同主题或归档' });
     // 同 tags 疑似重复（同 kind + 完全相同 tags）
     const kind = fmValue(content, 'kind');
     const tagsRaw = /(?:^|\n)\s*tags:\s*\[([^\]]*)\]/.exec(/^---\n([\s\S]*?)\n---/.exec(content)?.[1] || '');
@@ -288,7 +306,7 @@ function listCurate() {
         reasons.push({ type: 'dup-tags', hint: `与 ${prev} 同 kind+tags，疑似重复，建议合并` });
       } else tagSeen.set(key, name);
     }
-    if (reasons.length) items.push({ file: f.rel, zone: 'private', name, rel, size, reasons });
+    if (reasons.length && !kept.has(f.rel)) items.push({ file: f.rel, zone: 'private', name, rel, size, reasons });
   }
   return items;
 }
@@ -473,6 +491,19 @@ function makeMindRoutes() {
         try {
           const body = await readJsonBody(req);
           const out = archiveCurate(body?.file);
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/curate/keep`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = keepCurate(body?.file);
           json(res, out.ok ? 200 : 404, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
