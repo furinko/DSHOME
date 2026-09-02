@@ -1,6 +1,7 @@
-# 本机 profile 覆盖层（L4）。
+# 本机 profile 覆盖层（L4）
 # 原两条覆盖已于 2026-09-01 并入 packages/dshome/cordis.patch.yml（L3，随包分发的产品默认层）：
 #   - llm-deepseek 的 apiKeyEnv: DSHOME_USER_KEY（解锁 API Key 输入框）
-#   - dshome-desktop 默认 disabled（dshmarket 回退 CLI 安装路径）
+#   - dshome-desktop 默认 disabled（dshmarket 回归 CLI 安装路径）
 # 本文件保留为「本机覆盖位」：plugin-manager 的行级启停写入不受影响
-# （profiles/*/cordis.yml 为合成产物，勿手改）。
+# （profiles/*/cordis.yml 为合成产物，勿手改）
+[]

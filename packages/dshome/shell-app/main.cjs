@@ -8,8 +8,8 @@
 // - 观测日志：%APPDATA%\dshome-shell\dshome-shell.log
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, Notification, dialog } = require('electron');
-const { spawn } = require('node:child_process');
+const { app, BrowserWindow, Tray, Menu, Notification, dialog, ipcMain } = require('electron');
+const { spawn, spawnSync } = require('node:child_process');
 const { createServer } = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -184,9 +184,9 @@ function scheduleRestart() {
         title: 'DSHOME 后端启动失败',
         message: `后端连续 ${restartCount} 次启动失败，可能由插件或配置损坏引起。`,
         detail: errTail ? `最近错误：\n${errTail}` : '（无错误输出）',
-        buttons: ['重试', '安全模式重启', '取消'],
+        buttons: ['重试', '安全模式重启', '回滚上次插件变更并重启', '取消'],
         defaultId: 0,
-        cancelId: 2,
+        cancelId: 3,
         noLink: true,
       });
       if (choice === 1) {
@@ -196,6 +196,11 @@ function scheduleRestart() {
         return;
       }
       if (choice === 2) {
+        // 回滚由 rollbackLastPluginChange 异步执行，完成后自动重启后端
+        rollbackLastPluginChange();
+        return;
+      }
+      if (choice === 3) {
         quitting = true;
         app.quit();
         return;
@@ -212,9 +217,31 @@ function stopBackend() {
     const pid = backend.pid;
     backend = null;
     try {
-      // 杀整棵进程树（node 可能带 worker 子进程）
-      spawn('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true });
+      // 杀整棵进程树（node 可能带 worker 子进程）；用 spawnSync 保证杀完再退出/重启，
+      // 避免异步 taskkill 与 app.quit() 竞态导致后端漏杀成孤儿（DSHOME-ISSUE-004 旁支）。
+      spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true });
     } catch { /* ignore */ }
+  }
+}
+
+/** 按端口清理监听进程（含外部/孤儿拉起的后端）：netstat 找 LISTENING 的 PID 再整树杀。 */
+function killPortOwner(port) {
+  try {
+    const out = spawnSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8', windowsHide: true });
+    if (out.status !== 0 || !out.stdout) return;
+    const seen = new Set();
+    for (const line of out.stdout.split(/\r?\n/)) {
+      // 行格式: TCP 127.0.0.1:3099 0.0.0.0:0 LISTENING 17128 （IPv6 为 [::1]:3099）
+      const m = /^TCP\s+\S*:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i.exec(line.trim());
+      if (!m || Number(m[1]) !== port) continue;
+      const pid = Number(m[2]);
+      if (!(pid > 0) || pid === process.pid || seen.has(pid)) continue;
+      seen.add(pid);
+      logLine({ portKill: { port, pid } });
+      spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true });
+    }
+  } catch (e) {
+    logLine({ portKillError: String(e?.message ?? e) });
   }
 }
 
@@ -222,9 +249,89 @@ function restartBackend(mode) {
   if (mode === 'safe') safeMode = true; else safeMode = false;
   restartCount = 0;
   stopBackend();
+  // 接管孤儿/外部拉起的后端：先清掉 3099 的监听进程，再拉自己的（否则新进程撞端口）
+  killPortOwner(backendPort());
   // 等待 taskkill 生效后重启
   setTimeout(startBackend, 500);
 }
+
+// ---- 一键回滚（崩溃弹窗按钮）：跑 scripts/plugin-change-guard.mjs --recover ----
+function findGuardScript() {
+  let dir = __dirname;
+  for (let i = 0; i < 7; i++) {
+    const f = path.join(dir, 'scripts', 'plugin-change-guard.mjs');
+    if (fs.existsSync(f)) return f;
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+function rollbackLastPluginChange() {
+  const guard = findGuardScript();
+  if (!guard) {
+    logLine({ rollback: 'guard-not-found' });
+    try {
+      dialog.showMessageBoxSync(window, {
+        type: 'error', title: 'DSHOME 回滚',
+        message: '找不到 scripts/plugin-change-guard.mjs（开发/安装布局不符），请手动恢复备份。',
+        buttons: ['确定'], noLink: true,
+      });
+    } catch { /* ignore */ }
+    return;
+  }
+  // 安装布局用自带 runtime\node.exe；否则用系统 node（dev）
+  let nodeExe = 'node';
+  const spec = resolveBackendSpec();
+  if (spec && spec.kind === 'install') nodeExe = spec.nodeExe;
+  logLine({ rollback: 'start', guard, nodeExe });
+  try {
+    const child = spawn(nodeExe, [guard, '--recover'], { shell: true, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    child.stderr?.on('data', (d) => { err = (err + d.toString()).slice(-2000); });
+    child.on('exit', (code) => {
+      logLine({ rollback: 'exit', code });
+      try {
+        if (code === 0) {
+          dialog.showMessageBoxSync(window, {
+            type: 'info', title: 'DSHOME 回滚',
+            message: '已回滚上次插件变更，正在重启后端。',
+            buttons: ['确定'], noLink: true,
+          });
+          restartBackend('normal');
+        } else {
+          dialog.showMessageBoxSync(window, {
+            type: 'error', title: 'DSHOME 回滚失败',
+            message: `回滚失败（exit ${code}）。\n${err.slice(-800)}`,
+            buttons: ['确定'], noLink: true,
+          });
+        }
+      } catch { /* dialog 失败不阻塞 */ }
+    });
+  } catch (e) {
+    logLine({ rollback: 'spawn-error', error: String(e?.message ?? e) });
+  }
+}
+
+// 离线页「重新连接」：壳立即探活；后端没起且有启动规格 → 立刻拉起（不等 3s 轮询）
+ipcMain.handle('shell:retry-backend', async () => {
+  try {
+    const up = await isBackendUp();
+    if (up) {
+      await applyBackendState(true);
+      return { ok: true, up: true };
+    }
+    if (resolveBackendSpec()) {
+      startBackend();
+      logLine({ retry: 'backend-down, spawn requested' });
+      return { ok: true, up: false, started: true };
+    }
+    logLine({ retry: 'backend-down, no spec (manual start needed)' });
+    return { ok: true, up: false, started: false, reason: 'no-spec' };
+  } catch (e) {
+    logLine({ retryError: String(e?.message ?? e) });
+    return { ok: false };
+  }
+});
 
 // ---- 壳与 UI ----
 async function isBackendUp() {
@@ -381,6 +488,9 @@ function createWindow() {
     icon: ICON_FILE,
     show: false,
     autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
   });
   window.setMenuBarVisibility(false);
   window.on('page-title-updated', (event) => {

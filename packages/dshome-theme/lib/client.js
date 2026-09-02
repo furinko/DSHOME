@@ -15,8 +15,8 @@ window.__ModuleLoader__.load({
     let react_jsx_runtime = require("react/jsx-runtime");
     let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
-    /** 当前 DSHOME 版本（与 dshome 包 package.json version 保持一致）。 */
-    const DSHOME_VERSION = "v0.1.0";
+    /** 当前 DSHOME 版本（发布版本号：与 packages/dshome package.json version、updates.json、DSHOME.iss MyAppVersion 一致；发版时勿忘同步——曾漏更停留在 v0.1.0）。 */
+    const DSHOME_VERSION = "v0.2.0";
 
     /** 侧栏品牌标记：暂用官方鲸鱼图标（DSHOME 自有图标定稿后替换）。 */
     function DshomeMark({ size = 24, className }) {
@@ -62,7 +62,24 @@ window.__ModuleLoader__.load({
     /** 所需服务：UI 槽注册表（官方品牌同款）。 */
     const inject = ["slots"];
 
+    /** DSHOME 侧 CSS 覆盖（稳定属性选择器，升级/重装免疫）：input-traffic 插队 dock 限宽。 */
+    function ensureOverrides() {
+      try {
+        if (typeof document === "undefined" || !document.head) return;
+        if (document.querySelector("style[data-dshome-overrides]")) return;
+        const tag = document.createElement("style");
+        tag.setAttribute("data-dshome-overrides", "1");
+        tag.textContent =
+          "div[data-steer-dock]{width:100%;max-width:780px;margin-inline:auto}";
+        document.head.appendChild(tag);
+      } catch (error) {
+        console.warn("dshome-theme: override css failed", error);
+      }
+    }
+
     function apply(ctx) {
+      // 0) DSHOME 侧覆盖规则（先于品牌注册；属性选择器特异性高于插件类名，重装/升级不丢）
+      ensureOverrides();
       // 1) DSHOME 主题配方（light/dark 成对；dark 复刻离线页深海军蓝视觉）
       try {
         const theme = ctx.get("theme");

@@ -20,6 +20,7 @@
       padding: 10px 22px; font-size: 14px; cursor: pointer;
     }
     button:hover { background: #6480ff; }
+    .hint { color: #5f7396; font-size: 12px; margin-top: 10px; }
   </style>
 </head>
 <body>
@@ -28,7 +29,8 @@
     <h1>后端未连接</h1>
     <p>DSH 服务没有在 <span class="url" id="url"></span> 上运行</p>
     <p>请先用 <code>dsh --profile dshome</code> 启动后端；<br />后端恢复后窗口会自动重连。</p>
-    <button id="retry">立即重试</button>
+    <p class="hint">后端由 DSHOME 壳守护：异常退出会自动重启并重连。<br />「重新连接」立即触发一次探活，不用等轮询。</p>
+    <button id="retry">重新连接</button>
   </div>
   <script>
     (function () {
@@ -37,7 +39,13 @@
       try { host = new URL(target).host; } catch (e) {}
       document.getElementById('url').textContent = host || '127.0.0.1:3099';
       document.getElementById('retry').addEventListener('click', function () {
-        location.href = target || 'http://127.0.0.1:3099';
+        if (window.__dshomeShell__ && window.__dshomeShell__.retryBackend) {
+          // 壳内打开：让壳立刻探活，必要时拉起后端（不再傻导航）
+          window.__dshomeShell__.retryBackend().catch(function () {});
+        } else {
+          // 无壳环境（浏览器直接打开）：退化为普通导航
+          location.href = target || 'http://127.0.0.1:3099';
+        }
       });
     })();
   </script>

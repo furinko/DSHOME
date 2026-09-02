@@ -1,0 +1,19 @@
+{
+  "name": "dshome-assistant-identity",
+  "version": "0.2.0",
+  "description": "DSHOME 对话区助手形象：通用设置两行（名字+头像）+ 对话区注入。客户端纯插件，localStorage 持久化。",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.cjs",
+  "exports": {
+    ".": "./lib/index.cjs",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

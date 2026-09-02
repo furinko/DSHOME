@@ -70,7 +70,8 @@ v0.2.0 安装包（当时为 **7-Zip SFX** 自解压包）在完全干净环境�
 2. `node scripts\smoke.mjs` → PASS（含 junction 断言）；
 3. `ISCC.exe build-stage\DSHOME.iss` 出包；
 4. 静默安装冒烟：`DSHOME-setup-*.exe /VERYSILENT` → 启动 → HTTP 200 + `profiles\node_modules` 条目 `LinkType=Junction`；
-5. 同步 `updates.json` 的 `version/url/sha256`（url 须精确匹配 asset 名）。
+5. 同步 `updates.json` 的 `version/url/sha256`（url 须精确匹配 asset 名）；
+6. 同步左上角品牌版本号（`packages/dshome-theme/lib/client.js` 的 `DSHOME_VERSION`）——须与 `updates.json` version 一致（曾因漏同步停留在 v0.1.0，2026-09-01 起列入门禁）。
 
 ## 7. 预防措施 / 沉淀
 

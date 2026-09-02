@@ -22,6 +22,7 @@ const OWN_PLUGIN_IDS = [
   'dshome-plugin-manager',
   'dshome-desktop',
   'dshome-plugin-center',
+  'dshome-assistant-identity',
 ];
 
 const dir = mkdtempSync(join(tmpdir(), 'dshome-safe-'));

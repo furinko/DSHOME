@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..', '..'); // packages/dshome/lib/host → 仓库根
 
-// ── 插件中文描述映射（优先；缺失时回退包 package.json 的英文 description）──────
+// ── 插件中文描述映射（产品内置；四级回退链见 describe()，本地覆盖文件优先级最高）──────
 const DESC_CN = {
   // 自制
   'dshome/core': 'DSHOME 扩展点服务（命令 / 面板注册表）',
@@ -108,6 +108,7 @@ const DESC_CN = {
   'dsh-better-sidebar': '侧边栏工作台增强（文件 / 终端 / 子代理 tab）',
   '@nanmicoder/dsh-agent-teams': '多agent团队协作（AgentTeams，社区插件）',
   'dsh-status-rotator': '回合状态轮播（"Deep diving…" 换成打字机动画彩虹渐变梗文案，JSON 可配）',
+  'dsh-input-traffic': '回合输入流量管理：三级计划队列（now/next/later）、拖拽排序、插话/打断、并发保护与批量清空',
 };
 
 /** 本地文件插件归一化：`./router-bootstrap-v34.mjs?v=88` → `router-bootstrap`
@@ -125,18 +126,52 @@ const DISPLAY_CN = {
   'gitbash-executor': 'gitbash-executor（Git Bash 执行器）',
 };
 
-/** 插件展示名（供插件管理 UI；悬停提示仍可看真实模块路径）。 */
-function displayName(moduleName) {
-  return DISPLAY_CN[normalizePluginId(moduleName)] ?? undefined;
+// ── 本地描述覆盖文件（根治"新插件显示英文"）───────────────────────────────────
+// 文件：<profileDir()>/plugin-descriptions.json（如 profiles/dshome/plugin-descriptions.json）
+// 格式：{ "<moduleName 或归一化 id>": "一句话中文说明" }
+//    或 { "<moduleName>": { "displayName": "显示名", "description": "中文说明" } }
+// 优先级最高，且每次快照实时读取——改完刷新插件管理面板即生效，无需重启后端。
+function loadProfileOverlay() {
+  const empty = { displayName: {}, description: {} };
+  let raw;
+  try {
+    raw = readFileSync(join(profileDir(), 'plugin-descriptions.json'), 'utf8');
+  } catch {
+    return empty;
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return empty;
+  }
+  const displayName = {};
+  const description = {};
+  for (const [key, v] of Object.entries(data ?? {})) {
+    if (typeof v === 'string') description[key] = v;
+    else if (v && typeof v === 'object') {
+      if (typeof v.description === 'string') description[key] = v.description;
+      if (typeof v.displayName === 'string') displayName[key] = v.displayName;
+    }
+  }
+  return { displayName, description };
 }
 
-/** 读取包 package.json 的 description（英文兜底；找不到返回空）。 */
-function pkgDescription(moduleName) {
-  if (moduleName === 'cordis:include' || moduleName.startsWith('cordis:')) return '';
+/** 插件展示名（供插件管理 UI；悬停提示仍可看真实模块路径）。
+ * 优先级：本地覆盖文件 → 内置 DISPLAY_CN；无映射返回 undefined（UI 兜底 moduleName）。 */
+export function displayName(moduleName, overlay) {
+  const o = overlay ?? loadProfileOverlay();
+  const norm = normalizePluginId(moduleName);
+  return o.displayName[moduleName] ?? o.displayName[norm] ?? DISPLAY_CN[norm] ?? undefined;
+}
+
+/** 读包 package.json（cordis: 与找不到返回 null）。 */
+function readPkgJson(moduleName) {
+  if (moduleName === 'cordis:include' || moduleName.startsWith('cordis:')) return null;
   const bare = moduleName.startsWith('@')
     ? moduleName.split('/').slice(0, 2).join('/')
     : moduleName.split('/')[0];
-  if (!bare) return '';
+  if (!bare) return null;
   const roots = [
     join(REPO_ROOT, 'profiles', 'dshome', 'node_modules'),
     join(REPO_ROOT, 'profiles', 'node_modules'),
@@ -146,18 +181,37 @@ function pkgDescription(moduleName) {
     const pj = join(root, bare, 'package.json');
     if (existsSync(pj)) {
       try {
-        const j = JSON.parse(readFileSync(pj, 'utf8'));
-        if (typeof j.description === 'string' && j.description) return j.description;
+        return JSON.parse(readFileSync(pj, 'utf8'));
       } catch { /* keep trying */ }
     }
   }
-  return '';
+  return null;
 }
 
-/** 插件一句话说明：中文映射（含本地文件插件的归一化 id）→ 包英文 description → 空。 */
-function describe(moduleName) {
-  const cn = DESC_CN[moduleName] ?? DESC_CN[normalizePluginId(moduleName)];
+/** 插件自声明中文描述：package.json 的 dsh.descriptionZh（第三方插件作者可自带本地化）。 */
+function pkgZhDescription(moduleName) {
+  const j = readPkgJson(moduleName);
+  return (typeof j?.dsh?.descriptionZh === 'string' && j.dsh.descriptionZh) ? j.dsh.descriptionZh : '';
+}
+
+/** 读取包 package.json 的 description（英文兜底；找不到返回空）。 */
+function pkgDescription(moduleName) {
+  const j = readPkgJson(moduleName);
+  return (typeof j?.description === 'string' && j.description) ? j.description : '';
+}
+
+/** 插件一句话说明（四级回退链，逐级兜底）：
+ * 本地覆盖文件 → 内置中文映射（含归一化 id）→ 插件自声明中文（dsh.descriptionZh）
+ * → 包英文 description → 空。overlay 由调用方预载（一次快照只读一个文件）。 */
+export function describe(moduleName, overlay) {
+  const o = overlay ?? loadProfileOverlay();
+  const norm = normalizePluginId(moduleName);
+  const ov = o.description[moduleName] ?? o.description[norm];
+  if (ov) return ov;
+  const cn = DESC_CN[moduleName] ?? DESC_CN[norm];
   if (cn) return cn;
+  const zh = pkgZhDescription(moduleName);
+  if (zh) return zh;
   return pkgDescription(moduleName);
 }
 
@@ -234,14 +288,15 @@ export async function writeToggle(id, enabled) {
 /** Loader 树快照：entryId / moduleName / enabled / category / phase / protected。 */
 export function snapshot(ctx) {
   const set = { 0: 'pending', 1: 'loading', 2: 'active', 3: 'failed', 4: null, 5: 'unloading' };
+  const overlay = loadProfileOverlay();
   const entries = [];
   for (const entry of ctx.loader.entries()) {
     if (entry.options.group) continue;
     entries.push({
       entryId: entry.id,
       moduleName: entry.options.name,
-      displayName: displayName(entry.options.name),
-      description: describe(entry.options.name),
+      displayName: displayName(entry.options.name, overlay),
+      description: describe(entry.options.name, overlay),
       enabled: !entry.disabled,
       category: classify(entry.options.name),
       phase: entry.fiber?.state === void 0 ? null : (set[entry.fiber.state] ?? null),
