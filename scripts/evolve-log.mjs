@@ -15,7 +15,19 @@ const repoRoot = resolve(process.env.DSH_HOME || join(dirname(fileURLToPath(impo
 const EVO = join(repoRoot, 'mind-private', 'tasks', 'evolution');
 const SNAP = join(EVO, 'snapshots');
 const LOG = join(EVO, 'changelog.md');
+const METRICS = join(EVO, 'metrics.json');
 const ts = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+// 可测信号（进化关联指标）——发生事件时 bump 记一笔，回填时读变化
+const KNOWN_METRICS = ['repeat-mistakes', 'corrections', 'rejections', 'redos', 'search-hit'];
+function readMetrics() {
+  try { return JSON.parse(readFileSync(METRICS, 'utf8')).metrics || {}; }
+  catch { return {}; }
+}
+function writeMetrics(m) {
+  mkdirSync(EVO, { recursive: true });
+  writeFileSync(METRICS, JSON.stringify({ metrics: m, updatedAt: new Date().toISOString() }, null, 2));
+}
 
 mkdirSync(SNAP, { recursive: true });
 if (!existsSync(LOG)) {
@@ -54,6 +66,21 @@ if (cmd === 'snapshot') {
   const today = t.slice(0, 10);
   appendFileSync(LOG, `| ${today} | ↳回测:${obj || ''} | ${observed || ''} | ${verdict || ''} | — |\n`);
   console.log(`[evolve-log] 已回填: ${obj} → ${verdict}`);
+} else if (cmd === 'bump') {
+  // 可测事件计数（重复踩坑/用户纠正/拒绝/返工/检索命中）
+  const metric = (rest[0] || '').trim();
+  if (!KNOWN_METRICS.includes(metric)) {
+    console.error(`[evolve-log] 未知指标: ${metric}（可用: ${KNOWN_METRICS.join(', ')}）`);
+    process.exit(1);
+  }
+  const m = readMetrics();
+  m[metric] = (m[metric] || 0) + 1;
+  writeMetrics(m);
+  console.log(`[evolve-log] bump ${metric} → ${m[metric]}`);
+} else if (cmd === 'metrics') {
+  const m = readMetrics();
+  console.log('[evolve-log] 可测信号（发生事件时 bump 记账）:');
+  for (const k of KNOWN_METRICS) console.log(`  ${k}: ${m[k] || 0}`);
 } else {
   console.error('用法: node scripts/evolve-log.mjs snapshot <path> | log "<对象>|<为什么改>|<改了啥>"');
   process.exit(1);
