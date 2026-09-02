@@ -32,13 +32,26 @@
 
 ## 四、沉淀路径
 
+### 蒸馏判据（该不该沉淀 + 落哪）
+做完一件事（重要任务/收工/踩坑/有新方法）→ **主动判断**该不该沉淀：
+- **可复用方法论/流程**（跨项目、有逻辑闭环）→ **Skill 积木**（`mind\L2\Skill\<id>.md` frontmatter 含 `contract` + 更新能力 `_index.md` + `Tree.md`）
+- **工具/场景经验**（单点、怎么用）→ **Exp**（`mind\L2\Exp\`）
+- **踩坑/教训**（通用、跨项目）→ **lessons 主题**（`mind-private\L3\index\lessons\`）
+- **用户偏好/批评表扬** → **user-rules** / `Learn.md`（**当下就写**，不等蒸馏）
+- **项目决策/状态** → **Project**（`project.md`）
+
+**判据**（三条 ≥2 才沉淀，否则只记轮级缓冲/不记）：
+① 跨项目可复用？ ② 有验证过的逻辑/事实？ ③ 以后还会遇到？
+**索引同步**：Skill→`_index`+`Tree`；记忆→对应 `_index`；改"自我类"→进化档案 `log`。
+
 ### 新增 Skill
 ```
 1. 草稿（轮级缓冲或临时文件）
 2. 用户确认
-3. 写入 mind\L2\Skill\<Name>.md
+3. 写入 mind\L2\Skill\<Name>.md（frontmatter 含 contract）
 4. 更新 mind\L1\Tree.md「L2-Skill 清单」
-5. 建 L3/index 对应子目录（如需要）
+5. 更新能力积木 _index.md 加一行
+6. 建 L3/index 对应子目录（如需要）
 ```
 
 ### 更新 Skill/Exp
