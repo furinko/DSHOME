@@ -470,24 +470,22 @@ window.__ModuleLoader__.load({
     // （chat 整页滚是官方模式）——面板必须锁在 scrollBody 的【可视高度】内：图内部滚、
     // 详情与图等高、页面不滚。动态测真正滚动容器（找 overflow-y auto/scroll 的祖先）。
     function fitViewport(host) {
+      // 取高度最小的滚动容器 = 真正的可视滚动区（若 host 外层有高度随内容变的
+      // 包装容器先命中，其 clientHeight 是内容高，会把面板撑长——最小者兜底）。
       function findScroller() {
+        var best = null;
         var el = host.parentElement;
         while (el && el !== document.body) {
           var ov = getComputedStyle(el).overflowY;
-          if (ov === "auto" || ov === "scroll") return el;
+          if (ov === "auto" || ov === "scroll") {
+            if (!best || el.clientHeight < best.clientHeight) best = el;
+          }
           el = el.parentElement;
         }
-        return null;
-      }
-      function apply() {
-        var sb = findScroller();
-        if (sb) {
-          host.style.height = Math.max(320, sb.clientHeight - 2) + "px";
-        } else {
-          host.style.height = Math.max(380, (window.innerHeight || 900) - 260) + "px";
-        }
+        return best;
       }
       var lastSb = null;
+      var ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(apply) : null;
       function apply() {
         var sb = findScroller();
         if (sb) {
@@ -501,7 +499,6 @@ window.__ModuleLoader__.load({
       // 布局稳定后二次校正（初次测量可能早于会话区排版完成）
       var t1 = setTimeout(apply, 120);
       var t2 = setTimeout(apply, 500);
-      var ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(apply) : null;
       var sessionRoot = host.closest("[data-phase]");
       if (ro && sessionRoot) ro.observe(sessionRoot);
       window.addEventListener("resize", apply);
