@@ -49,6 +49,7 @@
 - 🟡 **写前查重** — 提议记忆前先做近重复自查（`/api/mind/dup-check`，同主题 bigram 比对）；≥30% 相似不新增，先汇报"更新旧条目 or 新增"。
 - 🟡 **整理队列** — 收工闭环时检查 `mind-private\.curate-jobs.json`（用户在整理区点「🤝 让鱼鱼处理」挂的作业）：读文件按 reason 做内容级整理（合并/蒸馏/改写），完成移除 job + 记入 kept，处理结果汇报用户。
 - 🟡 **cron 自治** — `mind-private\tasks\cron.json` 存定时任务（`{id, cron 五字段, prompt, cwd?, once?}`）；到点自动拉起新 agent 会话执行 prompt（dshome-mind/cron.cjs，跑完会话出现在 Web 列表）。用户说"每天 9 点做 X" → 鱼鱼帮着写 cron 任务；可列/删/改。
+- 🟡 **进化档案** — 改「自我类」文件（AGENTS / mind 规则 / 技能 / 心智门禁配置）**前**：先 `node scripts/evolve-log.mjs snapshot <file>` 快照旧版 + `node scripts/evolve-log.mjs log "<对象>|<为什么改>|<改了啥>"` 记理由；改完观察效果，好则沉淀、坏则回滚（快照在 `mind-private\tasks\evolution\snapshots\`）。让自我进化有据可查、可回滚。
 - 🟡 **多模型会诊** — 用户说"把 B（某模型）拉起来看一眼 X" → 我用 workflow 拉起一个**指定 provider/model** 的独立子代理看 X（把 X/上下文原样给它，独立理解），拿回它的视角与主线对比。默认模型 = 会话当前；拉 B 用 `agent({ provider, model })`。provider 标识 = 模型设置里的提供方（zai/deepseek/自定义）。
 - 🟡 **只存蒸馏结论**（1-3 句），不存原文；同一事实只存一份；批评/表扬当下就写。
 
