@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
       ".dshome-mind-main{flex:1;min-height:0;display:flex;overflow:hidden;align-items:stretch}",
       ".dshome-mind-graph{flex:1 1 0;min-width:0;overflow:auto;background:var(--dsw-alias-bg-layer-1,#fbfcfe);position:relative}",
       ".dshome-mind-graph svg{display:block}",
-      ".dshome-mind-detail{flex:0 0 350px;width:350px;min-height:0;overflow-y:auto;overflow-x:hidden;border-left:1px solid var(--dsw-alias-border-l1,#e3e9f3);padding:10px 14px 18px;background:var(--dsw-alias-bg-layer-1,#fbfcfe);box-sizing:border-box}",
+      ".dshome-mind-detail{flex:0 0 350px;width:350px;min-height:0;align-self:stretch;overflow-y:auto;overflow-x:hidden;border-left:1px solid var(--dsw-alias-border-l1,#e3e9f3);padding:10px 14px 18px;background:var(--dsw-alias-bg-layer-1,#fbfcfe);box-sizing:border-box}",
       ".dshome-mind-detail-head{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;margin-bottom:8px;word-break:break-all}",
       ".dshome-mind-detail-close{margin-left:auto;border:none;background:none;color:var(--dsw-alias-label-tertiary,#6b7a99);cursor:pointer;font-size:15px;padding:2px 6px;border-radius:6px}",
       ".dshome-mind-detail-close:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.08))}",
@@ -37,6 +37,8 @@ window.__ModuleLoader__.load({
       ".dshome-mind-chip-tag{padding:2px 7px;border-radius:99px;font-size:10.5px;background:rgba(77,107,254,.1);color:var(--dsw-alias-brand-primary,#4D6BFE)}",
       ".dshome-mind-chip-link{padding:2px 7px;border-radius:99px;font-size:10.5px;background:rgba(47,191,143,.12);color:#1e9e73}",
       ".dshome-mind-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:11.5px;line-height:1.65;color:var(--dsw-alias-label-secondary,#4a5a78);font-family:Consolas,'Cascadia Mono',monospace}",
+      ".dshome-mind-graph{cursor:grab}",
+      ".dshome-mind-graph.panning{cursor:grabbing;user-select:none}",
       ".dshome-mind-empty{padding:30px 14px;text-align:center;font-size:12px;color:var(--dsw-alias-label-tertiary,#6b7a99)}",
       ".dshome-mind-graph-node{cursor:pointer}",
       ".dshome-mind-graph-node text{user-select:none}",
@@ -342,25 +344,42 @@ window.__ModuleLoader__.load({
     }
 
     // ── 面板挂载 ─────────────────────────────────────────────────────────────
-    // 会话 viewArea 高度不锁死（官方整页滚动模式）——面板自约束在可视区高度，
-    // 图与详情同高，详情内部滚动，不再把页面拉长。
-    function fitMaxHeight(host) {
+    // 会话区 = header + scrollBody(可视滚动容器) + composer。官方 scrollBody 内容可撑开页面
+    // （chat 整页滚是官方模式）——面板必须锁在 scrollBody 的【可视高度】内：图内部滚、
+    // 详情与图等高、页面不滚。动态测真正滚动容器（找 overflow-y auto/scroll 的祖先）。
+    function fitViewport(host) {
+      function findScroller() {
+        var el = host.parentElement;
+        while (el && el !== document.body) {
+          var ov = getComputedStyle(el).overflowY;
+          if (ov === "auto" || ov === "scroll") return el;
+          el = el.parentElement;
+        }
+        return null;
+      }
       function apply() {
-        var sessionRoot = host.closest("[data-phase]");
-        var room = (sessionRoot && sessionRoot.clientHeight
-          ? sessionRoot.clientHeight - 170
-          : (window.innerHeight || 900) - 220);
-        host.style.maxHeight = Math.max(380, room) + "px";
+        var sb = findScroller();
+        if (sb) {
+          host.style.height = Math.max(320, sb.clientHeight - 2) + "px";
+        } else {
+          host.style.height = Math.max(380, (window.innerHeight || 900) - 260) + "px";
+        }
       }
       apply();
+      var ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(apply) : null;
+      var sessionRoot = host.closest("[data-phase]");
+      if (ro && sessionRoot) ro.observe(sessionRoot);
       window.addEventListener("resize", apply);
-      return function () { window.removeEventListener("resize", apply); };
+      return function () {
+        if (ro) ro.disconnect();
+        window.removeEventListener("resize", apply);
+      };
     }
 
     function mount(host) {
       host.innerHTML = "";
       var state = { scale: 1 };
-      var unlisten = fitMaxHeight(host);
+      var unlisten = fitViewport(host);
       state.dispose = function () { if (unlisten) unlisten(); };
 
       // header
@@ -400,6 +419,30 @@ window.__ModuleLoader__.load({
       main.appendChild(graphWrap);
       main.appendChild(detail);
       host.appendChild(main);
+
+      // 拖拽平移画布（空白/层带拖动；节点上留给点击）
+      var pan = null;
+      graphWrap.addEventListener("pointerdown", function (e) {
+        if (e.button !== 0) return;
+        if (e.target.closest(".dshome-mind-graph-node")) return;
+        pan = { x: e.clientX, y: e.clientY, sl: graphWrap.scrollLeft, st: graphWrap.scrollTop };
+        graphWrap.classList.add("panning");
+        try { graphWrap.setPointerCapture(e.pointerId); } catch (err) {}
+        e.preventDefault();
+      });
+      graphWrap.addEventListener("pointermove", function (e) {
+        if (!pan) return;
+        graphWrap.scrollLeft = pan.sl - (e.clientX - pan.x);
+        graphWrap.scrollTop = pan.st - (e.clientY - pan.y);
+      });
+      function endPan(e) {
+        if (!pan) return;
+        pan = null;
+        graphWrap.classList.remove("panning");
+        try { graphWrap.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
+      graphWrap.addEventListener("pointerup", endPan);
+      graphWrap.addEventListener("pointercancel", endPan);
 
       zIn.addEventListener("click", function () { zoomSvg(1.15); });
       zOut.addEventListener("click", function () { zoomSvg(1 / 1.15); });
