@@ -33,6 +33,7 @@
 | 跨会话记忆 / 偏好 / 教训 | `mind-private\L3\index\<主题>\`（先查 `mind\L1\Tree.md` 定位，再 grep） |
 | 用户批评 / 表扬 | **立即**写 `mind-private\L1\Learn.md`（批评→「笨鱼鱼 💢」，表扬→「好鱼鱼 🐱」）；不靠"下次记住" |
 | 可复用流程 | `mind\L2\Skill\`（frontmatter 标准化，关键词触发加载；**能力积木总索引 `mind\L2\Skill\_index.md`**——盘点/组合我有哪些积木） |
+| 确定性内核（不可绕过的硬约束/门禁） | `mind\L1\Invariants.md`（🔴/🟡 不变式清单 + 门禁链——判断层不能违反） |
 | 当前任务状态 | `mind-private\tasks\`（00_日志 + 00_约定 轮级缓冲） |
 | 工具怎么用 | `mind\L0\TOOL.md` + `mind\L1\Power.md` |
 | 其他设备/agent 产物 | 走导入协议（直接丢给我，自动识别归类，见 `mind\README.md` §五） |
