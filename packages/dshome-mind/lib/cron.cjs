@@ -98,6 +98,8 @@ class DshCron {
     for (const t of this.tasks) {
       const job = this.jobs.get(t.id);
       if (!job) continue;
+      // 任务级开关：只有显式 catchUp:true 的任务才补跑（幂等/每日型补；提醒/一次性/敏感型不补）
+      if (t.catchUp !== true) continue;
       if (!t.lastRunAt) { t.lastRunAt = new Date().toISOString(); saveCron(this.tasks); continue; }
       const next = job.nextRun(new Date(t.lastRunAt));
       if (next && next < new Date()) {
