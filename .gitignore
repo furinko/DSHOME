@@ -26,6 +26,8 @@ sessions/
 storages/
 .anonymous-user-id
 profiles/*/cordis.yml
+attachments/
+llm-deepseek/
 
 # dev launcher log
 dsh-server.log
@@ -35,6 +37,12 @@ dsh-server.log
 
 # dsh-evolve private workspace (own git repo + memory mirror + backups)
 evolve-workspace/
+
+# fish mind: private runtime half (memory/projects/learn — never push)
+mind-private/
+
+# soul: behavior learning is private (only template was ever pushed)
+soul/
 
 # dsh-evolve usage stats sidecar (changes on every load)
 skills/.evolve-usage.json
@@ -48,5 +56,6 @@ skills/.evolve-usage.json
 profiles/*/.dsh-market/
 router-standard/
 
-# 发布构建产物（Inno payload + setup exe）
-build-stage/
+# 发布构建产物（Inno payload + setup exe）；DSHOME.iss 例外入库（打包配置纳入版本管理）
+build-stage/*
+!build-stage/DSHOME.iss

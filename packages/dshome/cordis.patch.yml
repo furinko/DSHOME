@@ -26,6 +26,12 @@
     # dshome-plugin-center（client）：左侧边栏插件管理中心（sidebar.footer.action 入口）。
     - id: dshome-plugin-center
       name: dshome-plugin-center
+    # dshome-assistant-identity（client）：对话区助手形象——通用设置两行（名字+头像）+ 对话区注入。
+    - id: dshome-assistant-identity
+      name: dshome-assistant-identity
+    # dshome-mind（host+client）：心智可视化面板——/api/mind/* 双区读取 + better-sidebar「心智」tab。
+    - id: dshome-mind
+      name: dshome-mind
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。
