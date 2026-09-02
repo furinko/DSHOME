@@ -47,6 +47,13 @@ if (cmd === 'snapshot') {
   const safe = (obj || 'x').replace(/[^a-zA-Z0-9_.-]/g, '_');
   appendFileSync(LOG, `| ${today} | ${obj || ''} | ${why || ''} | ${what || ''} | snapshots/${t}_${safe} |\n`);
   console.log(`[evolve-log] 已记录: ${obj}`);
+} else if (cmd === 'effect') {
+  // 进化回测：改动后观察效果，回填结论（好则沉淀/坏则回滚）
+  const [obj, observed, verdict] = (rest[0] || '').split('|');
+  const t = ts();
+  const today = t.slice(0, 10);
+  appendFileSync(LOG, `| ${today} | ↳回测:${obj || ''} | ${observed || ''} | ${verdict || ''} | — |\n`);
+  console.log(`[evolve-log] 已回填: ${obj} → ${verdict}`);
 } else {
   console.error('用法: node scripts/evolve-log.mjs snapshot <path> | log "<对象>|<为什么改>|<改了啥>"');
   process.exit(1);

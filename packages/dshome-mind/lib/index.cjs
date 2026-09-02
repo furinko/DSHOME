@@ -393,6 +393,35 @@ function dupCheck(topic, content) {
   return hits.slice(0, 5);
 }
 
+/** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。 */
+function searchMind(query, limit = 6) {
+  const files = [];
+  walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
+  const q = tokenize(query);
+  const hits = [];
+  for (const f of files) {
+    let content = '';
+    try { content = fs.readFileSync(f.full, 'utf8'); } catch { continue; }
+    const rel = f.rel.replace(/^L3\/index\//, '');
+    const sections = content.replace(/^---\n[\s\S]*?\n---\n?/, '').split(/\n(?=## )/).map((s) => s.trim()).filter(Boolean);
+    let best = null;
+    for (const sec of sections) {
+      const sc = jaccard(q, tokenize(sec));
+      if (!best || sc > best.score) best = { score: sc, sec };
+    }
+    if (best && best.score >= 0.03) {
+      hits.push({
+        score: Math.round(best.score * 100),
+        file: rel,
+        section: ((best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),
+        snippet: best.sec.replace(/\s+/g, ' ').slice(0, 160),
+      });
+    }
+  }
+  hits.sort((a, b) => b.score - a.score);
+  return hits.slice(0, limit);
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -536,6 +565,19 @@ function makeMindRoutes() {
           const body = await readJsonBody(req);
           const out = assignCurate(body?.file);
           json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/search`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const q = (new URL(req.url, 'http://localhost').searchParams.get('q') || '').trim();
+          if (!q) return json(res, 400, { ok: false, error: 'q required' });
+          json(res, 200, { ok: true, hits: searchMind(q) });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
