@@ -1,7 +1,7 @@
 # DSHOME
 
-DSHOME = 基于 DeepSeek Harness 的个人桌面客户端（独立 profile + Electron 薄壳 + 自主题/品牌 + 市场/插件管理）。
-本仓库是 **monorepo**：`pnpm workspace` 管理四个本地包，供**两台设备研发 + 给别人用 + 市场真实安装**。
+DSHOME = 基于 DeepSeek Harness 的个人桌面客户端（独立 profile + Electron 薄壳 + 自主题/品牌 + 市场/插件管理 + 心智图谱）。
+本仓库是 **monorepo**：`pnpm workspace` 管理六个本地包，供**两台设备研发 + 给别人用 + 市场真实安装**。
 
 ## 结构
 ```
@@ -10,8 +10,12 @@ dshome-monorepo/
 │  ├─ dshome/               # 主 bundle（core/shell/desktop/notify/plugin-manager + Electron shell-app）
 │  ├─ dshome-theme/         # 客户端皮肤（品牌色 token + 品牌槽 + 通知/插件管理设置 UI）
 │  ├─ dshome-palette/       # Ctrl+K 命令面板
-│  └─ dshome-plugin-center/ # 插件管理中心（client-only，sidebar 入口）
-├─ profile-template/        # 示例 profile（dsh 运行时 profile 脚手架；deploy-new-device.cmd 的模板源）
+│  ├─ dshome-plugin-center/ # 插件管理中心（client-only，sidebar 入口）
+│  ├─ dshome-assistant-identity/ # 对话区助手形象（client-only，localStorage 持久化）
+│  └─ dshome-mind/          # 心智图谱面板（/api/mind/* 双区读取 + conversation.view「心智」）
+├─ mind/                    # 鱼鱼心智出厂固件（L0 宪法/L1 法律/L2 能力/L3 记忆 + Project + TRASH）
+├─ mind-private/            # 鱼鱼心智本机实例（记忆/项目/Learn——gitignore，永不推送）
+├─ profile-template/        # 示例 profile（dsh 运行时 profile 脚手架）
 ├─ pnpm-workspace.yaml      # packages/* + profiles/* + allowBuilds
 ├─ .npmrc                   # 镜像源
 └─ .gitignore
@@ -58,7 +62,7 @@ git push origin main
 > `scripts\build-launchers.cmd` 重建（`DSHOME.exe` / `UninstallDSHOME.exe`）；安装/启动冒烟见
 > `docs/incidents/DSHOME-ISSUE-20260831-INSTALLER-JUNCTION.md`（含 junction 断言与发布清单）。
 
-别人（新设备推荐，一键）：clone 仓库后运行 `packages/dshome/scripts/deploy-new-device.cmd` —— 自动建 profile（含 dsh-evolve 记忆/技能、Ctrl+K 面板、市场、挂件）+ 装依赖 + 拷贝灵魂行为层模板（AGENTS.md / soul / skills）+ 建桌面快捷方式。
+新设备拿到本仓库后：按上「上手」执行（`setup-dev.cmd` 一键，或 `pnpm install` + `pnpm run setup`）。
 别人（手动）：`dsh plugin --profile dshome add github:furinko/DSHOME`（或 `git clone` + `pnpm install`）。
 
 ## 四包
@@ -72,12 +76,10 @@ git push origin main
 ## 相关文档
 - `docs/README.md`：文档导航索引（按域分类：架构 / 灵魂体系 / 集成 / 事故复盘 / 部署）
 - `docs/ARCHITECTURE.md`：现状架构说明与设计决策记录（patch 分层 / 插件职责 / 部署模型 / rationale）
-- `docs/soul/SOUL-BEHAVIOR.md`：灵魂行为层（AGENTS.md 每会话纪律 + Learn.md 鱼鱼行为学习；记忆机制由 dsh-evolve 提供）
-- `docs/integrations/EVOLVE-SMOKE.md`：dsh-evolve（跨会话记忆/技能固化）集成与冒烟清单
-- `docs/deployment/NEW-DEVICE.md`：换新设备部署（官方 npm 流程）
-- `docs/incidents/`：事故复盘（ISSUE-001 插件加载失败 / ISSUE-002 版本族不兼容）
+- `mind/README.md`：鱼鱼心智体系（出厂固件：L0 宪法 / L1 法律 / L2 能力 / L3 记忆 + Project + TRASH；运行时记忆在本机 `mind-private/` 不入仓库；旧 soul / dsh-evolve 文档已归档 `docs/archive/`）
+- `docs/incidents/`：事故复盘（ISSUE-001 插件加载失败 / ISSUE-002 版本族不兼容 / ISSUE-003 安装包 junction）
 
 ## 开发注意事项（沉淀自历史交接文档，2026-08-31 归档后保留）
 - 🔴 别在本机 profile 目录直接跑 `pnpm add`/`pnpm install`（`file:` 依赖会 ERR_PNPM_ENOENT；装插件用 `dsh plugin --profile dshome add <pkg>`）
 - 🔴 删 junction 用 `Remove-Item`（不带 `-Recurse`），勿用 `rmdir /s /q`（会顺 junction 删真实内容）
-- ℹ️ 可恢复快照：`build-stage/dshome-node-snapshot/`（profile-package.json / cordis.patch.yml / junctions.txt 等）
+- ℹ️ 构建产物、迁移备份统一在 gitignored 的 `build-stage/`（出包原料按 DSHOME.iss 配方重组；历史/退役资产在 `build-stage/mind-migration-backup-20260902/retired/`）
