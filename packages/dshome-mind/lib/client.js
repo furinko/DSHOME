@@ -43,6 +43,8 @@ window.__ModuleLoader__.load({
       ".dshome-mind-graph-node{cursor:pointer}",
       ".dshome-mind-graph-node text{user-select:none}",
       ".dshome-mind-graph-node.sel>rect:first-of-type{stroke:var(--dsw-alias-brand-primary,#4D6BFE);stroke-width:2;stroke-dasharray:none}",
+      ".dshome-mind-graph-node.hovered>rect:first-of-type{stroke:#4D6BFE;stroke-width:2.2;stroke-dasharray:none}",
+      ".dshome-mind-graph-node.hovered{filter:drop-shadow(0 1px 6px rgba(77,107,254,.45))}",
     ].join("");
 
     function ensureStyle() {
@@ -307,39 +309,41 @@ window.__ModuleLoader__.load({
       state.edgeById = edgeById;
       state.svg = svg;
 
-      // 悬停：高亮该节点 + 相连边
+      // 悬停：强调当前节点（描边+光晕）+ 关联边加粗提亮；其他节点保持原样
       var conn = {};
       graph.edges.forEach(function (e, idx) {
         (conn[e.source] = conn[e.source] || []).push(idx);
         (conn[e.target] = conn[e.target] || []).push(idx);
       });
-      function dimAll() {
-        Object.keys(nodeEls).forEach(function (id) { nodeEls[id].setAttribute("opacity", "1"); });
-        Object.keys(edgeById).forEach(function (k) { edgeById[k].setAttribute("stroke-opacity", "0.4"); });
-      }
       Object.keys(nodeEls).forEach(function (id) {
         var g = nodeEls[id];
         g.addEventListener("mouseenter", function () {
-          Object.keys(nodeEls).forEach(function (oid) {
-            if (oid !== id && !(conn[id] || []).some(function (ei) {
-              var e = graph.edges[ei];
-              return e.source === oid || e.target === oid;
-            })) nodeEls[oid].setAttribute("opacity", "0.25");
+          g.classList.add("hovered");
+          (conn[id] || []).forEach(function (ei) {
+            var e = edgeById[ei];
+            e.setAttribute("stroke-width", "2.4");
+            e.setAttribute("stroke-opacity", "0.95");
           });
-          (conn[id] || []).forEach(function (ei) { edgeById[ei].setAttribute("stroke-opacity", "0.95"); });
         });
-        g.addEventListener("mouseleave", dimAll);
+        g.addEventListener("mouseleave", function () {
+          g.classList.remove("hovered");
+          (conn[id] || []).forEach(function (ei) {
+            var e = edgeById[ei];
+            e.setAttribute("stroke-width", "1.4");
+            e.setAttribute("stroke-opacity", "0.4");
+          });
+        });
       });
 
-      // 搜索过滤
+      // 搜索过滤（主动搜索时才淡化未命中；清空即恢复）
       state.applyQuery = function (q) {
         var ql = (q || "").toLowerCase();
         Object.keys(nodeEls).forEach(function (id) {
           var n = nodeById[id];
           var hit = !ql || n.label.toLowerCase().indexOf(ql) >= 0 || n.rel.toLowerCase().indexOf(ql) >= 0;
           nodeEls[id].setAttribute("opacity", hit ? "1" : "0.12");
+          if (hit && !ql) nodeEls[id].classList.remove("hovered");
         });
-        if (!ql) dimAll();
       };
     }
 
