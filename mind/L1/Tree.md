@@ -22,14 +22,14 @@
 | 文件 | 比喻 | 职责 |
 |---|---|---|
 | HUB.md | 脑袋 | 设计理念 + 加载顺序 + 跨层红线 |
-| Design-Philosophy.md | 灵魂之纲 | 生长哲学：自生长/绽放 + 唯一防毒底座（别自欺） |
+| Design-Philosophy.md | 灵魂之纲 | 生长哲学：自生长/绽放 + 唯一防毒底座（别自欺）+ 性格罗盘（七美德×七原罪，Learn 归类尺） |
 | Wisdom.md | 大脑皮层 | 思维模式系统 + 元认知框架 |
 | Tree.md | 血管 | 全知识网络目录（本文件） |
 | Power.md | 功法 | Skill/Exp 使用教程 + 沉淀模板 |
 | Memory.md | 规则书 | L3 归档规则 |
 | Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 的**唯一权威源** + 意图→概念→权威源路由表 |
 | Dream.md | 灵感池 | 松散点子 |
-| Learn.md | 痕迹库 | 好鱼鱼/笨鱼鱼教训（模板在 mind\，实际条目在 mind-private\L1\） |
+| Learn.md | 痕迹库 | 好鱼鱼/笨鱼鱼教训，批评归罪/表扬归德（模板在 mind\，实际条目在 mind-private\L1\） |
 
 ## L2 — 能力层（mind\L2\）
 
