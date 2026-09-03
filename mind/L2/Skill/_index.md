@@ -9,6 +9,8 @@
 | 积木 (id) | 一句话 | 触发 | 输入 → 输出 | 依赖 | 版本 |
 |---|---|---|---|---|---|
 | `import-artifact` | 导入协议·其他设备/agent 产物即插即用 | 直接丢给你 / 导入 / 蒸馏包 | 路径/粘贴内容/压缩包 → 归类放置 + 索引更新 + 汇报 | L1 Tree/Memory · mind README | 1.0.0 |
+| `dshome-diagnostics` | DSHOME 后端诊断(崩/卡/闪断：先分真假+证据) | 后端重启/卡/exit1/闪断 | 现象→证据→结论 | shell log/进程/隔离复现 | 1.0.0 |
+| `dshome-plugin-dev` | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS `code.host`/`code.client`，生命周期/修复/回滚 | 做/改插件 / cordis / slot / `is not declared` / `host.call` 失败 | 目标能力 → 平台归属 + 已读真实接口 + 插件源码 + 修复判断 | cordis-plugin-development (upstream) · mind/L1/Power | 1.0.0 |
 
 ## 怎么用（组合约定）
 
