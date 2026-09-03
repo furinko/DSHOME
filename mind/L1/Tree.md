@@ -1,12 +1,12 @@
 # Tree.md — 知识网络血管（全目录）
 
-> 版本：1.1 | 2026-09-06 | 索引同步：L2-Skill 补齐 5 项；L1 新增 Concepts.md
+> 版本：1.2 | 2026-09-06 | 隐私校准：L3/Project 段改为结构描述，出厂版不再枚举本机具体记忆主题/归档/项目条目（运行时条目属 mind-private，不入出厂）
 > 加载：强制层（每次上工必读）
 > 定位：L1 循环系统——全知识网络目录，AI 友好表格化。"有什么"的一键查询。
 
 ## 使用说明
 每个 ## 段落对应一个层级/类别。查"X 在哪"→ 本文件定位 → grep/read 目标文件。
-**本机运行时内容（L3 记忆/项目/Learn 条目）在 `mind-private\`，同名私有优先。**
+**本机运行时内容（L3 记忆主题/条目、Learn 条目、具体项目档）在 `mind-private\`，同名私有优先；出厂版只描述结构，不登记具体条目（出厂文档不指向具体某条记忆）。**
 
 ## L0 — 基本指令集（mind\L0\，出厂固件）
 
@@ -47,38 +47,23 @@
 |---|---|---|---|
 | （待迁移/待结晶） | — | — | — |
 
-## L3 — 记忆层（mind-private\L3\，隐私）
+## L3 — 记忆层（结构；实际条目在 mind-private\L3\，隐私）
 
-### index 主题目录（结晶知识）
-| 主题目录 | 文件数 | 核心资产 |
-|---|---|---|
-| dsh-evolve | memory-system.md | 记忆/技能系统历史（退役体系） |
-| dshome-build | release.md | 构建/打包/发布（Inno/ISCC/verify/smoke/毒树） |
-| dshome-core | runtime.md | 启动器/端口/环境/插件描述机制 |
-| dshome-plugin | plugins.md | 插件安装/补丁/加载契约 |
-| cathome | 2026-09-03_3.0-4.0版本差结论.md | CatHome 2.x→4.0 版本差/自举门禁/骨架（参考引擎） |
-| seggi | localization.md | 战姬 SEKKI 本地化 |
-| user-rules | rules.md | 用户铁律/偏好/纠正（scope=user） |
-| lessons | 多文件 | 工具链/开发/界面/自我进化欠账教训 |
+- **index**（结晶知识）：按主题分目录，格式见 `mind\L1\Memory.md` §二。**本机实际主题清单不入出厂**——加载/查询走 `mind-private\L3\index\` 各目录 `_index.md`（上工必读）或 `/api/mind/search` 模糊召回。
+- **history**（时间胶囊/归档）：规则见 `mind\L1\Memory.md` §三；实际归档在 `mind-private\L3\history\`（只写不改，各自维护 `_index.md`）。
 
-### history 归档
-| 归档 | 文件数 | 覆盖 |
-|---|---|---|
-| 2026-09-02_dsh-evolve-integration_归档.md | 1 | dsh-evolve 集成（迁移至 mind/ 双区时归档） |
+## Project — 行动锚点（结构；实际项目档在 mind-private\Project\）
 
-## Project — 行动锚点（mind-private\Project\）
+- 每个项目一个目录 + `project.md`（模板见 `mind\L1\Memory.md` §四）。
+- **体系主线档** = `mind-private\Project\DSHOME\project.md`：todo/progress 概念的唯一权威源（跨设备语义，见 `mind\L1\Concepts.md`）；用户业务项目（链潮等）各自独立，不入 todo API。
+- **本机在跑的具体业务项目不入出厂**——加载/查询走 `mind-private\Project\`（上工用 `scripts/mind-prime.mjs` 自动装配体系主线档；业务项目按需传项目词）。
 
-| 项目 | 目录 | 阶段 | 状态 |
-|---|---|---|---|
-| DSHOME | Project/DSHOME/project.md | v0.3-dev | 心智重构后主线（鱼鱼 2.0） |
+## TRASH — 回收站（不删只移，规则见 mind\L1\Memory.md §六）
 
-## TRASH — 回收站（不删只移）
-
-| 文件 | 原因 | 移入日期 |
-|---|---|---|
-| （空） | — | — |
+- 实际回收站在 `mind-private\TRASH\`（出厂不登记条目）。
 
 ## 更新规则
-- 新增/修改 L2/L3/Project 文件 → 同步更新本文件对应清单。
+- 出厂结构变化（增/删/改 mind\ 下文件、L1/L2 清单、规则）→ 同步更新本文件对应段。
+- **出厂版不登记 mind-private 具体条目**（记忆主题清单/归档/在跑项目由本机 `_index.md` 与 project.md 自行维护）。
 - 版本号/关联变化 → 同步。
 - 每轮收工（Power.md 7 步）第 4 步强制检查本文件同步。

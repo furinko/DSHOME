@@ -51,7 +51,7 @@ if (cmd === 'snapshot') {
   const t = ts();
   const dst = join(SNAP, `${t}_${name}`);
   writeFileSync(dst, readFileSync(p, 'utf8'));
-  // 快照说明逐条 append：为什么拍/拍了什么（借鉴 soyawl 快照说明.md 规则-实态对齐）
+  // 快照说明逐条 append：为什么拍/拍了什么（借鉴外部体系快照说明的"规则-实态对齐"）
   const reason = (rest[1] || '').trim();
   if (reason) appendFileSync(LOG, `| ${t.slice(0, 10)} | ↳快照:${basename(p)} | ${reason} | 快照旧版 | snapshots/${t}_${name} |\n`);
   console.log(`[evolve-log] 已快照 → ${dst}${reason ? '（理由:' + reason + '）' : ''}`);

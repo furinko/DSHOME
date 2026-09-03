@@ -71,7 +71,7 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖位（预留；apiKeyEnv 技�
 ### 5.1 四阶 + 双区
 
 ```
-四阶（参考 Cathome CCBP + Hermes 轮级缓冲）：
+四阶（参考外部心智架构：人格层/轮级缓冲/自动化进化理念）：
 L0 宪法  SOUL（人格）/ USER（关系，通用模板）/ AGENTS（纪律·常驻注入）/ TOOL（工具索引）
 L1 法律  HUB / Wisdom / Tree（全索引）/ Power / Memory（归档规则）/ Dream（灵感）/ Learn（教训）
 L2 能力  Skill（方法论·frontmatter 标准化）/ Exp（工具手册）
@@ -90,7 +90,7 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
 加载：注入层（L0 + AGENTS 每会话首步）→ 强制层（上工读 L1/Tree+Power+Memory+Dream+Learn）
       → 查询层（L2 关键词触发 / L3 grep 按需）
 记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/00_约定）
-      → 收工闭环 7 步 → 蒸馏入 L3/通用层（Hermes soyawl 模式）
+      → 收工闭环 7 步 → 蒸馏入 L3/通用层（外部体系吸收式沉淀模式）
 导入：import-artifact 技能（L2）——其他设备/agent 产物"直接丢给鱼鱼"即插即用
       （识别 → 校验 → 归类落 mind-private → 索引 → git checkpoint → 汇报）
 ```

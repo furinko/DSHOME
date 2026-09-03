@@ -6,7 +6,7 @@ author: 鱼鱼 (DSHOME)
 license: internal
 metadata:
   tags: [dshome, 诊断, 崩溃, 卡顿, 重启, errTail]
-  related: [packages/dshome/shell-app/main.cjs, mind-private/Project/DSHOME/project.md]
+  related: [packages/dshome/shell-app/main.cjs, mind/L1/Invariants.md, mind/L1/Concepts.md]
 contract:
   id: dshome-diagnostics
   triggers: [后端重启, 后端卡, exit1, offline闪断, 频繁重启]
@@ -59,7 +59,7 @@ contract:
 
 **日志：** `%APPDATA%\dshome-shell\dshome-shell.log`
 **代码：** `packages\dshome\shell-app\main.cjs`（errTail）
-**待办：** `mind-private\Project\DSHOME\project.md`（后端重启排查）
+**待办：** `mind-private\Project\`（当前项目档「下一步」区，后端重启排查项）
 
 ---
 _版本：1.0.0 | 2026-09-02 | 后端诊断固化_
