@@ -219,6 +219,16 @@ function fmValue(content, key) {
   const r = new RegExp('(?:^|\\n)\\s*' + key + ':\\s*([^\\n]+)').exec(m[1]);
   return r ? r[1].trim().replace(/^['"]|['"]$/g, '') : '';
 }
+/** importance 归一化（Memory.md §八：1-5 数字；兼容存量字符串档 high/medium/low，宁低勿高）。 */
+function normImportance(v) {
+  const s = String(v || '').trim().toLowerCase();
+  if (/^5$/.test(s)) return 5;
+  if (/^(4|high|重要|关键)$/.test(s)) return 4;
+  if (/^(3|medium|中|常规)$/.test(s)) return 3;
+  if (/^(2|low|低|参考)$/.test(s)) return 2;
+  if (/^(1|边缘)$/.test(s)) return 1;
+  return 2; // 缺省 = 参考档
+}
 function todayStamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -438,7 +448,8 @@ function disambiguationFor(query) {
   return hits;
 }
 
-/** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。 */
+/** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。
+ *  排序 = 相似度 + importance 静态权重（见 Memory.md §八 判据：importance 1-5，越重要加权越高，1 不加权）。 */
 function searchMind(query, limit = 6) {
   const files = [];
   walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
@@ -448,6 +459,7 @@ function searchMind(query, limit = 6) {
     let content = '';
     try { content = fs.readFileSync(f.full, 'utf8'); } catch { continue; }
     const rel = f.rel.replace(/^L3\/index\//, '');
+    const importance = normImportance(fmValue(content, 'importance'));
     const sections = content.replace(/^---\n[\s\S]*?\n---\n?/, '').split(/\n(?=## )/).map((s) => s.trim()).filter(Boolean);
     let best = null;
     for (const sec of sections) {
@@ -455,15 +467,19 @@ function searchMind(query, limit = 6) {
       if (!best || sc > best.score) best = { score: sc, sec };
     }
     if (best && best.score >= 0.03) {
+      const sim = Math.round(best.score * 100);
+      const weighted = sim + (importance - 1) * 2; // 静态权重：importance 5 加 8 分，1 加 0 分（相似度同分区间内高 importance 优先）
       hits.push({
-        score: Math.round(best.score * 100),
+        score: sim,
+        weighted,
+        importance,
         file: rel,
         section: ((best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),
         snippet: best.sec.replace(/\s+/g, ' ').slice(0, 160),
       });
     }
   }
-  hits.sort((a, b) => b.score - a.score);
+  hits.sort((a, b) => b.weighted - a.weighted);
   return hits.slice(0, limit);
 }
 
