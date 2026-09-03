@@ -23,6 +23,15 @@ const bootRecallState = {
   lastInject: null,
 };
 
+// ── L0 宪法注入器观测状态（sections 是否真注册进 systemPrompt，杜绝静默失败）──
+const l0State = {
+  ok: false,
+  serviceAvailable: false,
+  registered: [],   // 成功注册的 section 名
+  errors: [],       // 失败原因
+  disposers: [],    // 注册 disposer（卸载用）
+};
+
 // ── 心智基座路径 ────────────────────────────────────────────────────────────
 function repoRoot() {
   // dev：packages/dshome-mind/lib → 仓库根；env DSH_HOME 优先（dsh-evolve 同款）。
@@ -522,6 +531,7 @@ function makeMindRoutes() {
             factory: scanDir(mindFactoryDir(), '', 0),
             private: scanDir(mindPrivateDir(), '', 0),
             bootRecall: { ...bootRecallState, agents: Object.keys(bootRecallState.agents).length },
+            l0Constitution: { ok: l0State.ok, serviceAvailable: l0State.serviceAvailable, registered: l0State.registered, errors: l0State.errors },
           });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
@@ -804,6 +814,52 @@ function makeMindRoutes() {
   ];
 }
 
+// ── L0 宪法注入器：SOUL / USER / TOOL 全注入（对齐 HUB.md §三「注入层 = L0 四文件」）──
+// 独立子插件 + inject:['systemPrompt']：cordis loader 保证 systemPrompt 服务 ready 后才 apply
+//（同 routesPlugin inject webServer 的机制，plan-mode 的 static inject 同理），
+// 避免主插件在 service 未 ready 时同步调 ctx.systemPrompt 拿空。
+// AGENTS.md 已由 dsh-agent-instructions 注入（user-message 通道），此处只补其余三件。
+// 单源动态：装配时读文件（同名私有优先），改 L0 文件即生效，不双份维护。
+const l0InjectorPlugin = {
+  name: 'dshome-mind-l0-injector',
+  inject: ['systemPrompt'],
+  apply(ictx) {
+    const readL0 = (rel, privRel) => {
+      const p = privRel && fs.existsSync(path.join(mindPrivateDir(), privRel))
+        ? path.join(mindPrivateDir(), privRel)
+        : path.join(mindFactoryDir(), rel);
+      try { return fs.readFileSync(p, 'utf8'); } catch { return ''; }
+    };
+    l0State.serviceAvailable = typeof ictx.systemPrompt?.section === 'function';
+    if (!l0State.serviceAvailable) {
+      l0State.errors.push('systemPrompt service unavailable');
+      ictx.logger?.('dshome')?.warn?.('dshome-mind L0 injector: systemPrompt unavailable');
+      return;
+    }
+    const sections = [
+      // SOUL：人格宪法（身份/决策规则/价值观/表达）——order 1，紧随全局 persona(0)
+      { name: 'dshome:l0-soul', order: 1, text: () => readL0('L0/SOUL.md') },
+      // USER：关系层——mind-private 覆盖优先（真实称呼/习惯），无则出厂模板
+      { name: 'dshome:l0-user', order: 2, text: () => readL0('L0/USER.md', 'L0/USER.md') },
+      // TOOL：工具总索引 + 使用纪律
+      { name: 'dshome:l0-tool', order: 3, text: () => readL0('L0/TOOL.md') },
+    ];
+    for (const s of sections) {
+      try {
+        const dispose = ictx.systemPrompt.section({ name: s.name, order: s.order, text: s.text });
+        l0State.registered.push(s.name);
+        l0State.disposers.push(dispose);
+      } catch (e) {
+        l0State.errors.push(`${s.name}: ${e?.message ?? e}`);
+        ictx.logger?.('dshome')?.warn?.(`dshome-mind L0 section ${s.name} failed: ${e?.message ?? e}`);
+      }
+    }
+    if (l0State.registered.length === sections.length) l0State.ok = true;
+    ictx.effect?.(() => () => { for (const d of l0State.disposers) { try { d(); } catch { /* ignore */ } } });
+    ictx.logger?.('dshome')?.info?.(`dshome-mind L0 constitution injector: ${l0State.registered.join(',') || 'none'} (ok=${l0State.ok})`);
+  },
+};
+
 // ── 经 inject webServer 的子插件激活（仅 web profile）───────────────────────
 module.exports = {
   name: 'dshome-mind',
@@ -824,6 +880,9 @@ module.exports = {
       },
     };
     try { ctx.plugin?.(routesPlugin); } catch (e) { ctx.logger?.('dshome').warn(`dshome-mind disabled: ${e?.message ?? e}`); }
+
+    // ── L0 宪法注入器：注册子插件（inject systemPrompt → 服务 ready 后才 apply）──
+    try { ctx.plugin?.(l0InjectorPlugin); } catch (e) { ctx.logger?.('dshome').warn(`dshome-mind L0 injector plugin disabled: ${e?.message ?? e}`); }
 
     // ── 心智生长哲学底座-组件B：主会话开机硬注入（boot recall hook）───────────
     // 目标：每次 agent 会话（含主会话）第一步，结构性装配 mind-prime 产物进上下文，
