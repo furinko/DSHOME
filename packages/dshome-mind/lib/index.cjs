@@ -6,7 +6,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { DshCron, setCronInstance, getCronInstance } = require('./cron.cjs');
+const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cron.cjs');
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
@@ -637,7 +637,7 @@ function makeMindRoutes() {
           const b = await readJsonBody(req);
           const cron = getCronInstance();
           if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
-          const out = cron.add({ id: b?.id, cron: b?.cron, prompt: b?.prompt, cwd: b?.cwd, once: !!b?.once, catchUp: !!b?.catchUp, timezone: b?.timezone });
+          const out = cron.add({ id: b?.id, cron: b?.cron, prompt: b?.prompt, cwd: b?.cwd, once: !!b?.once, catchUp: !!b?.catchUp, timezone: b?.timezone, preset: b?.preset });
           json(res, out.ok ? 200 : 400, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
@@ -667,6 +667,38 @@ function makeMindRoutes() {
           const cron = getCronInstance();
           if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
           json(res, 200, cron.toggle(b?.id));
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/cron/update`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req);
+          const cron = getCronInstance();
+          if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
+          const out = cron.update(b?.id, { cron: b?.cron, prompt: b?.prompt, preset: b?.preset, once: b?.once });
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/cron/run`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req);
+          const cron = getCronInstance();
+          if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
+          const task = (cron.tasks || []).find((x) => x.id === b?.id);
+          if (!task) return json(res, 404, { ok: false, error: 'not-found' });
+          const out = await executeTask(cron.hostCtx, task);
+          json(res, 200, { ok: out.status === 'created', ...out });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },

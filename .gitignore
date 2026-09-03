@@ -41,6 +41,9 @@ evolve-workspace/
 # fish mind: private runtime half (memory/projects/learn — never push)
 mind-private/
 
+# self-modification snapshots (AGENTS hard-flow working dir — never push)
+.agent-snapshot/
+
 # soul: behavior learning is private (only template was ever pushed)
 soul/
 

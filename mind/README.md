@@ -8,7 +8,7 @@
 | 层 | 回答 | 内容 |
 |---|---|---|
 | L0 | 我是谁？怎么活？ | SOUL（人格）+ USER（关系）+ AGENTS（纪律）+ TOOL（工具） |
-| L1 | 能做什么？怎么做？怎么存？ | HUB（中枢）+ Wisdom（思维）+ Tree（索引）+ Power（功法）+ Memory（归档规则）+ Dream（灵感）+ Learn（痕迹） |
+| L1 | 能做什么？怎么做？怎么存？ | HUB（中枢）+ Wisdom（思维）+ Tree（索引）+ Power（功法）+ Memory（归档规则）+ Dream（灵感）+ Learn（痕迹）+ Concepts（契约）+ Design-Philosophy（生长哲学） |
 | L2 | 某类问题怎么解决？ | Skill（方法论）+ Exp（工具手册） |
 | L3 | 踩过的坑去哪查？被替代的去了哪？ | index（结晶知识）+ history（时间胶囊） |
 | Project | 现在在做什么？ | 行动锚点（与知识网络平级） |
@@ -19,7 +19,7 @@
 ```
 注入层（系统提示词，随每轮携带）：L0 四文件 + L1/HUB + L1/Wisdom
 强制层（每次上工必须加载）：L1/Tree + Power + Memory + Dream + Learn
-查询层（按需）：L2 Skill/Exp + L3 index/history + Project
+查询层（按需）：L2 Skill/Exp + L3 index/history + Project + L1 参考文档（Concepts / Design-Philosophy）
 ```
 
 ## 三、双区知识基座

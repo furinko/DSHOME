@@ -71,13 +71,14 @@
 - 出厂模板在 `mind\L3\`；**运行时记忆一律写 `mind-private\L3\`**（同名私有优先）
 - 隐私红线：真实记忆内容永不写入出厂区、永不推送
 
-## 八、pending 待放行协议（记忆写入门）
+## 八、记忆写入门（溯源信任 + 可选审阅）
 
-- **流程**：提议记忆（鱼鱼识别到值得长期记的结论）→ 先写 `mind-private\tasks\pending\<日期>_<名>.md`（frontmatter：kind/importance/scope/topic/tags/proposedBy/proposedAt）→ 用户在图谱面板「⏳ 待放行」区逐条操作
-- **放行 ✓** → 移入 `L3\index\<topic>\`（记得更新该主题 `_index.md`）
-- **拒绝 ✗** → 移入 `mind-private\TRASH\`（不删只移，可恢复）
-- **为什么**：不自动落正式库——记忆要经用户点头（对应 dsh-evolve 时代的审批门，纯文件实现）
-- 例外：用户**直接要求记录**的内容（"记一下/存下来"）→ 实时落盘，不进 pending
+> 哲学：信任靠溯源挣来，不靠人审预设（`mind\L1\Design-Philosophy.md`）。记忆进 L3 不再强制经人审。
+
+- **有源可溯 → 直接落库**：记忆带 `source`（外部可查证依据：文件/事件/用户明示/实测，非 agent 自发推理）→ 写 `L3\index\<topic>\`（frontmatter：kind/importance/scope/topic/tags/source/proposedBy/proposedAt），即时生效，信任靠溯源。
+- **无源 / 自推理 → 标 `unverified`**：写 `L3\index\<topic>\` 但 frontmatter 加 `verified: false`，**不参与权威裁决**（降权，可被有源记忆覆盖）。
+- **用户明示 / 敏感 / 拿不准**：才建议走 `mind-private\tasks\pending\<日期>_<名>.md` 等用户在图谱面板「⏳ 待放行」裁决（✓ 入库 / ✗ 入 TRASH）；**非强制门**，仅作可选审阅。
+- **例外**：用户**直接要求记录**（"记一下/存下来"）→ 实时落盘，不入 pending。
 - 🔍 **写入前自查（防重复）**：提议任何记忆前，先查同主题是否已有同一事实——`/api/mind/dup-check { topic, content }` 返回相似命中（bigram-Jaccard，≥12% 提示）。有高置信重复（≥30%）→ **不新增**，汇报"已有 X 相似 N%，更新旧条目还是新增？"；低分命中看 snippet 判断。目标：同事实只存一份
 
 ## 九、整理队列（curate-jobs，内容级处置委托）

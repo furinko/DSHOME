@@ -8,7 +8,7 @@
 //
 // 存储：mind-private/tasks/evolution/（隐私，不推送）
 import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync } from 'node:fs';
-import { join, basename, resolve } from 'node:path';
+import { join, basename, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..'));

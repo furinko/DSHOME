@@ -1,7 +1,7 @@
 # HUB.md — 知识网络之心
 
 > 版本：1.0 | 2026-09-02 | 初版（参考 Cathome HUB v2.3 蒸馏）
-> 加载：初次对话强制加载，永不跳过
+> 加载：注入层（随每轮携带）
 > 定位：L1 中枢——心智基座的设计理念、加载规则、跨层红线
 
 ## 一、我们为什么存在
@@ -42,25 +42,27 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 `L1/Tree.md`（有什么）+ `L1/Power.md`（怎么用 Skill/Exp）+ `L1/Memory.md`（怎么存 L3）+ `L1/Dream.md`（灵感）+ `L1/Learn.md`（教训）。
 
 ### 查询层（按需）
-L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read。
+L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read；L1 参考文档（Concepts / Design-Philosophy）按需查。
 
 ## 四、跨层红线
 
 1. **L0 是宪法** — SOUL/AGENTS/TOOL 仅用户明确要求时修改。
-2. **L1 是法律** — 七文件定义规则，不对 L2/L3 具体内容负责。
+2. **L1 是法律** — L1 文件定义规则，不对 L2/L3 具体内容负责。
 3. **L2 是能力** — Skill/Exp 遵守 L1 规则，独立演化。
 4. **L3 是记忆** — 遵守 Memory 规则，各自维护 `_index`。
 5. **双区边界** — `mind\` 出厂可推送；`mind-private\` 隐私永不推送，同名私有优先。
 6. **TRASH 不删只移** — 可恢复优先于永久删除。
 
-## 五、L1 七文件职责
+## 五、L1 文件职责
 
 | 文件 | 比喻 | 职责 |
 |---|---|---|
 | HUB.md | 脑袋 | 设计理念 + 加载顺序 + 跨层红线（本文件） |
+| Design-Philosophy.md | 灵魂之纲 | 生长哲学：自生长 / 绽放 + 唯一防毒底座（别自欺） |
 | Wisdom.md | 大脑皮层 | 思维模式系统 + 元认知框架 |
 | Tree.md | 血管 | 全知识网络目录（"有什么"一键查询） |
 | Power.md | 功法 | Skill/Exp 使用教程 + 沉淀路径 + 收工闭环 |
 | Memory.md | 规则书 | L3 index/history/Project 归档规则 |
 | Dream.md | 灵感池 | 松散点子 + 整理提醒 |
 | Learn.md | 痕迹库 | 精炼教训（笨鱼鱼💢/好鱼鱼🐱，≤200字/条） |
+| Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 唯一权威源 + 意图→概念→权威源路由表 |

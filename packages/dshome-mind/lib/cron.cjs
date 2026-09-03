@@ -27,18 +27,40 @@ async function executeTask(hostCtx, task) {
     const { agent } = await agents.create({
       sessionId,
       meta: { cwd: task.cwd ?? process.cwd() },
-      ...(modelChoice ? {
-        setup: (agentCtx) => {
-          // 低层 agents.create 不装模型选择，系统提示 {{model}} 会 undefined
+      setup: async (agentCtx) => {
+        // 低层 agents.create 不会自动把 agent 加入任何 agent preset。若不 mount，该会话的
+        // 工具/提示词/skills 会解析到空的 global 层，只剩宿主平面插件（如 AgentTeams）注册的
+        // 工具——没有 read/glob/grep/write/edit/pwsh/web，定时任务 A+B 根本无法执行。
+        // 每个任务可显式指定 agent preset（cron.json 的 "preset" 字段）；未指定时缺省用
+        // 出厂全量 "standard"（不挂 router-bootstrap，因此无渐进门控），让定时任务真正具备
+        // 文件/Shell/检索/网页工具，不会卡在阶段 0 拿不到 write/pwsh。
+        const presetId = (task && task.preset) || 'standard';
+        const presets = agentCtx?.get?.('agentPresets');
+        if (presets && typeof presets.mount === 'function') {
+          // 挂载失败（如 preset id 不存在）即抛错：宁可任务报 failed，也不让它跑成
+          // 一个"只写报告、干不了活"的空壳会话。
+          await presets.mount(agentCtx, presetId);
+        } else {
+          console.warn('[dshome-cron] agentPresets unavailable; cron agent may run with empty tool layer');
+        }
+        // 低层 agents.create 不装模型选择，系统提示 {{model}} 会 undefined
+        if (modelChoice) {
           const { installModelSelection } = require('@deepseek-ai/dsh-agent');
           installModelSelection(agentCtx, { current: modelChoice, assembled: undefined });
-        },
-      } : {}),
+        }
+      },
     });
     const { createMessage } = require('@deepseek-ai/dsh-llm');
+    // 上工自动召回：把 mind-prime 的输出预置进任务 prompt（定时任务开机即带上下文，不靠 agent 记得）。
+    let primeContext = '';
+    try {
+      const { execFileSync } = require('child_process');
+      primeContext = execFileSync(process.execPath, [path.join(repoRoot(), 'scripts', 'mind-prime.mjs')], { cwd: repoRoot(), encoding: 'utf8', timeout: 15000 }).toString().trim();
+    } catch (e) { primeContext = ''; console.warn('[dshome-cron] mind-prime failed:', e.message); }
+    const prompt = primeContext ? `${primeContext}\n\n===== 任务 =====\n\n${task.prompt}` : task.prompt;
     const message = createMessage({
       role: 'user',
-      content: [{ type: 'text', text: task.prompt }],
+      content: [{ type: 'text', text: prompt }],
       source: { kind: 'plugin', plugin: 'dshome-mind' },
     });
     agent.followup(message);
@@ -161,6 +183,18 @@ class DshCron {
     this.schedule(t); // enabled 则建 job，停用则不建（schedule 内已判）
     saveCron(this.tasks);
     return { ok: true, id, enabled: t.enabled };
+  }
+  /** 编辑：改 cron/prompt/preset/once（未提供的字段保留），重新安排调度。 */
+  update(id, patch) {
+    const t = this.tasks.find((x) => x.id === id);
+    if (!t) return { ok: false, error: 'not-found' };
+    if (patch && patch.cron !== undefined) t.cron = patch.cron;
+    if (patch && patch.prompt !== undefined) t.prompt = patch.prompt;
+    if (patch && patch.preset !== undefined) t.preset = patch.preset;
+    if (patch && patch.once !== undefined) t.once = !!patch.once;
+    this.schedule(t);
+    saveCron(this.tasks);
+    return { ok: true, id };
   }
 }
 
