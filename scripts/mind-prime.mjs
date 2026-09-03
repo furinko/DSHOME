@@ -146,6 +146,8 @@ if (asJson) {
 // ── 纯文本注入块 ─────────────────────────────────────────────────────────
 const out = [];
 out.push(`【上工自动召回 · ${query}】`);
+const _d = new Date();
+out.push(`⏱【系统日期】${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}（机器时钟——写文档/记教训/落 Learn 以此为准，勿沿用旧文件日期）`);
 if (ambiguous.length) {
   // 撞名消歧：先钉身份再动手（不阻塞召回，只是提示候选）
   out.push(`\n⚠️ 歧义词检测：「${query}」可能指——\n${ambiguous.map((a) => `- ${a.word}：${a.candidates}（判定：${a.clues}）`).join('\n')}\n请先钉身份（指哪个）再进入任务；若已明确可不理会本条。`);

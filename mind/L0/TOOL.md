@@ -1,6 +1,6 @@
 # TOOL.md — 工具操作指南
 
-> 版本：1.0 | 2026-09-02 | DSHOME 宿主工具总索引 + 使用纪律
+> 版本：1.1 | 2026-09-04 | AGENTS 位置引用校准（根版 E:\DSHOME\AGENTS.md）；余同 1.0（工具总索引 + 使用纪律）
 > 渐进披露：阶段未解锁的工具不点名、不可调；tools_catalog/tools_help 可查。
 
 ## 一、工具总索引
@@ -35,6 +35,6 @@
 
 ## 三、与心智系统的关系
 
-- 工具只是操作手段——"怎么用"的规则在 `mind\L0\AGENTS.md` 与 `mind\L1\Power.md`。
+- 工具只是操作手段——"怎么用"的规则在根 `E:\DSHOME\AGENTS.md` 与 `mind\L1\Power.md`。
 - 产物写入心智：正式结论 → mind-private 对应层；轮级缓冲 → mind-private\tasks\。
 - 导入其他设备/agent 产物：走导入协议（import-artifact），见 mind\README.md §五。

@@ -1,7 +1,7 @@
 ---
 name: boot-recall
 description: 上工自动召回——会话/任务开始时把 project.md + L3 相关记忆 + Learn + user-rules 装配成注入上下文。触发：每次会话/任务开始（上工）、"我忘了/你想起来/有什么待办"。
-version: 1.0.0
+version: 1.1.0
 author: 鱼鱼 (DSHOME)
 license: internal
 metadata:
@@ -55,4 +55,4 @@ contract:
 - **L3**：`mind-private\Project\`（体系主线档 `DSHOME\project.md` + 业务项目各自目录）· `mind-private\L3\index\`（记忆按主题分目录，各目录 `_index.md`）· `mind-private\L1\Learn.md`
 
 ---
-_版本：1.1.0 | 2026-09-06 | 上工自动召回积木化（新增体系主线档初始化检查；todo/progress 权威源语义对齐 Concepts）_
+_版本：1.1.0 | 2026-09-04 | 上工自动召回积木化（新增体系主线档初始化检查；todo/progress 权威源语义对齐 Concepts；版本日期校正）_

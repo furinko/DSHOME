@@ -1,6 +1,6 @@
 # mind — 鱼鱼心智基座（出厂版）
 
-> DSHOME 智能体（鱼鱼）的 L0-L3 四阶知识系统，参考外部心智架构（人格层/轮级缓冲/自动化进化理念）重构；2026-09-06 去私有体系署名。
+> DSHOME 智能体（鱼鱼）的 L0-L3 四阶知识系统，参考外部心智架构（人格层/轮级缓冲/自动化进化理念）重构；2026-09-04 去私有体系署名。
 > 本目录 = **出厂固件**（架构 + 默认内容），可推送 GitHub。运行时自进化数据在 `E:\DSHOME\mind-private\`（gitignore，永不上传）。
 
 ## 一、四阶架构
@@ -17,9 +17,9 @@
 ## 二、三层加载模型
 
 ```
-注入层（系统提示词，随每轮携带）：L0 四文件 + L1/HUB + L1/Wisdom
+注入层（随每轮携带）：L0 四件——AGENTS（经 workspace-instructions）+ SOUL/USER/TOOL（经 dshome-mind L0 注入器）
 强制层（每次上工必须加载）：L1/Tree + Power + Memory + Dream + Learn
-查询层（按需）：L2 Skill/Exp + L3 index/history + Project + L1 参考文档（Concepts / Design-Philosophy）
+查询层（按需）：L2 Skill/Exp + L3 index/history + Project + L1 参考文档（Concepts / Design-Philosophy / HUB / Wisdom）
 ```
 
 ## 三、双区知识基座

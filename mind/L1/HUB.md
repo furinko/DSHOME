@@ -1,6 +1,6 @@
 # HUB.md — 知识网络之心
 
-> 版本：1.2 | 2026-09-06 | 缓冲落点对齐：tasks\00_约定（已废）→ mind-private\tasks\ 目录；余同 1.1（初版结构 + 去私有体系署名）
+> 版本：1.3 | 2026-09-04 | 评审修复：加载模型口径校准（注入层 = L0 四件经两通道；HUB/Wisdom 归查询层按需读）；版本日期校正；余同 1.2（缓冲落点对齐）
 > 加载：注入层（随每轮携带）
 > 定位：L1 中枢——心智基座的设计理念、加载规则、跨层红线
 
@@ -35,14 +35,14 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 
 ## 三、加载策略（三层）
 
-### 注入层（系统提示词，随每轮 API 调用携带）
-`L0 四文件` + `L1/HUB.md` + `L1/Wisdom.md` —— 出厂固件。
+### 注入层（随每轮 API 调用携带——L0 四件经两通道合流）
+`AGENTS.md`（仓库根，经 dsh-agent-instructions workspace-instructions 通道）+ `SOUL / USER / TOOL`（经 dshome-mind L0 注入器 systemPrompt sections）——出厂固件与私有覆盖同名优先。
 
 ### 强制层（每次上工必须加载）
 `L1/Tree.md`（有什么）+ `L1/Power.md`（怎么用 Skill/Exp）+ `L1/Memory.md`（怎么存 L3）+ `L1/Dream.md`（灵感）+ `L1/Learn.md`（教训）。
 
 ### 查询层（按需）
-L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read；L1 参考文档（Concepts / Design-Philosophy）按需查。
+L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read；L1 参考文档（Concepts / Design-Philosophy / HUB / Wisdom）按需查。
 
 ## 四、跨层红线
 

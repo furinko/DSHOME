@@ -253,6 +253,29 @@ if (existsSync(rootAgentsFile) && existsSync(payloadAgentsFile)) {
   }
 }
 
+// ⑧ 头/尾版本一致性（Power §六：文件头版本与文件尾版本一致）——规则类文件两端都带版本行才比较
+// 头部取值序：frontmatter version（L2 Skill）→ 正文头 `> 版本：x.y`；尾部取文末 `_版本：x.y`。
+function versionPair(content) {
+  const c = String(content || '').replace(/\r\n/g, '\n');
+  const num = (s) => { const m = String(s || '').trim().match(/^(\d+)\.(\d+)/); return m ? Number(m[1]) * 100 + Number(m[2]) : null; };
+  const headLines = c.slice(0, 1500).split('\n');
+  const tailLines = c.slice(-1500).split('\n');
+  let head = null;
+  const fm = /^---\n([\s\S]*?)\n---/.exec(c);
+  if (fm) { const v = /^version:\s*([0-9.]+)/m.exec(fm[1]); if (v) head = v[1]; }
+  if (head === null) for (const ln of headLines) { const m = /^\s*>\s*版本[：:]\s*([0-9.]+)/.exec(ln); if (m) { head = m[1]; break; } }
+  let tail = null;
+  for (const ln of tailLines) { const m = /_?\s*版本[：:]\s*([0-9.]+)/.exec(ln); if (m) { tail = m[1]; break; } }
+  return { head: num(head), tail: num(tail), hs: head, ts: tail };
+}
+for (const f of walk(MIND, [], 'mind').concat([{ full: join(repoRoot, 'AGENTS.md'), rel: 'AGENTS.md' }])) {
+  if (/L3|Project|TRASH/.test(f.rel)) continue; // 记忆/项目档不适用版本行规范
+  const c = readFileSync(f.full, 'utf8');
+  const { head, tail, hs, ts } = versionPair(c);
+  if (head !== null && tail !== null && head !== tail)
+    issues.push({ sev: 'warn', file: f.rel, msg: `头/尾版本不一致（头 ${hs} vs 尾 ${ts}）——Power §六 要求一致` });
+}
+
 // 输出
 const crit = issues.filter((i) => i.sev === 'critical');
 const warn = issues.filter((i) => i.sev === 'warn');

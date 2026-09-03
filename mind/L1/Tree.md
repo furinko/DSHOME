@@ -1,6 +1,6 @@
 # Tree.md — 知识网络血管（全目录）
 
-> 版本：1.3 | 2026-09-06 | + landing-audit Skill 登记；余同 1.2（隐私校准：L3/Project 段结构描述，出厂不枚举本机条目）
+> 版本：1.4 | 2026-09-04 | 评审修复①：出厂区移除本机业务项目名枚举（隐私红线回归：出厂不枚举本机条目）；boot-recall/scar-inference 版本登记同步 1.1.0；收工闭环引用统一 8 步；余同 1.3（+ landing-audit 登记）
 > 加载：强制层（每次上工必读）
 > 定位：L1 循环系统——全知识网络目录，AI 友好表格化。"有什么"的一键查询。
 
@@ -37,10 +37,10 @@
 | 文件 | 版本 | 描述 | 触发关键词 |
 |---|---|---|---|
 | import-artifact.md | 1.0.0 | 导入协议：其他设备/agent 产物即插即用 | import、导入、即插即用、artifact、蒸馏包 |
-| boot-recall.md | 1.0.0 | 上工自动召回：project.md+L3+Learn+user-rules 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
+| boot-recall.md | 1.1.0 | 上工自动召回：project.md+L3+Learn+user-rules 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
 | dshome-diagnostics.md | 1.0.0 | DSHOME 后端诊断（崩/卡/闪断：先分真假+证据） | 后端重启、卡、exit1、闪断 |
 | dshome-plugin-dev.md | 1.0.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚 | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败 |
-| scar-inference.md | 1.0.0 | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古、蒸、版本差、反推坑、咬痕、伤疤、为什么在、作者画像、同源盲区 |
+| scar-inference.md | 1.1.0 | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古、蒸、版本差、反推坑、咬痕、伤疤、为什么在、作者画像、同源盲区 |
 | landing-audit.md | 1.0.0 | 落地审计三查法：文档说有 ≠ 机制在跑 ≠ 数据达标（定义/接线/数据逐层查） | 落到实处吗、落地了吗、真的在用吗、有效吗、审计、空壳字段、幽灵引用 |
 
 ### Exp 清单（工具手册）
@@ -56,7 +56,7 @@
 ## Project — 行动锚点（结构；实际项目档在 mind-private\Project\）
 
 - 每个项目一个目录 + `project.md`（模板见 `mind\L1\Memory.md` §四）。
-- **体系主线档** = `mind-private\Project\DSHOME\project.md`：todo/progress 概念的唯一权威源（跨设备语义，见 `mind\L1\Concepts.md`）；用户业务项目（链潮等）各自独立，不入 todo API。
+- **体系主线档** = `mind-private\Project\DSHOME\project.md`：todo/progress 概念的唯一权威源（跨设备语义，见 `mind\L1\Concepts.md`）；用户业务项目各自独立，不入 todo API。
 - **本机在跑的具体业务项目不入出厂**——加载/查询走 `mind-private\Project\`（上工用 `scripts/mind-prime.mjs` 自动装配体系主线档；业务项目按需传项目词）。
 
 ## TRASH — 回收站（不删只移，规则见 mind\L1\Memory.md §六）
@@ -67,4 +67,4 @@
 - 出厂结构变化（增/删/改 mind\ 下文件、L1/L2 清单、规则）→ 同步更新本文件对应段。
 - **出厂版不登记 mind-private 具体条目**（记忆主题清单/归档/在跑项目由本机 `_index.md` 与 project.md 自行维护）。
 - 版本号/关联变化 → 同步。
-- 每轮收工（Power.md 7 步）第 4 步强制检查本文件同步。
+- 每轮收工（Power.md 8 步）第 4 步强制检查本文件同步。
