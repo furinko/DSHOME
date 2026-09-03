@@ -1,6 +1,6 @@
 # Memory.md — L3 规则书
 
-> 版本：1.0 | 2026-09-02 | 初版（参考 Cathome Memory v2.0 蒸馏）
+> 版本：1.1 | 2026-09-06 | 初版（结构参考外部记忆归档层设计；2026-09-06 去私有体系署名）+ 溯源契约（§八）
 > 加载：强制层（每次上工必读）
 > 定位：L1 海马体——定义 L3 index/history 与 Project 的归档规则。L3 引用 Memory 来规定自己。
 
@@ -74,9 +74,12 @@
 ## 八、记忆写入门（溯源信任 + 可选审阅）
 
 > 哲学：信任靠溯源挣来，不靠人审预设（`mind\L1\Design-Philosophy.md`）。记忆进 L3 不再强制经人审。
+> 溯源契约（确定性内核，`mind-validate` §② 强制）：每条 L3 记忆 frontmatter 必须带 `source` **或** `verified: false`——二者至少其一。
+> `source` = 外部可查证依据：文件 / 事件 / 用户明示 / 实测；**agent 自推理不算 source**（无 source 的自推理一律标 `verified: false` 降权）。
 
 - **有源可溯 → 直接落库**：记忆带 `source`（外部可查证依据：文件/事件/用户明示/实测，非 agent 自发推理）→ 写 `L3\index\<topic>\`（frontmatter：kind/importance/scope/topic/tags/source/proposedBy/proposedAt），即时生效，信任靠溯源。
 - **无源 / 自推理 → 标 `unverified`**：写 `L3\index\<topic>\` 但 frontmatter 加 `verified: false`，**不参与权威裁决**（降权，可被有源记忆覆盖）。
+- **存量迁移**：旧记忆（无 frontmatter / 用 `> date:` 引用式头）迁移时补 frontmatter；内容有出处 → 提为 `source`；确无外部依据 → 标 `verified: false`。校验不过即阻塞提交，不接受"先记着"绕过。
 - **用户明示 / 敏感 / 拿不准**：才建议走 `mind-private\tasks\pending\<日期>_<名>.md` 等用户在图谱面板「⏳ 待放行」裁决（✓ 入库 / ✗ 入 TRASH）；**非强制门**，仅作可选审阅。
 - **例外**：用户**直接要求记录**（"记一下/存下来"）→ 实时落盘，不入 pending。
 - 🔍 **写入前自查（防重复）**：提议任何记忆前，先查同主题是否已有同一事实——`/api/mind/dup-check { topic, content }` 返回相似命中（bigram-Jaccard，≥12% 提示）。有高置信重复（≥30%）→ **不新增**，汇报"已有 X 相似 N%，更新旧条目还是新增？"；低分命中看 snippet 判断。目标：同事实只存一份

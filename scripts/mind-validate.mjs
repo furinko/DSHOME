@@ -31,7 +31,9 @@ function walk(dir, out, rel = '') {
 }
 
 function readFm(content) {
-  const m = /^---\n([\s\S]*?)\n---/.exec(content || '');
+  // CRLF 兼容：Windows 下 mind 文件多为 \r\n，先归一化再解析（否则 LF-only 正则误判缺 frontmatter）
+  const c = String(content || '').replace(/\r\n/g, '\n');
+  const m = /^---\n([\s\S]*?)\n---/.exec(c);
   if (!m) return null;
   const body = m[1];
   const kv = {};
@@ -65,6 +67,13 @@ for (const m of memories) {
   const miss = hasKeys(kv, ['kind', 'importance', 'scope', 'topic', 'tags']);
   if (!kv) issues.push({ sev: 'critical', file: m.rel, msg: 'L3 记忆缺 frontmatter' });
   else if (miss.length) issues.push({ sev: 'critical', file: m.rel, msg: `L3 记忆 frontmatter 缺: ${miss.join(', ')}` });
+  // 溯源契约（生长哲学底座-组件A）：source（外部可查证依据）或 verified:false（自推理降权）至少其一
+  if (kv) {
+    const hasSource = !!(kv.source || '').trim();
+    const isUnverified = String(kv.verified || '').trim().toLowerCase() === 'false';
+    if (!hasSource && !isUnverified)
+      issues.push({ sev: 'critical', file: m.rel, msg: 'L3 记忆缺溯源：须带 source（外部可查证依据）或 verified: false（自推理降权，不参与权威）' });
+  }
 }
 
 // ③ related 死链（frontmatter related 属性 → 文件必须存在）
@@ -88,7 +97,9 @@ function relExists(target) {
 }
 for (const f of walk(MIND, [], 'mind').concat(walk(PRIV, [], 'priv', ))) {
   const kv = readFm(readFileSync(f.full, 'utf8'));
-  const rel = (kv && kv.related) || '';
+  // related 支持两种写法：逗号分隔字符串 或 YAML 数组 [a, b]（剥外层方括号再拆）
+  const relRaw = (kv && kv.related) || '';
+  const rel = String(relRaw).trim().replace(/^\[|\]$/g, '');
   for (const t of rel.split(',').map((s) => s.trim()).filter(Boolean)) {
     if (!relExists(t)) issues.push({ sev: 'critical', file: f.rel, msg: `related 死链: ${t}` });
   }

@@ -2,14 +2,26 @@
 // /api/mind/*：读 mind\（出厂）+ mind-private\（隐私）双区，返回状态/树/内容。
 // 照 dshome/plugin-api 模式：loopback trust fence + webServer.register 子插件。
 // 仅 web profile（webServer 存在）时经子插件激活；headless 自动跳过。
+// 心智生长哲学底座-组件B：主会话开机硬注入——ctx.on('agent/pre-step') 在会话首步
+// 把 mind-prime 产物结构性装配进上下文（不靠 agent 记得跑，参照官方
+// dsh-agent-instructions / dsh-plan-mode 同款 hook；cron 已自带 prime 的会话跳过）。
 
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cron.cjs');
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
+
+// ── 组件B 观测状态：boot-recall hook 注册与触发记录（重启后经 /api/mind/status 确认）──
+const bootRecallState = {
+  registered: false,
+  hookError: '',
+  agents: {},      // agentId -> {state, at, injected: bool}
+  lastInject: null,
+};
 
 // ── 心智基座路径 ────────────────────────────────────────────────────────────
 function repoRoot() {
@@ -393,6 +405,30 @@ function dupCheck(topic, content) {
   return hits.slice(0, 5);
 }
 
+/** 撞名消歧（组件D，与 scripts/mind-prime.mjs 同表同规则）：q 命中 Concepts 歧义表 → 返回候选。 */
+function disambiguationFor(query) {
+  const p = path.join(repoRoot(), 'mind', 'L1', 'Concepts.md');
+  if (!fs.existsSync(p)) return [];
+  const q = String(query || '').toLowerCase();
+  const hits = [];
+  let inTable = false;
+  for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
+    if (/^##\s*撞名消歧表/.test(line)) { inTable = true; continue; }
+    if (inTable && /^##\s+/.test(line)) break;
+    if (!inTable) continue;
+    const m = /^\|\s*`([^`]+)`\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/.exec(line);
+    if (!m) continue;
+    const word = m[1].trim().toLowerCase();
+    const candidates = m[2].trim();
+    const clues = m[3].trim();
+    if (!word || !candidates) continue;
+    if (q === word || (word.length >= 3 && q.includes(word))) {
+      hits.push({ word: m[1].trim(), candidates, clues });
+    }
+  }
+  return hits;
+}
+
 /** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。 */
 function searchMind(query, limit = 6) {
   const files = [];
@@ -485,6 +521,7 @@ function makeMindRoutes() {
             ok: true,
             factory: scanDir(mindFactoryDir(), '', 0),
             private: scanDir(mindPrivateDir(), '', 0),
+            bootRecall: { ...bootRecallState, agents: Object.keys(bootRecallState.agents).length },
           });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
@@ -611,7 +648,7 @@ function makeMindRoutes() {
         try {
           const q = (new URL(req.url, 'http://localhost').searchParams.get('q') || '').trim();
           if (!q) return json(res, 400, { ok: false, error: 'q required' });
-          json(res, 200, { ok: true, hits: searchMind(q) });
+          json(res, 200, { ok: true, hits: searchMind(q), ambiguous: disambiguationFor(q) });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
@@ -787,6 +824,71 @@ module.exports = {
       },
     };
     try { ctx.plugin?.(routesPlugin); } catch (e) { ctx.logger?.('dshome').warn(`dshome-mind disabled: ${e?.message ?? e}`); }
+
+    // ── 心智生长哲学底座-组件B：主会话开机硬注入（boot recall hook）───────────
+    // 目标：每次 agent 会话（含主会话）第一步，结构性装配 mind-prime 产物进上下文，
+    // 不靠 agent 记得去跑（官方 dsh-agent-instructions / dsh-plan-mode 同款
+    // ctx.on('agent/pre-step') 机制；cron 任务已在 prompt 前置 prime，此处自动跳过）。
+    // 幂等：每 agent 运行实例只尝试一次；已含【上工自动召回】→ 跳过（防 cron 双份）。
+    // 优雅降级：无 mind-private / 脚本失败 / 输出空 → 不注入、不抛、不阻塞会话。
+    try {
+      const { createUserMessage } = require('@deepseek-ai/dsh-llm');
+      const primed = new WeakMap(); // agent -> 'ok' | 'skip' | 'empty' | 'failed'
+      const contentText = (m) => {
+        if (!m) return '';
+        if (typeof m.content === 'string') return m.content;
+        if (Array.isArray(m.content)) return m.content.map((c) => (typeof c === 'string' ? c : c && c.text ? c.text : '')).join('\n');
+        return '';
+      };
+      const record = (agent, state, injected = false) => {
+        try {
+          const id = String(agent?.id || agent?.session?.id || '?');
+          bootRecallState.agents[id] = { state, at: new Date().toISOString(), injected };
+          if (injected) bootRecallState.lastInject = { agentId: id, at: new Date().toISOString(), bytes: 0 };
+        } catch { /* 观测失败不影响主逻辑 */ }
+      };
+      ctx.on('agent/pre-step', async ({ agent, messages, step, signal }, next) => {
+        const decision = await next();
+        if (decision.kind === 'reject' || !agent || signal?.aborted) return decision;
+        const state = primed.get(agent);
+        if (state !== undefined) return decision; // 已处理过本 agent
+        // 只注入顶层会话（delegationDepth=0）：子代理由父上下文已带召回，避免重复 exec/上下文噪音
+        const depth = agent?.session?.header?.delegationDepth;
+        if (typeof depth === 'number' && depth > 0) { primed.set(agent, 'skip-child'); record(agent, 'skip-child'); return decision; }
+        // cron 等已在 prompt 前置【上工自动召回】→ 跳过，避免双份
+        const joined = [...(messages || []), ...(decision.messages || [])].map(contentText).join('\n');
+        if (joined.includes('【上工自动召回')) { primed.set(agent, 'skip'); record(agent, 'skip'); return decision; }
+        let primeText = '';
+        try {
+          primeText = execFileSync(process.execPath, [path.join(repoRoot(), 'scripts', 'mind-prime.mjs')], { cwd: repoRoot(), encoding: 'utf8', timeout: 15000 }).toString().trim();
+        } catch (e) {
+          primed.set(agent, 'failed');
+          record(agent, 'failed');
+          ctx.logger?.('dshome')?.warn?.('dshome-mind boot recall: mind-prime failed, skip inject', e?.message ?? e);
+          return decision;
+        }
+        // 无正文（无 L3/project/Learn 的干净机）→ 不注入（优雅降级，不刷空壳上下文）
+        if (!primeText.includes('■')) { primed.set(agent, 'empty'); record(agent, 'empty'); return decision; }
+        primed.set(agent, 'ok');
+        record(agent, 'ok', true);
+        const primeMessage = createUserMessage({
+          content: [{ type: 'text', text: primeText }],
+          source: { kind: 'plugin', plugin: 'dshome-mind', form: 'recall' },
+        });
+        // 对齐官方 dsh-agent-instructions：插到 claimed 用户消息之后（指令类上下文不被系统尾段稀释），
+        // 而不是简单 append 到末尾；无 claimed 则放最前。
+        const claimedSet = new Set(messages || []);
+        const lastClaimed = (decision.messages || []).findLastIndex((m) => claimedSet.has(m));
+        if (lastClaimed >= 0) {
+          return { ...decision, messages: decision.messages.toSpliced(lastClaimed + 1, 0, primeMessage) };
+        }
+        return { ...decision, messages: [primeMessage, ...(decision.messages || [])] };
+      });
+      bootRecallState.registered = true;
+    } catch (e) {
+      bootRecallState.hookError = String(e?.message ?? e);
+      ctx.logger?.('dshome').warn(`dshome-mind boot recall hook disabled: ${e?.message ?? e}`);
+    }
 
     // ── cron 自治：定时拉起 agent 会话执行任务（照 dsh-scheduler 蓝图）─────
     try {
