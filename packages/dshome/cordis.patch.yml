@@ -36,6 +36,11 @@
     # L0 摘要（AGENTS/SOUL/TOOL/HUB/Wisdom 关键决策规则），不是每轮，省 token。
     - id: dshome-mind-inject
       name: dshome/mind-inject
+    # dshome-mind-guard（host）：心智护栏（执行面）——用官方 ctx.tools.guard() 在 write/edit
+    # 真正写入前拦一次：① 隐私红线（禁写出厂区 mind\）② 自我修改门禁（改自我类文件须过 validate）。
+    # 只做拦、不做注入（单一职责）。fail-open：护栏失效≠host 崩溃。
+    - id: dshome-mind-guard
+      name: dshome/mind-guard
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。
