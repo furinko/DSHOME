@@ -1,13 +1,14 @@
-// 临时集成测试：真实 cordis ctx 加载 dshome-mind 插件，验证组件B pre-step hook
-// 用法：node scripts/_tmp-boot-recall-itest.mjs（跑完即删，不入库）
+// 集成测试：真实 cordis ctx 加载 dshome-mind-recall host 插件，验证 pre-step hook
+// （上工自动召回：顶层注入/幂等/跳子代理/cron防双份/注入位置/空机降级）
+// 用法：node scripts/mind-boot-recall-itest.mjs（插件源码改动后跑，验证 host 行为）
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { Context } = require('E:/DSHOME/profiles/node_modules/@deepseek-ai/cordis/lib/index.js');
-const mindMod = require('E:/DSHOME/packages/dshome-mind/lib/index.cjs');
+const recallMod = require('E:/DSHOME/packages/dshome/lib/host/mind-recall.js');
 
 // 构造顶层 agent 伪对象（delegationDepth=0），模拟官方 agentEvents 注入的 agent 载荷
 function fakeAgent(id, depth = 0) {
-  return { id, session: { id: 'session-' + id, header: { delegationDepth: depth } } };
+  return { id, session: { id: 'session-' + id, header: { id: 'session-' + id, delegationDepth: depth } } };
 }
 function contentTextOf(m) {
   if (!m) return '';
@@ -25,9 +26,9 @@ async function dispatchPreStep(ctx, agent, claimed = []) {
 }
 
 const ctx = new Context();
-// 直接同步 apply（routesPlugin 依赖 webServer 会因缺服务被 cordis 懒挂/跳过，boot hook 同步注册）
+// 直接同步 apply（mind-recall 为纯 host 插件，boot hook 同步注册）
 try {
-  mindMod.apply(ctx);
+  recallMod.apply(ctx);
   console.log('[itest] 直接 apply 成功');
 } catch (e) {
   console.log('[itest] apply 失败:', e.message);

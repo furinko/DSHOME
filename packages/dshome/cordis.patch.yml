@@ -41,6 +41,11 @@
     # 只做拦、不做注入（单一职责）。fail-open：护栏失效≠host 崩溃。
     - id: dshome-mind-guard
       name: dshome/mind-guard
+    # dshome-mind-recall（host）：上工自动召回——每个主会话第一步机器注入 mind-prime
+    # 产物（project 进度/待办 + L3 相关记忆 + Learn 教训 + user-rules），不靠 agent 记得跑。
+    # 与 mind-inject 职责互补：inject 管静态纪律摘要，recall 管动态记忆召回；空机优雅降级。
+    - id: dshome-mind-recall
+      name: dshome/mind-recall
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。
