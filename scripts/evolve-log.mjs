@@ -87,7 +87,8 @@ if (cmd === 'snapshot') {
 } else if (cmd === 'health') {
   // 自主元进化自检：鱼鱼做事/进化中自己跑它，命中信号 → 自主触发元进化（不等收工/用户）
   const src = existsSync(LOG) ? readFileSync(LOG, 'utf8') : '';
-  const logRows = src.split('\n').filter((l) => l.startsWith('|') && !l.includes('时间')).length;
+  // 只数真实记录行：行首 '|'、非表头（含"时间"）、非分隔线（|---）
+  const logRows = src.split('\n').filter((l) => l.startsWith('|') && !l.includes('时间') && !l.startsWith('|---') && !l.startsWith('| ---')).length;
   const invalid = (src.match(/↳回测:[^\n]*无效[^\n]*/g) || []).length;
   const m = readMetrics();
   // 「未回填」= 有进化记录（非『↳快照/↳回测』的对象行）但还没有对应『↳回测:』行的欠账。
