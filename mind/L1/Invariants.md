@@ -41,7 +41,7 @@
 
 ## 四、关联
 
-`AGENTS.md`（运行纪律，🔴/🟡 分层）· `mind\L1\Power.md`（工具/规则使用）· `mind\L1\Memory.md`（记忆/治理规则）
+`AGENTS.md`（运行纪律，🔴/🟡 分层）· `mind\L1\Ritual.md`（行为规程：收工/纪律/门禁细则）· `mind\L1\Power.md`（能力手册）· `mind\L1\Memory.md`（记忆/治理规则）
 
 ---
 

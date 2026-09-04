@@ -176,7 +176,7 @@ export function apply(ctx) {
             '',
             `🧩 命中方法论「${skill.id}」：${skill.description || ''}`,
             outLine,
-            `全文 \`${skill.full}\`（需要时读，加载即生效${skill.zone === 'private' ? '；私有区不推送' : ''}）`,
+            `全文 \`${skill.full}\`（命中提示——需要时 read 全文即生效${skill.zone === 'private' ? '；私有区不推送' : ''}）`,
             '',
           ].filter(Boolean).join('\n');
 
