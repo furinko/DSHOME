@@ -7,7 +7,7 @@
 
 | 层 | 回答 | 内容 |
 |---|---|---|
-| L0 | 我是谁？怎么活？ | SOUL（人格）+ USER（关系）+ AGENTS（纪律）+ TOOL（工具） |
+| L0 | 我是谁？怎么活？ | SOUL（人格）+ AGENTS（纪律）+ TOOL（工具） |
 | L1 | 能做什么？怎么做？怎么存？ | HUB（中枢）+ Wisdom（思维）+ Tree（索引）+ Power（功法）+ Memory（归档规则）+ Dream（灵感）+ Learn（痕迹）+ Concepts（契约）+ Design-Philosophy（生长哲学） |
 | L2 | 某类问题怎么解决？ | Skill（方法论）+ Exp（工具手册） |
 | L3 | 踩过的坑去哪查？被替代的去了哪？ | index（结晶知识）+ history（时间胶囊） |

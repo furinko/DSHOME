@@ -72,7 +72,7 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖位（预留；apiKeyEnv 技�
 
 ```
 四阶（参考 Cathome CCBP + Hermes 轮级缓冲）：
-L0 宪法  SOUL（人格）/ USER（关系，通用模板）/ AGENTS（纪律·常驻注入）/ TOOL（工具索引）
+L0 宪法  SOUL（人格）/ AGENTS（纪律·常驻注入）/ TOOL（工具索引）
 L1 法律  HUB / Wisdom / Tree（全索引）/ Power / Memory（归档规则）/ Dream（灵感）/ Learn（教训）
 L2 能力  Skill（方法论·frontmatter 标准化）/ Exp（工具手册）
 L3 记忆  index（结晶知识·按主题 + _index）/ history（时间胶囊·只写不改）

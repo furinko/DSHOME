@@ -14,7 +14,7 @@
 
 | 层级 | 角色 | 修改规则 |
 |---|---|---|
-| **L0** 宪法（`mind\L0\`） | SOUL / USER / AGENTS / TOOL | 仅用户明确要求时修改 |
+| **L0** 宪法（`mind\L0\`） | SOUL / AGENTS / TOOL | 仅用户明确要求时修改 |
 | **L1** 法律（`mind\L1\`） | HUB / Wisdom / Tree / Power / Memory / Dream / Learn / Concepts / Design-Philosophy | 定义规则，不对 L2/L3 具体内容负责 |
 | **L2** 能力（`mind\L2\`） | Skill / Exp | 遵守 L1 规则，独立演化 |
 | **L3** 记忆（`mind-private\L3\`） | index / history | 遵守 Memory 规则，各自维护 `_index` |

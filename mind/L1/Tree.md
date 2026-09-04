@@ -13,7 +13,6 @@
 | 文件 | 角色 | 修改规则 |
 |---|---|---|
 | SOUL.md | 身份锚点 + 价值观 + 决策规则 | 仅用户明确要求时修改 |
-| USER.md | 用户关系（通用模板；真实信息在 mind-private\L0\USER.md 覆盖） | 同上 |
 | AGENTS.md | 运行纪律 + 层级铁律（L0 权威版，`mind\L0\AGENTS.md`，由 `dshome-mind-inject` 注入；根版已退役） | 需确认后改 |
 | TOOL.md | 工具操作指南 | 环境变化时更新 |
 
