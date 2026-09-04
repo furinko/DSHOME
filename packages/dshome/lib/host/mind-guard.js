@@ -98,12 +98,18 @@ function isApproved(filePath, op) {
   });
 }
 /** 高危区未放行时往 approvals.json 追加一条待裁决（存完整文件路径；匹配按目录/文件区分）。 */
+/** reason 说明"改的是什么类文件"，让面板卡片有信息（而非空洞的死字符串）。 */
 function addApprovalPending(filePath, op) {
   const items = readApprovals();
+  const p = normalizePath(filePath);
+  const label = p.includes('mind/L0/') ? '宪法/人格/纪律'
+    : /\/?(HUB|Wisdom|Memory|Power|Invariants|Design-Philosophy)\.md$/.test(p) ? '规则/宪法/门禁'
+    : '自我类文件';
   items.push({
     id: 'ap-' + Date.now(), kind: 'action',
-    path: normalizePath(filePath), op,
-    reason: '高危自我类文件改动被护栏拦截', status: 'pending',
+    path: p, op,
+    reason: `改${label}：${p}（未放行，需面板确认；高危规则改动会影响系统行为）`,
+    status: 'pending',
     requestedAt: new Date().toISOString(), decidedAt: null, decidedBy: '',
   });
   writeApprovals(items);
