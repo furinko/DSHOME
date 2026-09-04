@@ -11,7 +11,7 @@ contract:
   id: boot-recall
   triggers: [上工, 会话开始, 你想起来了, 有什么待办, 我忘了]
   inputs: [项目/任务关键词]
-  outputs: [注入上下文（进度+待办+相关 L3+教训+用户偏好）, 一次 refresh/update]
+  outputs: [注入上下文（注入层 L0/HUB/Wisdom 决策规则摘要 + 进度+待办+相关 L3+教训+用户偏好）, 一次 refresh/update]
   deps: [scripts/mind-prime.mjs, mind-private/Project/DSHOME/project.md, mind-private/L3/index]
 ---
 
@@ -22,7 +22,7 @@ contract:
 会话/任务开始时，**先召回再动手**（这是 AGENTS 的《上工自动召回》规则的机器版）：
 
 1. 确定当前项目/任务关键词（默认 `DSHOME 心智`；换项目则传对应词）。
-2. 跑确定性回召：`node scripts/mind-prime.mjs "<项目/任务>"` —— 它会输出一份可注入上下文（project.md 进度+下一步、相关 L3 记忆 top-N、最近教训、用户偏好）。
+2. 跑确定性回召：`node scripts/mind-prime.mjs "<项目/任务>"` —— 它会输出一份可注入上下文（**注入层 L0/HUB/Wisdom 决策规则摘要** + project.md 进度+下一步、相关 L3 记忆 top-N、最近教训、用户偏好）。
 3. 把这段上下文**纳入思考**（作为初始上下文），再进入用户问题。
 4. 需要刷新时重跑（`--json` 可结构化，供 build 后注入）。
 

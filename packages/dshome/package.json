@@ -11,6 +11,7 @@
     "./core": "./lib/host/core.js",
     "./shell": "./lib/host/shell.js",
     "./notify": "./lib/host/notify.js",
+    "./mind-inject": "./lib/host/mind-inject.js",
     "./plugin-manager": "./lib/host/plugin-manager.js",
     "./desktop": "./lib/host/desktop.js",
     "./package.json": "./package.json"

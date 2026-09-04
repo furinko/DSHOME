@@ -32,6 +32,10 @@
     # dshome-mind（host+client）：心智可视化面板——/api/mind/* 双区读取 + better-sidebar「心智」tab。
     - id: dshome-mind
       name: dshome-mind
+    # dshome-mind-inject（host）：心智 L0 注入（折中版）——每个会话开始时注入一次
+    # L0 摘要（AGENTS/SOUL/TOOL/HUB/Wisdom 关键决策规则），不是每轮，省 token。
+    - id: dshome-mind-inject
+      name: dshome/mind-inject
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。
