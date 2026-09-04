@@ -223,6 +223,11 @@ window.__ModuleLoader__.load({
               it.path || "",
               it.op || "edit",
             ]));
+            if (it.reason) {
+              var lab = el("div", "dshome-mind-gov-reason", it.reason);
+              lab.style.margin = "2px 0 6px";
+              card.appendChild(lab);
+            }
             var row = el("div", "dshome-mind-gov-actions");
             if (it.status === "approved") {
               var revoke = el("button", "dshome-mind-gov-arch", "↺ 撤销");
