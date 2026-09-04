@@ -50,27 +50,29 @@
 ## L3 — 记忆层（mind-private\L3\，隐私）
 
 ### index 主题目录（结晶知识）
-| 主题目录 | 文件数 | 核心资产 |
-|---|---|---|
-| dsh-evolve | memory-system.md | 记忆/技能系统历史（退役体系） |
-| dshome-build | release.md | 构建/打包/发布（Inno/ISCC/verify/smoke/毒树） |
-| dshome-core | runtime.md | 启动器/端口/环境/插件描述机制 |
-| dshome-plugin | plugins.md | 插件安装/补丁/加载契约 |
-| cathome | 2026-09-03_3.0-4.0版本差结论.md | CatHome 2.x→4.0 版本差/自举门禁/骨架（参考引擎） |
-| seggi | localization.md | 战姬 SEKKI 本地化 |
-| user-rules | rules.md | 用户铁律/偏好/纠正（scope=user） |
-| lessons | 多文件 | 工具链/开发/界面/自我进化欠账教训 |
+> 主题目录 = 私有区（`mind-private\L3\index\`）的分区；具体资产文件名/文件数为运行时内容，不在此罗列。
+| 主题目录 | 说明 |
+|---|---|
+| dsh-evolve | 记忆/技能系统历史（退役体系） |
+| dshome-build | 构建/打包/发布（Inno/ISCC/verify/smoke/毒树） |
+| dshome-core | 启动器/端口/环境/插件描述机制 |
+| dshome-plugin | 插件安装/补丁/加载契约 |
+| cathome | CatHome 2.x→4.0 版本差/自举门禁/骨架（参考引擎） |
+| seggi | 战姬 SEKKI 本地化 |
+| user-rules | 用户铁律/偏好/纠正（scope=user） |
+| lessons | 工具链/开发/界面/自我进化欠账教训 |
 
 ### history 归档
-| 归档 | 文件数 | 覆盖 |
-|---|---|---|
-| 2026-09-02_dsh-evolve-integration_归档.md | 1 | dsh-evolve 集成（迁移至 mind/ 双区时归档） |
+> history 归档 = `mind-private\L3\history\`（时间胶囊，封存完结/被替代旧版）。
+| 归档 | 说明 |
+|---|---|
+| 2026-09-02_dsh-evolve-integration_归档.md | dsh-evolve 集成（迁移至 mind/ 双区时归档） |
 
 ## Project — 行动锚点（mind-private\Project\）
 
-| 项目 | 目录 | 阶段 | 状态 |
-|---|---|---|---|
-| DSHOME | Project/DSHOME/project.md | v0.3-dev | 心智重构后主线（鱼鱼 2.0） |
+| 项目 | 阶段 | 状态 |
+|---|---|---|
+| DSHOME | v0.3-dev | 心智重构后主线（鱼鱼 2.0） |
 
 ## TRASH — 回收站（不删只移）
 
