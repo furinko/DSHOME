@@ -1,12 +1,12 @@
 // dshome-mind-guard — 心智护栏 host 插件（执行面：行为约束的真拦，不是提示）。
 //
 // 职责：在"鱼鱼正要 write/edit 文件"的那一刻，用官方 `ctx.tools.guard()` 在真正写入前
-//       判一次，命中"护栏"就拒绝，从而把"隐私红线 / 自我修改门禁"从"靠鱼鱼想起"
-//       升级成"机器拦截"。它只做拦，不做注入（注入归 dshome-mind-inject）——单一职责。
+//       判一次。它只做拦，不做注入（注入归 dshome-mind-inject）——单一职责。
 //
-// 护栏（极窄内核，只这两条，其余放行——不侵入生长空间）：
-//   ① 隐私红线    — 禁止写入出厂区 `mind\`（可推送固件）。私密数据只进 mind-private。
-//   ② 自我修改门禁 — 改"自我类"文件（AGENTS / mind 规则 / 自身记忆）前须过 mind-validate。
+// 护栏（极窄内核，其余写入放行——不侵入生长空间）：
+//   ① 隐私红线（真硬拦）— 往出厂区 mind\ 写【私密数据】时拦截。私密数据只进 mind-private。
+//   ② 自我修改门禁（软闸）— 改"自我类"文件（AGENTS / mind 规则 / 技能 / 自身记忆）时仅记日志+提示，
+//                           真实把关交给 node scripts/mind-validate.mjs（不重复硬拦，避免双闸矛盾）。
 //
 // 设计原则（fail-open，参照 core.js / mind-inject）：
 //   整个 apply 包 try/catch，任何失败只记日志、绝不 rethrow——护栏失效 ≠ host 崩溃。
@@ -36,55 +36,73 @@ function normalizePath(p) {
 }
 
 /**
- * 判断一次 write/edit 是否触碰"自我修改门禁"目标 —— 只拦"规则/宪法/门禁/技能/自我记忆"，不拦"记忆沉淀"。
- * 护栏边界（关键）：自我修改门禁拦的是【改"怎么做事"的规则】，不是【往记忆库里加一条新记忆】。
- * 所以：拦 mind\L0/L1/L2（宪法/法律/能力）与 AGENTS 等规则；但【放行】mind-private\L3、Project、
- *       私有 Learn —— 那是鱼鱼正常生长记忆的地方，拦它会压死生长（违背"生长面不能碰"）。
- * @param {string} filePath - 模型传的 file_path（相对或绝对）
+ * 目标是否落在"出厂区 mind\"（可推送固件区）。
+ * 裸 mind\ 是固件模板（可维护），不是"私密"；只有【含私密数据】的写入才作为红线拦。
  */
-function isSelfFile(filePath) {
+function inFactoryZone(filePath) {
   const p = normalizePath(filePath);
-  // 相对路径兜底：拼成相对仓库根看其是否落在这些目录下。
-  const absoluteCandidates = [p, normalizePath(resolve(repoRoot(), p))];
-  // 只含"规则/宪法/门禁"区，不含 mind-private/L3 与 Project（记忆生长区，需放行）。
-  // mind-private/L1 是行为规则/教训层（如 Learn.md），属"自我修改"，该拦。
-  const zones = [
-    '/mind/L0/', '/mind/L1/', '/mind/L2/',
-    '/mind/README.md',
-    '/mind-private/L1/'
-  ];
-  return absoluteCandidates.some((abs) =>
-    zones.some((z) => abs.includes(z))
+  const candidates = [p, normalizePath(resolve(repoRoot(), p))];
+  return candidates.some((abs) =>
+    /\/(mind)\/(L0|L1|L2|README\.md)/.test(abs) || /\/(mind)\/README\.md$/.test(abs)
   );
 }
 
 /**
- * 判断一次 write/edit 是否触碰"隐私红线"：写入出厂区 mind\（可推送固件，不含私有 override）。
- * 私有区 mind-private\ 是隐私（gitignore），不是"隐私红线"要拦的写入——那是该进的去处。
+ * 目标是否落在"自我修改门禁区"（规则/宪法/门禁/技能/自我记忆）。
+ * 拦这类写的是【改"怎么做事"的规则】——放行 mind-private\L3 与 Project（生长区，拦会压死生长）。
  */
-function touchesFactoryZone(filePath) {
+function inSelfModifyZone(filePath) {
   const p = normalizePath(filePath);
   const candidates = [p, normalizePath(resolve(repoRoot(), p))];
-  return candidates.some((abs) =>
-    /\/(mind)\/(L0|L1|L2)\//.test(abs) || /\/(mind)\/README\.md$/.test(abs)
-  );
+  const zones = [
+    '/mind/L0/', '/mind/L1/', '/mind/L2/', '/mind/README.md',
+    '/mind-private/L1/'   // 行为规则/教训层（Learn.md），属"自我修改"
+  ];
+  return candidates.some((abs) => zones.some((z) => abs.includes(z)));
 }
 
-/** 用户可读的护栏命中说明。 */
+/** 内容是否带"私密数据"迹象（凭据/密钥/密码/私钥等）。用于隐私红线判定——只有真私密才拦。 */
+function contentHasSecrets(content) {
+  if (!content) return false;
+  const s = String(content);
+  // 命中任一即视为私密数据进出厂区。常见凭据字段名 + 密钥/私钥/令牌字样。
+  return /(api[\s_-]?key|secret|token|passwd|password|private[\s_-]?key|access[\s_-]?key|client[\s_-]?secret|\.pem|-----BEGIN)/i.test(s);
+}
+
+/** 从工具参数中取出将要写入的内容（write→content；edit→new_string；str_replace_editor→content）。 */
+function contentOf(args) {
+  return args?.content ?? args?.new_string ?? args?.str ?? '';
+}
+
+/** 
+ * 护栏判定表。每个条目 check(filePath, content, ctx) 返回：
+ *   非空 string  → 拦截（把该 string 作为 reason 抛给模型）
+ *   undefined    → 放行
+ * 顺序执行：先命中 privacy（真红线）才拦；self-modify 只记录+提示，不拦（validate 兜底）。
+ */
 const GUARDS = [
   {
     id: 'privacy',
-    check: (filePath) => touchesFactoryZone(filePath),
-    reason: (filePath) =>
-      `[mind-guard] 隐私红线：写入出厂区 ${filePath} 被拦。私密数据只进 mind-private\\（gitignore），` +
-      `永不写入 mind\\ 出厂区（可推送 GitHub）。若要写出厂固件模板请先在对话中说明。`
+    // ① 隐私红线（真硬拦）：往出厂区写【私密数据】。修正：不再按"出厂区任何写入"拦（会锁死固件维护）。
+    check: (filePath, content) =>
+      inFactoryZone(filePath) && contentHasSecrets(content)
+        ? `[mind-guard] 隐私红线：检测到往出厂区 ${filePath} 写入疑似私密数据（凭据/密钥/密码/私钥）。` +
+          `私密数据只进 mind-private\\（gitignore），永不写入 mind\\ 出厂区（可推送 GitHub）。`
+        : undefined
   },
   {
     id: 'self-modify',
-    check: (filePath) => isSelfFile(filePath),
-    reason: (filePath) =>
-      `[mind-guard] 自我修改门禁：改"自我类"文件 ${filePath} 被拦。改 AGENTS / mind 规则 / 自身记忆` +
-      `前须先跑 node scripts/mind-validate.mjs 通过，且已有用户放行 + 快照；未过校验勿提交。`
+    // ② 自我修改门禁（软闸，不拦）：改规则/宪法/技能/自我记忆时记录一条提示并放行。
+    // 依据唯一：validate（node scripts/mind-validate.mjs）才是这道闸；guard 不重复硬拦，
+    // 避免"过了 validate 仍被拦"的双闸矛盾，也避免把正常固件维护当红线压死生长。
+    check: (filePath, _content, ctx) => {
+      if (!inSelfModifyZone(filePath)) return undefined;
+      ctx?.logger?.('dshome').warn(
+        `[mind-guard] 自我修改门禁（提示，不拦）：改"自我类"文件 ${filePath}。` +
+        `确保已按 AGENTS §五 硬流程：用户放行 + 快照 + node scripts/mind-validate.mjs 通过。`
+      );
+      return undefined; // 放行——validate 负责真实把关。
+    }
   }
 ];
 
@@ -103,8 +121,10 @@ export function apply(ctx) {
       const filePath = args?.file_path ?? args?.path ?? '';
       if (!filePath) return undefined; // 无路径 → 放行（保守）
 
+      const content = contentOf(args);
       for (const g of GUARDS) {
-        if (g.check(filePath)) return g.reason(filePath);
+        const reason = g.check(filePath, content, ctx);
+        if (reason) return reason; // 命中隐私红线 → 拦截；self-modify 返回 undefined 即放行
       }
       return undefined; // 其余写入一律放行（不侵入生长空间）
     });
