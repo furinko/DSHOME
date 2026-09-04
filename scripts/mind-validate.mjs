@@ -57,6 +57,49 @@ for (const s of skills) {
   if (kv && !/^##\s+一、/m.test(readFileSync(s.full, 'utf8'))) issues.push({ sev: 'warn', file: s.rel, msg: '未按 Skill 五章（## 一、…）格式' });
 }
 
+// ①b Skill 版本一致性（Power.md §六："文件头版本与文件尾版本一致"）——四元比对：
+//     Skill frontmatter.version == 文件尾 "_版本：x.y" == Tree.md 清单版本 == _index.md 版本。
+//     规则：frontmatter 是机器可读真源；文件尾/Tree/_index 是人工维护的镜像。任一不一致即 warn（镜像漂移）。
+function footerVersion(md) {
+  // 匹配文件尾 `_版本：x.y | ...`（Power L1 文件尾也用此格式；L2 Skill 文件尾在底部署名行）
+  const m = md.match(/_版本[：:]\s*v?([0-9]+\.[0-9]+(?:\.[0-9]+)?)/);
+  return m ? m[1] : null;
+}
+function skillVersionFromTree(fileRel) {
+  const p = join(MIND, 'L1', 'Tree.md');
+  if (!existsSync(p)) return null;
+  const line = readFileSync(p, 'utf8').split('\n').find((l) => l.includes(fileRel));
+  if (!line) return null;
+  const cells = line.split('|').map((c) => c.trim());
+  // Tree Skill 清单：| 文件 | 版本 | 描述 | 触发关键词 |
+  return (cells[2] || '').match(/[0-9]+\.[0-9]+(?:\.[0-9]+)?/)?.[0] || null;
+}
+function skillVersionFromIndex(baseName) {
+  const p = join(MIND, 'L2', 'Skill', '_index.md');
+  if (!existsSync(p)) return null;
+  const line = readFileSync(p, 'utf8').split('\n').find((l) => l.includes('`' + baseName + '`'));
+  if (!line) return null;
+  return (line.match(/\|\s*([0-9]+\.[0-9]+(?:\.[0-9]+)?)\s*\|/) || [])[1] || null;
+}
+for (const s of skills) {
+  const content = readFileSync(s.full, 'utf8');
+  const kv = readFm(content);
+  if (!kv) continue;
+  const base = basename(s.rel).replace(/\.md$/, '');
+  const fmv = (kv.version || '').trim();
+  const foot = footerVersion(content);
+  const treeV = skillVersionFromTree(base + '.md');
+  const idxV = skillVersionFromIndex(base);
+  // 四元去重后若存在不一致 → warn。frontmatter 为真源，镜像偏差不阻塞（--strict 可拦）。
+  const set = new Set([fmv, foot, treeV, idxV].filter((v) => v));
+  if (set.size > 1) {
+    issues.push({
+      sev: 'warn', file: s.rel,
+      msg: `Skill 版本不一致——frontmatter=${fmv} 文件尾=${foot || '无'} Tree=${treeV || '无'} _index=${idxV || '无'}（依 frontmatter 为准，镜像需对齐）`
+    });
+  }
+}
+
 // ② L3 记忆条目完整性（单记忆文件 = 文件名带 YYYY-MM-DD_ 前缀）
 const memories = walk(join(PRIV, 'L3', 'index'), [], 'L3/index')
   .filter((f) => !/README|_index/.test(basename(f.rel)) && /^\d{4}-\d{2}-\d{2}_/.test(basename(f.rel)));

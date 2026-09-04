@@ -15,7 +15,16 @@ const PRIV = join(repoRoot, 'mind-private');
 const args = process.argv.slice(2);
 const query = args[0] && !args[0].startsWith('--') ? args[0] : 'DSHOME 心智';
 const asJson = args.includes('--json');
-const limit = Number((args.find((a) => a.startsWith('--limit')) || '--limit 5').split(' ')[1] || 5);
+// --limit N：--limit 是独立 arg，值在它后面一个；支持 "--limit=5" 与 "--limit 5" 两种写法。
+let limit = 5;
+{
+  const idx = args.findIndex((a) => a === '--limit' || a.startsWith('--limit='));
+  if (idx >= 0) {
+    const raw = args[idx] === '--limit' ? args[idx + 1] : args[idx].split('=')[1];
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 1) limit = n;
+  }
+}
 
 // ── 词/二元组 + Jaccard（与 dshome-mind search 同思路）────────────────────
 function tokenize(text) {

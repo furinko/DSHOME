@@ -36,7 +36,7 @@
 | 文件 | 版本 | 描述 | 触发关键词 |
 |---|---|---|---|
 | import-artifact.md | 1.0.0 | 导入协议：其他设备/agent 产物即插即用 | import、导入、即插即用、artifact、蒸馏包 |
-| boot-recall.md | 1.0.0 | 上工自动召回：project.md+L3+Learn+user-rules 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
+| boot-recall.md | 1.0.1 | 上工自动召回：project.md+L3+Learn+user-rules 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
 | dshome-diagnostics.md | 1.0.0 | DSHOME 后端诊断（崩/卡/闪断：先分真假+证据） | 后端重启、卡、exit1、闪断 |
 | dshome-plugin-dev.md | 1.0.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚 | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败 |
 | scar-inference.md | 1.0.0 | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古、蒸、版本差、反推坑、咬痕、伤疤、为什么在、作者画像、同源盲区 |
