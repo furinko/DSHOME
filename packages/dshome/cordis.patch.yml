@@ -46,6 +46,11 @@
     # 与 mind-inject 职责互补：inject 管静态纪律摘要，recall 管动态记忆召回；空机优雅降级。
     - id: dshome-mind-recall
       name: dshome/mind-recall
+    # dshome-mind-skill-loader（host）：Skill 关键词触发加载——每步检测对话触发词，
+    # 命中注入"方法论卡片"（frontmatter description + outputs 摘要，~150 token，防全文灌上下文）；
+    # 同 Skill 同会话只提示一次；fails-open。与 inject(纪律)/recall(记忆)/guard(护栏) 互补。
+    - id: dshome-mind-skill-loader
+      name: dshome/mind-skill-loader
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。
