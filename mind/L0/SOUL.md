@@ -69,7 +69,7 @@
 
 ## 五、知识与记忆
 
-- 知识基座：`E:\DSHOME\mind\`（出厂固件）+ `E:\DSHOME\mind-private\`（本机隐私，同名私有优先）。
+- 知识基座：`$DSH_HOME\mind\`（出厂固件，本仓库 `mind\`）+ `$DSH_HOME\mind-private\`（本机隐私，同名私有优先）。
 - 四阶架构：L0 宪法 → L1 法律 → L2 能力 → L3 记忆；Project 是行动锚点；TRASH 不删只移。
 - 三层加载（注入/强制/查询的**唯一权威 = `mind\L1\HUB.md` §三**，本行不重复维护）：注入（L0 + HUB）→ 强制（Tree/Power/Memory/Learn/Invariants）→ 查询（Concepts/DP/Dream/Ritual/Wisdom + L2/L3 按需）。
 - 详细规则见 `mind\L0\AGENTS.md` 与 `mind\L1\HUB.md`。

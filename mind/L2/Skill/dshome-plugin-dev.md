@@ -19,11 +19,11 @@ contract:
 
 ## 一、DSHOME 是什么
 
-DSHOME（鱼鱼）运行在 **DeepSeek Harness (DSH)** 之上，本机宿主源码/运行时在 `E:\DSHOME`：
+DSHOME（鱼鱼）运行在 **DeepSeek Harness (DSH)** 之上，本机宿主源码/运行时在 `$DSH_HOME`（本仓库根，环境变量解析——勿硬编码盘符，换设备路径不同）：
 
-- 宿主包在 `E:\DSHOME\node_modules\@deepseek-ai\*`（`dsh-client-runtime`、`dsh-client-ui-slots`、`dsh-client-ui-conversation`、`dsh-client-ui-primitives`、`dsh-attachment`、`cordis` 等）。
+- 宿主包在 `$DSH_HOME\node_modules\@deepseek-ai\*`（`dsh-client-runtime`、`dsh-client-ui-slots`、`dsh-client-ui-conversation`、`dsh-client-ui-primitives`、`dsh-attachment`、`cordis` 等）。
 - 自带/upstream 的 Cordis 插件开发 skill 在
-  `E:\DSHOME\node_modules\@deepseek-ai\dsh\config\agent-presets\cordis\skills\`
+  `$DSH_HOME\node_modules\@deepseek-ai\dsh\config\agent-presets\cordis\skills\`
   （`cordis-plugin-development`、`editing-cordis-compositions`）。
 - 我的能力库在 `mind\L2\Skill\`；能力手册见 `mind\L1\Power.md`、行为规程见 `mind\L1\Ritual.md`；知识索引 `mind\L1\Tree.md`。
 

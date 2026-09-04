@@ -1,7 +1,7 @@
 # mind — 鱼鱼心智基座（出厂版）
 
 > DSHOME 智能体（鱼鱼）的 L0-L3 四阶知识系统，参考 Cathome CCBP 架构 + Hermes 轮级缓冲 + dsh-evolve 自动化理念重构。
-> 本目录 = **出厂固件**（架构 + 默认内容），可推送 GitHub。运行时自进化数据在 `E:\DSHOME\mind-private\`（gitignore，永不上传）。
+> 本目录 = **出厂固件**（架构 + 默认内容），可推送 GitHub。运行时自进化数据在 `$DSH_HOME\mind-private\`（仓库同级 `mind-private\`，gitignore，永不上传）。
 
 ## 一、四阶架构
 
