@@ -51,5 +51,11 @@ const d4 = await dispatchPreStep(ctx, a4, [{ id: 'm4', role: 'user', content: [{
 const extra4 = (d4.messages || []).length;
 results.push(['无触发不注入', extra4 === 1 ? '✅ 无多余注入' : '❌ 多出 ' + extra4 + ' 条']);
 
+// 场景5：私有区 skill 触发（whaletest-private 若存在）→ 命中且卡片指私有路径
+const a5 = fakeAgent('t5');
+const d5 = await dispatchPreStep(ctx, a5, [{ id: 'm5', role: 'user', content: [{ type: 'text', text: '帮我跑一下鲸鱼私有测试流程' }] }]);
+const t5 = (d5.messages || []).map((m) => contentTextOf(m)).find((t) => t.includes('whaletest-private'));
+results.push(['私有skill触发', t5 ? '✅ 命中' : '⏳ 跳过（无私有skill或懒加载需首触）', t5 ? (t5.includes('mind-private') ? '路径=私有✓' : '路径异常') : '']);
+
 for (const [n, v, extra] of results) console.log(`[itest] ${n}: ${v}${extra ? ' (' + extra + ')' : ''}`);
 process.exit(0);

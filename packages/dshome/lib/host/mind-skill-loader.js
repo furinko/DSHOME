@@ -18,7 +18,7 @@
 // 三步注册（dshome-plugin-dev §十）：① 本文件 ② package.json exports 补 ./mind-skill-loader
 //  ③ cordis.patch.yml 加 dshome-mind-skill-loader 条目 + settings.yaml include 启用。
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
@@ -121,14 +121,32 @@ function contentText(m) {
 /** 宿主插件主体。 */
 export function apply(ctx) {
   try {
-    const skills = loadSkillIndex();
-    if (!skills.length) {
+    // 懒加载 + 目录指纹缓存：apply 不静态持有 skills——
+    // 运行中新增私有/出厂 skill 即时生效（目录 mtime/文件集变化才重扫），不用重启。
+    let cached = null;   // { skills, fingerprint }
+    function dirFingerprint(dir) {
+      if (!existsSync(dir)) return '';
+      return readdirSync(dir).filter((n) => n.endsWith('.md') && n !== 'README.md' && n !== '_index.md')
+        .sort().map((n) => n + ':' + statSync(join(dir, n)).mtimeMs).join('|');
+    }
+    function getSkills() {
+      const fp = dirFingerprint(join(repoRoot(), 'mind', 'L2', 'Skill')) + '#' +
+                 dirFingerprint(join(repoRoot(), 'mind-private', 'L2', 'Skill'));
+      if (cached && cached.fingerprint === fp) return cached.skills;
+      const skills = loadSkillIndex();
+      cached = { skills, fingerprint: fp };
+      return skills;
+    }
+    // 启动即探一次（marker 记当前数）
+    const initial = getSkills();
+    if (!initial.length) {
       writeMarker(`apply: no skills parsed @ ${new Date().toISOString()}`);
       return;
     }
+    writeMarker(`apply: registered hook (skills=${initial.length}, lazy) @ ${new Date().toISOString()}`);
+
     // 每会话已提示过的 Skill id（防重复刷屏）
     const hintedBySession = new Map(); // sessionKey -> Set<skillId>
-    writeMarker(`apply: registered hook (skills=${skills.length}) @ ${new Date().toISOString()}`);
 
     ctx.on('agent/pre-step', async ({ agent, messages, step, signal }, next) => {
       const decision = await next();
@@ -142,6 +160,7 @@ export function apply(ctx) {
         const joined = [...(messages || []), ...(decision.messages || [])].map(contentText).join('\n');
         if (!joined) return decision;
 
+        const skills = getSkills(); // 懒加载：目录变了自动重扫（新增私有 skill 即时生效）
         let injected = false;
         for (const skill of skills) {
           if (hinted.has(skill.id)) continue;
