@@ -301,7 +301,10 @@ function versionPair(content) {
   for (const ln of tailLines) { const m = /_?\s*版本[：:]\s*([0-9.]+)/.exec(ln); if (m) { tail = m[1]; break; } }
   return { head: num(head), tail: num(tail), hs: head, ts: tail };
 }
-for (const f of walk(MIND, [], 'mind').concat([{ full: join(repoRoot, 'AGENTS.md'), rel: 'AGENTS.md' }])) {
+// 根 AGENTS.md 已于 2026-09-04 退役删除（权威版唯一 = mind/L0/AGENTS.md）；存在时才加入版本检查（向前兼容）
+const extraVersionFiles = [];
+if (existsSync(join(repoRoot, 'AGENTS.md'))) extraVersionFiles.push({ full: join(repoRoot, 'AGENTS.md'), rel: 'AGENTS.md' });
+for (const f of walk(MIND, [], 'mind').concat(extraVersionFiles)) {
   if (/L3|Project|TRASH/.test(f.rel)) continue; // 记忆/项目档不适用版本行规范
   const c = readFileSync(f.full, 'utf8');
   const { head, tail, hs, ts } = versionPair(c);
