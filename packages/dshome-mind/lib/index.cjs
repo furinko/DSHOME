@@ -7,6 +7,8 @@
 const fs = require('fs');
 const path = require('path');
 const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cron.cjs');
+// L3 检索共享库（§十 权威排序单一实现——F3：index.cjs 与 mind-prime 共用 tokenize/jaccard/fmValue/confidenceRank）
+const { tokenize, jaccard, fmValue, confidenceRank } = require('../../../scripts/mind-search-lib.cjs');
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
@@ -192,12 +194,6 @@ const pendingDir = () => path.join(mindPrivateDir(), 'tasks', 'pending');
 const trashDir = () => path.join(mindPrivateDir(), 'TRASH');
 const historyDir = () => path.join(mindPrivateDir(), 'L3', 'history');
 
-function fmValue(content, key) {
-  const m = /^---\n([\s\S]*?)\n---/.exec(content || '');
-  if (!m) return '';
-  const r = new RegExp('(?:^|\\n)\\s*' + key + ':\\s*([^\\n]+)').exec(m[1]);
-  return r ? r[1].trim().replace(/^['"]|['"]$/g, '') : '';
-}
 function todayStamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -388,20 +384,6 @@ function archiveCurate(relPath) {
 }
 
 // ── 近重复检测（bigram-Jaccard，照 dsh-evolve search 思路，防"同事实存两份"）──
-function tokenize(text) {
-  const s = String(text).toLowerCase();
-  const tokens = new Set();
-  const cjk = s.match(/[\u4e00-\u9fff]/g) || [];
-  for (let i = 0; i + 1 < cjk.length; i++) tokens.add(cjk[i] + cjk[i + 1]);
-  (s.match(/[a-z0-9][a-z0-9_\-./]+/g) || []).forEach((w) => tokens.add(w));
-  return tokens;
-}
-function jaccard(a, b) {
-  if (!a.size || !b.size) return 0;
-  let inter = 0;
-  for (const t of a) if (b.has(t)) inter++;
-  return inter / (a.size + b.size - inter);
-}
 /** 扫 topic 目录（+ user-rules 兜底），目标文件按 ## 条目切块逐块比对（防长文件稀释）。 */
 function dupCheck(topic, content) {
   const hits = [];
@@ -439,15 +421,7 @@ function dupCheck(topic, content) {
   return hits.slice(0, 5);
 }
 
-/** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。 */
-/** 记忆可信度级别（§十：A有据 > B已验证 > C待验证）。依据 frontmatter 的 source/verified。 */
-function confidenceRank(content) {
-  const src = fmValue(content, 'source');
-  const verified = fmValue(content, 'verified');
-  if (src) return 3;                    // A 有据（source 可查证）
-  if (String(verified).toLowerCase() === 'true') return 2; // B 已验证
-  return 1;                             // C 待验证（无 source 且非 verified）
-}
+/** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。§十 可信度取自共享库。 */
 function searchMind(query, limit = 6) {
   const files = [];
   walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
