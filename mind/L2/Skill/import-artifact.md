@@ -59,7 +59,7 @@ contract:
 
 **L1：** `mind\L1\Memory.md`（归档规则）· `mind\L1\Tree.md`（索引）
 **L2 Exp：** `mind\L2\Exp\`（工具手册）
-**L3 Index：** `mind-private\L3\index\_index.md`（记忆总索引）
+**L3 Index：** 主题目录 `mind-private\L3\index\<主题>\` + 各目录 `_index.md`（Memory §四 格式）；主题总览见 `mind\L1\Tree.md` L3 区
 **L3 Project：** `mind-private\Project\`（项目档案）
 
 ---

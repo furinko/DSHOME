@@ -63,7 +63,7 @@
 
 ## 六、TRASH 规则
 
-- 不删除，除非用户明确要求；移入时同步更新 Tree.md 与 TRASH/_index.md
+- 不删除，除非用户明确要求；移入时同步更新 Tree.md 与 TRASH/_index.md（首次移入时若无则建——懒创建，非上工必读）
 - TRASH 文件不参与知识加载；恢复 = 移回原路径
 
 ## 七、与 mind-private 的边界
