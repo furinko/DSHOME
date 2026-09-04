@@ -78,25 +78,36 @@ function fmArray(content, key) {
   return [];
 }
 
-/** 加载全部 Skill 的触发索引：[{ id, description, triggers, outputs }]（读 frontmatter，读不了跳过）。 */
+/** 加载全部 Skill 的触发索引（读双区：出厂 mind\L2\Skill\ + 私有暂存 mind-private\L2\Skill\，同名私有优先）。
+ *  返回 [{ id, full, description, triggers, outputs, zone }]；读不了 frontmatter 的跳过。 */
 function loadSkillIndex() {
-  const dir = join(repoRoot(), 'mind', 'L2', 'Skill');
-  if (!existsSync(dir)) return [];
+  const factoryDir = join(repoRoot(), 'mind', 'L2', 'Skill');
+  const privateDir = join(repoRoot(), 'mind-private', 'L2', 'Skill');
   const skills = [];
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.md') || name === 'README.md' || name === '_index.md') continue;
-    const full = join(dir, name);
-    let content = '';
-    try { content = readFileSync(full, 'utf8'); } catch { continue; }
-    const id = fmValue(content, 'name') || name.replace(/\.md$/, '');
-    const description = fmValue(content, 'description');
-    const triggers = fmArray(content, 'triggers');
-    const outputs = fmArray(content, 'outputs');
-    if (id && triggers.length) {
-      skills.push({ id, full: 'mind/L2/Skill/' + name, description, triggers, outputs });
+  const byId = new Map(); // 同名去重用（私有覆盖出厂）
+
+  // 先扫出厂，再扫私有（私有同名覆盖）
+  for (const [dir, zone, relPrefix] of [
+    [factoryDir, 'factory', 'mind/L2/Skill'],
+    [privateDir, 'private', 'mind-private/L2/Skill'],
+  ]) {
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.md') || name === 'README.md' || name === '_index.md') continue;
+      const full = join(dir, name);
+      let content = '';
+      try { content = readFileSync(full, 'utf8'); } catch { continue; }
+      const id = fmValue(content, 'name') || name.replace(/\.md$/, '');
+      const description = fmValue(content, 'description');
+      const triggers = fmArray(content, 'triggers');
+      const outputs = fmArray(content, 'outputs');
+      if (id && triggers.length) {
+        const entry = { id, full: relPrefix + '/' + name, description, triggers, outputs, zone };
+        byId.set(id, entry); // 私有同名覆盖出厂（后扫的 private 胜）
+      }
     }
   }
-  return skills;
+  return [...byId.values()];
 }
 
 /** 消息文本抽取（content 可能是 string 或 blocks）。 */
@@ -146,7 +157,7 @@ export function apply(ctx) {
             '',
             `🧩 命中方法论「${skill.id}」：${skill.description || ''}`,
             outLine,
-            `全文 \`mind\\L2\\Skill\\${skill.id}.md\`（需要时读，加载即生效）`,
+            `全文 \`${skill.full}\`（需要时读，加载即生效${skill.zone === 'private' ? '；私有区不推送' : ''}）`,
             '',
           ].filter(Boolean).join('\n');
 
