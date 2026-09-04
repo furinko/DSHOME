@@ -440,6 +440,14 @@ function dupCheck(topic, content) {
 }
 
 /** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。 */
+/** 记忆可信度级别（§十：A有据 > B已验证 > C待验证）。依据 frontmatter 的 source/verified。 */
+function confidenceRank(content) {
+  const src = fmValue(content, 'source');
+  const verified = fmValue(content, 'verified');
+  if (src) return 3;                    // A 有据（source 可查证）
+  if (String(verified).toLowerCase() === 'true') return 2; // B 已验证
+  return 1;                             // C 待验证（无 source 且非 verified）
+}
 function searchMind(query, limit = 6) {
   const files = [];
   walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
@@ -456,15 +464,24 @@ function searchMind(query, limit = 6) {
       if (!best || sc > best.score) best = { score: sc, sec };
     }
     if (best && best.score >= 0.03) {
+      const conf = confidenceRank(content);
+      const scope = (fmValue(content, 'scope') || 'project').toLowerCase();
+      const importance = Number(fmValue(content, 'importance')) || 2;
+      // §十 排序：可信度(A/B/C) 优先级最高；同级内 scope（user>self>project）> importance > score
+      const scopeRank = scope === 'user' ? 3 : scope === 'self' ? 2 : 1;
       hits.push({
         score: Math.round(best.score * 100),
+        conf,
+        scopeRank,
+        importance,
+        sortKey: conf * 1000 + scopeRank * 100 + importance * 10 + best.score,
         file: rel,
         section: ((best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),
         snippet: best.sec.replace(/\s+/g, ' ').slice(0, 160),
       });
     }
   }
-  hits.sort((a, b) => b.score - a.score);
+  hits.sort((a, b) => b.sortKey - a.sortKey);
   return hits.slice(0, limit);
 }
 
