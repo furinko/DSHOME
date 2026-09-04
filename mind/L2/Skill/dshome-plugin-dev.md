@@ -1,7 +1,7 @@
 ---
 name: dshome-plugin-dev
-description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"。
-version: 1.0.0
+description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地三步（exports 注册易漏）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
+version: 1.1.0
 author: 鱼鱼 (DSHOME)
 license: internal
 metadata:
@@ -25,7 +25,7 @@ DSHOME（鱼鱼）运行在 **DeepSeek Harness (DSH)** 之上，本机宿主源�
 - 自带/upstream 的 Cordis 插件开发 skill 在
   `E:\DSHOME\node_modules\@deepseek-ai\dsh\config\agent-presets\cordis\skills\`
   （`cordis-plugin-development`、`editing-cordis-compositions`）。
-- 我的能力库在 `mind\L2\Skill\`；通用规则见 `mind\L1\Power.md` §九；知识索引 `mind\L1\Tree.md`。
+- 我的能力库在 `mind\L2\Skill\`；能力手册见 `mind\L1\Power.md`、行为规程见 `mind\L1\Ritual.md`；知识索引 `mind\L1\Tree.md`。
 
 ## 二、第一铁律：先读真实接口，再写码
 
@@ -119,7 +119,32 @@ Host `harness.handle('method', handler)`，Client `await host.call('method', arg
 | `host.call` 失败 | handler 名、当前 `pluginRunId`、JSON 参数、handler 内 Service 依赖 |
 | 更新失败 | 保持 current/next 语义；修 next 后 update，或 run current 回滚 |
 
-## 十、本会话可用性检查
+## 十、DSHOME 自有 host 插件落地（三步 checklist + 安全模式）
+
+> 2026-09-04 血泪教训：开发 mind-recall host 插件时漏了 exports 注册，宿主启动崩溃循环 7+ 轮；
+> 且安全模式静态清单漏 mind 系插件，崩溃时逃生通道形同虚设。以下三步**缺一不可**。
+
+**任何新 host 插件（`packages/dshome/lib/host/<name>.js`）上线必须三步齐：**
+
+1. [ ] **插件文件**：`packages/dshome/lib/host/<name>.js`，`export const name` 与 patch 的 id 一致、格式同既有插件（mind-inject 为模板）
+2. [ ] **`package.json` exports**：`packages/dshome/package.json` 的 `exports` 补
+      `"./<name>": "./lib/host/<name>.js"` ← **最容易漏的一步**（漏了 → `ERR_PACKAGE_PATH_NOT_EXPORTED` → 宿主启动即死）
+3. [ ] **cordis.patch.yml 注册**：insert 块加 `- id: dshome-<name>` / `name: dshome/<name>` 条目
+      （还要同步 `settings.yaml` 的 `include:` 启用条目——参考 dshome-mind-inject 行）
+
+**安全模式自动覆盖（v2，2026-09-05 起）**：`scripts/safe.mjs` 与 `shell-app/main.cjs` 的
+safeOverlay 已改为**从 cordis.patch.yml 动态解析**自有插件 id（dshome- 前缀）。**加插件后无需再手动
+同步安全模式清单**——但若看到这两处出现硬编码 id 数组（回退分支），说明动态解析失败，需排查 patch 路径。
+
+**自检信号**（改完重启宿主后）：
+- 有 marker 的插件：marker 时间戳必须刷新（`profiles\dshome\.dsh-market\<name>-marker.txt`）
+- 无 marker 的插件：宿主能完整 boot（3099 + HTTP 200）
+- ⚠️「插件树能加载到前一插件」≠「本插件正常」——崩溃点用 marker/日志对比定位（崩溃插件在前的插件每轮刷新、它自己不刷新）
+
+**验证流程**：写完逻辑先 `node --check` 语法 → 重启宿主看 boot + marker → 跑对应 itest/verify。
+**不要**只测逻辑就收工（本次事故：itest 全绿但宿主加载链没验，上线即崩）。
+
+## 十一、本会话可用性检查
 
 `cordis_*` 工具（`cordis_inspect_list/query/self`、`cordis_define/run/stop/undefine`）与上述 upstream skill
 **未必每个会话都注入**。若当前工具集没有：
@@ -127,4 +152,4 @@ Host `harness.handle('method', handler)`，Client `await host.call('method', arg
 - 组件渲染/纯逻辑可先单测（本地 node + 匹配 react），但**不要**把从外部源码反推的接口当真实契约。
 
 ---
-_版本：1.0.0 | 2026-09-02 | 初版（DSHOME 结构与 Cordis 插件开发固化，源自 upstream cordis-plugin-development）_
+_版本：1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_

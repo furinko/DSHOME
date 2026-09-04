@@ -8,7 +8,7 @@
 | 层 | 回答 | 内容 |
 |---|---|---|
 | L0 | 我是谁？怎么活？ | SOUL（人格）+ AGENTS（纪律）+ TOOL（工具） |
-| L1 | 能做什么？怎么做？怎么存？ | HUB（中枢）+ Wisdom（思维）+ Tree（索引）+ Power（功法）+ Memory（归档规则）+ Dream（灵感）+ Learn（痕迹）+ Concepts（契约）+ Design-Philosophy（生长哲学） |
+| L1 | 能做什么？怎么做？怎么存？ | HUB（中枢·运行时总纲）+ Wisdom（思维）+ Tree（索引）+ Power（能力手册）+ Memory（归档规则）+ Learn（痕迹）+ Dream（灵感）+ Ritual（行为规程）+ Invariants（确定性内核）+ Concepts（契约）+ Design-Philosophy（生长哲学） |
 | L2 | 某类问题怎么解决？ | Skill（方法论）+ Exp（工具手册） |
 | L3 | 踩过的坑去哪查？被替代的去了哪？ | index（结晶知识）+ history（时间胶囊） |
 | Project | 现在在做什么？ | 行动锚点（与知识网络平级） |
@@ -16,10 +16,10 @@
 
 ## 二、三层加载模型
 
+> 完整加载策略（注入/强制/查询 每层含哪些文件）的**唯一权威在 `mind\L1\HUB.md` §三**。此处仅速览：
+
 ```
-注入层（系统提示词，随每轮携带）：L0 四文件 + L1/HUB + L1/Wisdom
-强制层（每次上工必须加载）：L1/Tree + Power + Memory + Dream + Learn
-查询层（按需）：L2 Skill/Exp + L3 index/history + Project + L1 参考文档（Concepts / Design-Philosophy）
+注入层：L0 三文件 + L1/HUB ｜ 强制层：Tree/Power/Memory/Learn/Invariants ｜ 查询层：其余 L1 参考 + L2/L3/Project 按需
 ```
 
 ## 三、双区知识基座
@@ -53,5 +53,5 @@ metadata:
 
 ```
 讨论经验 → L2 Exp 踩坑 → 阈值触发 → L3/index 结晶 → 提炼成 L2 Skill → 旧版进 L3/history
-任务工作 → 轮级缓冲（mind-private\tasks\：pending 待放行 / ideas.md 点子）→ 收工闭环 → 蒸馏入 L3/通用层
+任务工作 → 轮级缓冲（mind-private\tasks\pending\ 待放行 + Dream 灵感池）→ 收工闭环 → 蒸馏入 L3
 ```
