@@ -213,31 +213,21 @@ if (reg.ok) {
   }
 }
 
-// ⑦ (c) AGENTS 双版本同步：根 E:\DSHOME\AGENTS.md 与 build-stage\payload\AGENTS.md 引用路径集合
-function refPaths(content) {
-  const set = new Set();
-  const re = /`([^`]+)`/g;
-  let m;
-  while ((m = re.exec(content))) {
-    const t = m[1].replace(/\\/g, '/').trim();
-    if (/\//.test(t) || /^mind|^mind-private|^scripts|^tasks|^build-stage/.test(t)) set.add(t);
-  }
-  return set;
-}
-const rootAgentsFile = join(repoRoot, 'AGENTS.md');
+// ⑦ (c) AGENTS 双版本同步：权威版 mind\L0\AGENTS.md 与打包快照 build-stage\payload\AGENTS.md 全文一致
+//    （根版 E:\DSHOME\AGENTS.md 已于 2026-09-04 退役删除，权威版唯一 = mind\L0\AGENTS.md。
+//      原「根版 vs payload」基准的条件恒假，导致 (c) 从未真正执行；且旧判定用"反引号路径集合"近似，
+//      抓不住正文漂移（如 USER 残留、措辞差异）。payload 是打包时从权威版同步的快照，
+//      故改为【全文一致】判定——规范化换行后逐字符比对，严格、无近似。允许行尾差异。）
+function normalizeEOL(s) { return String(s).replace(/\r\n/g, '\n'); }
+const authoritativeAgentsFile = join(MIND, 'L0', 'AGENTS.md');
 const payloadAgentsFile = join(repoRoot, 'build-stage', 'payload', 'AGENTS.md');
-if (existsSync(rootAgentsFile) && existsSync(payloadAgentsFile)) {
-  const rootC = readFileSync(rootAgentsFile, 'utf8');
-  const payloadC = readFileSync(payloadAgentsFile, 'utf8');
-  const rp = refPaths(rootC);
-  const pp = refPaths(payloadC);
-  const onlyRoot = [...rp].filter((x) => !pp.has(x));
-  const onlyPayload = [...pp].filter((x) => !rp.has(x));
-  const declaredRootAuthoritative = /唯一权威版|仅以根版为准|根版权威|权威.*根版|根版.*权威|打包快照/.test(rootC);
-  if ((onlyRoot.length || onlyPayload.length) && !declaredRootAuthoritative) {
+if (existsSync(authoritativeAgentsFile) && existsSync(payloadAgentsFile)) {
+  const authC = normalizeEOL(readFileSync(authoritativeAgentsFile, 'utf8'));
+  const payloadC = normalizeEOL(readFileSync(payloadAgentsFile, 'utf8'));
+  if (authC !== payloadC) {
     issues.push({
-      sev: 'warn', file: 'AGENTS.md',
-      msg: `(c) 根版与 build-stage\\payload\\AGENTS.md 引用路径漂移——仅根版有: ${onlyRoot.slice(0, 4).join(';') || '无'}；仅 payload 有: ${onlyPayload.slice(0, 4).join(';') || '无'}。若以根版为唯一权威，请在根版声明"唯一权威版/以根版为准"`
+      sev: 'warn', file: 'mind/L0/AGENTS.md',
+      msg: `(c) 权威版(mind/L0/AGENTS.md)与 build-stage\\payload\\AGENTS.md 内容不一致——payload 是打包快照（禁止手改，打包时从权威版同步），当前两者已漂移，部署将带上旧版 AGENTS。请重新打包同步；跑 --strict 可拦截`
     });
   }
 }

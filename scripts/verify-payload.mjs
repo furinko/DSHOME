@@ -8,7 +8,7 @@
 //   node scripts/verify-payload.mjs            # 只校验（退出码 0=通过 / 1=失败）
 //   node scripts/verify-payload.mjs --fix      # 失败时把毒树重命名隔离（可逆，不删除）
 //   node scripts/verify-payload.mjs --quiet    # 通过时不打印明细
-import { existsSync, lstatSync, readdirSync, renameSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, renameSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,6 +64,17 @@ function main() {
   const top = readdirSync(payloadDir, { withFileTypes: true })
     .map((e) => `${e.name}${e.isDirectory() ? '/' : ''}`);
   say(`payload 顶层（${top.length} 项）：${top.slice(0, 40).join(', ')}${top.length > 40 ? ', …' : ''}`);
+
+  // AGENTS 打包快照一致性：payload\AGENTS.md 必须是权威版 mind\L0\AGENTS.md 的同内容快照
+  // （权威版声明"打包时从本文同步"；payload 禁止手改。若漂移，部署会带上旧版 AGENTS，此处拦）。
+  const authAgents = join(repoRoot, 'mind', 'L0', 'AGENTS.md');
+  const payloadAgents = join(payloadDir, 'AGENTS.md');
+  if (existsSync(authAgents) && existsSync(payloadAgents)) {
+    const norm = (s) => String(s).replace(/\r\n/g, '\n');
+    if (norm(readFileSync(authAgents, 'utf8')) !== norm(readFileSync(payloadAgents, 'utf8'))) {
+      fail(`payload\\AGENTS.md 与权威版 mind\\L0\\AGENTS.md 内容不一致——payload 是打包快照（禁止手改，打包时从权威版同步）。请重新组装 payload（robocopy 让 payload\\AGENTS.md = mind\\L0\\AGENTS.md）后再打包`);
+    }
+  }
 
   const pKind = kind(poisonDir);
   if (pKind === 'missing') {

@@ -191,14 +191,19 @@ window.__ModuleLoader__.load({
         }
         pending.forEach(function (it) {
           var card = el("div", "dshome-mind-gov-card");
+          // chips 只放类别/路径（concise 摘要）；完整"为什么改"用下面的 reason 行，放行前就能看到。
           card.appendChild(govChips([
             "action/" + (it.op || "edit"),
             it.path || "",
-            (it.reason || "高风险改动").slice(0, 40),
           ]));
           var pre = el("pre", "dshome-mind-pre", "路径: " + (it.path || "") + "  操作: " + (it.op || "edit"));
           pre.style.margin = "8px 0 2px";
           card.appendChild(pre);
+          if (it.reason) {
+            var pendingLab = el("div", "dshome-mind-gov-reason", it.reason);
+            pendingLab.style.margin = "2px 0 6px";
+            card.appendChild(pendingLab);
+          }
           var row = el("div", "dshome-mind-gov-actions");
           var ok = el("button", "dshome-mind-gov-ok", "✓ 放行");
           var no = el("button", "dshome-mind-gov-no", "✗ 拒绝");
