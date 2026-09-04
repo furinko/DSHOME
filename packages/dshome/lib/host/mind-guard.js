@@ -86,16 +86,21 @@ function readApprovals() {
 function writeApprovals(items) {
   try { writeFileSync(approvalsFile(), JSON.stringify({ items }, null, 2)); } catch { /* 忽略 */ }
 }
-/** 是否已有"approved"的放行记录覆盖 目标路径+操作。
- *  记录 path 以 "/" 结尾 → 视为目录前缀，覆盖其下所有同类文件；
- *  否则视为单文件，精确匹配。 */
+/** 是否已有"approved"的放行记录覆盖 目标路径+操作（一次性消费）。
+ *  "每次都要问"：放行记录命中即删除，用完作废——下次改该文件需重新放行，不永久放行。
+ *  记录 path 以 "/" 结尾 → 视为目录前缀，覆盖其下所有同类文件；否则视为单文件，精确匹配。 */
 function isApproved(filePath, op) {
   const p = normalizePath(filePath);
-  return readApprovals().some((a) => {
-    if (a.status !== 'approved' || a.op !== op) return false;
-    const rp = normalizePath(a.path);
-    return rp.endsWith('/') ? p.startsWith(rp) : p === rp;
-  });
+  const items = readApprovals();
+  const matched = items.filter((a) =>
+    a.status === 'approved' && a.op === op &&
+    (() => { const rp = normalizePath(a.path); return rp.endsWith('/') ? p.startsWith(rp) : p === rp; })()
+  );
+  if (matched.length) {
+    writeApprovals(items.filter((a) => !matched.includes(a))); // 消费即删，作废该放行
+    return true;
+  }
+  return false;
 }
 /** 高危区未放行时往 approvals.json 追加一条待裁决（存完整文件路径；匹配按目录/文件区分）。 */
 /** reason 说明"改什么文件 + 改了什么内容摘要"，让面板卡片有信息（而非空洞死字符串）。 */
