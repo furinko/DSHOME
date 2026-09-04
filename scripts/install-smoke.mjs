@@ -2,12 +2,23 @@
 // 教训：Inno /VERYSILENT 时 setup.exe 复制自身为 .tmp 副本继续解压，pwsh & exe 在原始进程退出后即返回
 // → 必须先轮询 DSHOME-setup* 进程全部退出，再检查安装树；首启自愈 junction 需等后端起来。
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { get } from 'node:http';
 
-const SETUP = process.argv[2] || 'E:\\DSHOME\\build-stage\\DSHOME-setup-0.2.0.exe';
+// 默认安装包：相对仓库根（scripts/ 上溯两级）找 build-stage 下最新 DSHOME-setup-*.exe，
+// 不硬编码个人盘符/版本号；可用 argv[2] 或 DSHOME_SETUP 覆盖。
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const setupDir = join(__dirname, '..', 'build-stage');
+const globSetup = () => {
+  try {
+    const f = readdirSync(setupDir).find((n) => /^DSHOME-setup-.+\.exe$/.test(n));
+    return f ? join(setupDir, f) : '';
+  } catch { return ''; }
+};
+const SETUP = process.argv[2] || process.env.DSHOME_SETUP || globSetup() || 'DSHOME-setup-?.exe';
 const INSTALL_DIR = mkdtempSync(join(tmpdir(), 'dshome-install-'));
 const PORT = 3199; // 避开 3099（开发实例）与 3100+（smoke 随机）
 

@@ -2,35 +2,14 @@
 // /api/mind/*：读 mind\（出厂）+ mind-private\（隐私）双区，返回状态/树/内容。
 // 照 dshome/plugin-api 模式：loopback trust fence + webServer.register 子插件。
 // 仅 web profile（webServer 存在）时经子插件激活；headless 自动跳过。
-// 心智生长哲学底座-组件B：主会话开机硬注入——ctx.on('agent/pre-step') 在会话首步
-// 把 mind-prime 产物结构性装配进上下文（不靠 agent 记得跑，参照官方
-// dsh-agent-instructions / dsh-plan-mode 同款 hook；cron 已自带 prime 的会话跳过）。
 
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cron.cjs');
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
-
-// ── 组件B 观测状态：boot-recall hook 注册与触发记录（重启后经 /api/mind/status 确认）──
-const bootRecallState = {
-  registered: false,
-  hookError: '',
-  agents: {},      // agentId -> {state, at, injected: bool}
-  lastInject: null,
-};
-
-// ── L0 宪法注入器观测状态（sections 是否真注册进 systemPrompt，杜绝静默失败）──
-const l0State = {
-  ok: false,
-  serviceAvailable: false,
-  registered: [],   // 成功注册的 section 名
-  errors: [],       // 失败原因
-  disposers: [],    // 注册 disposer（卸载用）
-};
 
 // ── 心智基座路径 ────────────────────────────────────────────────────────────
 function repoRoot() {
@@ -219,16 +198,6 @@ function fmValue(content, key) {
   const r = new RegExp('(?:^|\\n)\\s*' + key + ':\\s*([^\\n]+)').exec(m[1]);
   return r ? r[1].trim().replace(/^['"]|['"]$/g, '') : '';
 }
-/** importance 归一化（Memory.md §八：1-5 数字；兼容存量字符串档 high/medium/low，宁低勿高）。 */
-function normImportance(v) {
-  const s = String(v || '').trim().toLowerCase();
-  if (/^5$/.test(s)) return 5;
-  if (/^(4|high|重要|关键)$/.test(s)) return 4;
-  if (/^(3|medium|中|常规)$/.test(s)) return 3;
-  if (/^(2|low|低|参考)$/.test(s)) return 2;
-  if (/^(1|边缘)$/.test(s)) return 1;
-  return 2; // 缺省 = 参考档
-}
 function todayStamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -290,6 +259,52 @@ function rejectPending(file) {
   const target = path.join(trashDir(), stampedName(safe));
   fs.renameSync(src, target);
   return { ok: true, movedTo: `TRASH/${path.basename(target)}` };
+}
+
+// ── 动作放行（action-approval）：自我类"高危"文件改动的放行记录 ─────────────
+// 被护栏（dshome-mind-guard）拦截的高危改动，会在此追加一条 pending 供面板裁决；
+// 玩家点"放行"→ status=approved（按路径前缀+op 粒度），护栏读到即放行；点"拒绝"→ denied。
+const approvalsFile = () => path.join(mindPrivateDir(), 'tasks', 'approvals.json');
+function readApprovals() {
+  try { return JSON.parse(fs.readFileSync(approvalsFile(), 'utf8')).items || []; }
+  catch { return []; }
+}
+function writeApprovals(items) {
+  fs.mkdirSync(path.join(mindPrivateDir(), 'tasks'), { recursive: true });
+  fs.writeFileSync(approvalsFile(), JSON.stringify({ items }, null, 2));
+  return items;
+}
+/** 护栏拦截时追加一条待裁决动作。返回该条 id。 */
+function addApprovalPending(pathName, op, reason) {
+  const items = readApprovals();
+  const id = 'ap-' + Date.now();
+  items.push({
+    id, kind: 'action', path: pathName, op,
+    reason: reason || '', status: 'pending',
+    requestedAt: new Date().toISOString(), decidedAt: null, decidedBy: '',
+  });
+  writeApprovals(items);
+  return id;
+}
+/** 裁决：pending → approved / denied。返回更新后的条目或 {ok:false}。 */
+function decideApproval(id, decision) {
+  const items = readApprovals();
+  const it = items.find((x) => x.id === id);
+  if (!it) return { ok: false, error: 'not-found' };
+  it.status = decision === 'approved' ? 'approved' : 'denied';
+  it.decidedAt = new Date().toISOString();
+  it.decidedBy = 'user';
+  writeApprovals(items);
+  return { ok: true, item: it };
+}
+/** 撤销一条已放行（回到 pending 或直接删）：撤销后护栏重新拦。 */
+function revokeApproval(id) {
+  const items = readApprovals();
+  const idx = items.findIndex((x) => x.id === id);
+  if (idx < 0) return { ok: false, error: 'not-found' };
+  items.splice(idx, 1);
+  writeApprovals(items);
+  return { ok: true, removed: id };
 }
 
 /** 整理候选扫描（L3/index 全部内容文件）。 */
@@ -424,32 +439,15 @@ function dupCheck(topic, content) {
   return hits.slice(0, 5);
 }
 
-/** 撞名消歧（组件D，与 scripts/mind-prime.mjs 同表同规则）：q 命中 Concepts 歧义表 → 返回候选。 */
-function disambiguationFor(query) {
-  const p = path.join(repoRoot(), 'mind', 'L1', 'Concepts.md');
-  if (!fs.existsSync(p)) return [];
-  const q = String(query || '').toLowerCase();
-  const hits = [];
-  let inTable = false;
-  for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
-    if (/^##\s*撞名消歧表/.test(line)) { inTable = true; continue; }
-    if (inTable && /^##\s+/.test(line)) break;
-    if (!inTable) continue;
-    const m = /^\|\s*`([^`]+)`\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/.exec(line);
-    if (!m) continue;
-    const word = m[1].trim().toLowerCase();
-    const candidates = m[2].trim();
-    const clues = m[3].trim();
-    if (!word || !candidates) continue;
-    if (q === word || (word.length >= 3 && q.includes(word))) {
-      hits.push({ word: m[1].trim(), candidates, clues });
-    }
-  }
-  return hits;
+/** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。 */
+/** 记忆可信度级别（§十：A有据 > B已验证 > C待验证）。依据 frontmatter 的 source/verified。 */
+function confidenceRank(content) {
+  const src = fmValue(content, 'source');
+  const verified = fmValue(content, 'verified');
+  if (src) return 3;                    // A 有据（source 可查证）
+  if (String(verified).toLowerCase() === 'true') return 2; // B 已验证
+  return 1;                             // C 待验证（无 source 且非 verified）
 }
-
-/** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。
- *  排序 = 相似度 + importance 静态权重（见 Memory.md §八 判据：importance 1-5，越重要加权越高，1 不加权）。 */
 function searchMind(query, limit = 6) {
   const files = [];
   walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
@@ -459,7 +457,6 @@ function searchMind(query, limit = 6) {
     let content = '';
     try { content = fs.readFileSync(f.full, 'utf8'); } catch { continue; }
     const rel = f.rel.replace(/^L3\/index\//, '');
-    const importance = normImportance(fmValue(content, 'importance'));
     const sections = content.replace(/^---\n[\s\S]*?\n---\n?/, '').split(/\n(?=## )/).map((s) => s.trim()).filter(Boolean);
     let best = null;
     for (const sec of sections) {
@@ -467,19 +464,24 @@ function searchMind(query, limit = 6) {
       if (!best || sc > best.score) best = { score: sc, sec };
     }
     if (best && best.score >= 0.03) {
-      const sim = Math.round(best.score * 100);
-      const weighted = sim + (importance - 1) * 2; // 静态权重：importance 5 加 8 分，1 加 0 分（相似度同分区间内高 importance 优先）
+      const conf = confidenceRank(content);
+      const scope = (fmValue(content, 'scope') || 'project').toLowerCase();
+      const importance = Number(fmValue(content, 'importance')) || 2;
+      // §十 排序：可信度(A/B/C) 优先级最高；同级内 scope（user>self>project）> importance > score
+      const scopeRank = scope === 'user' ? 3 : scope === 'self' ? 2 : 1;
       hits.push({
-        score: sim,
-        weighted,
+        score: Math.round(best.score * 100),
+        conf,
+        scopeRank,
         importance,
+        sortKey: conf * 1000 + scopeRank * 100 + importance * 10 + best.score,
         file: rel,
         section: ((best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),
         snippet: best.sec.replace(/\s+/g, ' ').slice(0, 160),
       });
     }
   }
-  hits.sort((a, b) => b.weighted - a.weighted);
+  hits.sort((a, b) => b.sortKey - a.sortKey);
   return hits.slice(0, limit);
 }
 
@@ -546,8 +548,6 @@ function makeMindRoutes() {
             ok: true,
             factory: scanDir(mindFactoryDir(), '', 0),
             private: scanDir(mindPrivateDir(), '', 0),
-            bootRecall: { ...bootRecallState, agents: Object.keys(bootRecallState.agents).length },
-            l0Constitution: { ok: l0State.ok, serviceAvailable: l0State.serviceAvailable, registered: l0State.registered, errors: l0State.errors },
           });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
@@ -665,6 +665,43 @@ function makeMindRoutes() {
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
+    // ── 动作放行（action-approval）──────────────────────────────────────────
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/approvals`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try { json(res, 200, { ok: true, items: readApprovals() }); }
+        catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/approvals/decide`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = decideApproval(body?.id, body?.decision);
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/approvals/revoke`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = revokeApproval(body?.id);
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
     {
       kind: 'exact',
       path: `${API_PREFIX}/search`,
@@ -674,7 +711,7 @@ function makeMindRoutes() {
         try {
           const q = (new URL(req.url, 'http://localhost').searchParams.get('q') || '').trim();
           if (!q) return json(res, 400, { ok: false, error: 'q required' });
-          json(res, 200, { ok: true, hits: searchMind(q), ambiguous: disambiguationFor(q) });
+          json(res, 200, { ok: true, hits: searchMind(q) });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
@@ -830,52 +867,6 @@ function makeMindRoutes() {
   ];
 }
 
-// ── L0 宪法注入器：SOUL / USER / TOOL 全注入（对齐 HUB.md §三「注入层 = L0 四文件」）──
-// 独立子插件 + inject:['systemPrompt']：cordis loader 保证 systemPrompt 服务 ready 后才 apply
-//（同 routesPlugin inject webServer 的机制，plan-mode 的 static inject 同理），
-// 避免主插件在 service 未 ready 时同步调 ctx.systemPrompt 拿空。
-// AGENTS.md 已由 dsh-agent-instructions 注入（user-message 通道），此处只补其余三件。
-// 单源动态：装配时读文件（同名私有优先），改 L0 文件即生效，不双份维护。
-const l0InjectorPlugin = {
-  name: 'dshome-mind-l0-injector',
-  inject: ['systemPrompt'],
-  apply(ictx) {
-    const readL0 = (rel, privRel) => {
-      const p = privRel && fs.existsSync(path.join(mindPrivateDir(), privRel))
-        ? path.join(mindPrivateDir(), privRel)
-        : path.join(mindFactoryDir(), rel);
-      try { return fs.readFileSync(p, 'utf8'); } catch { return ''; }
-    };
-    l0State.serviceAvailable = typeof ictx.systemPrompt?.section === 'function';
-    if (!l0State.serviceAvailable) {
-      l0State.errors.push('systemPrompt service unavailable');
-      ictx.logger?.('dshome')?.warn?.('dshome-mind L0 injector: systemPrompt unavailable');
-      return;
-    }
-    const sections = [
-      // SOUL：人格宪法（身份/决策规则/价值观/表达）——order 1，紧随全局 persona(0)
-      { name: 'dshome:l0-soul', order: 1, text: () => readL0('L0/SOUL.md') },
-      // USER：关系层——mind-private 覆盖优先（真实称呼/习惯），无则出厂模板
-      { name: 'dshome:l0-user', order: 2, text: () => readL0('L0/USER.md', 'L0/USER.md') },
-      // TOOL：工具总索引 + 使用纪律
-      { name: 'dshome:l0-tool', order: 3, text: () => readL0('L0/TOOL.md') },
-    ];
-    for (const s of sections) {
-      try {
-        const dispose = ictx.systemPrompt.section({ name: s.name, order: s.order, text: s.text });
-        l0State.registered.push(s.name);
-        l0State.disposers.push(dispose);
-      } catch (e) {
-        l0State.errors.push(`${s.name}: ${e?.message ?? e}`);
-        ictx.logger?.('dshome')?.warn?.(`dshome-mind L0 section ${s.name} failed: ${e?.message ?? e}`);
-      }
-    }
-    if (l0State.registered.length === sections.length) l0State.ok = true;
-    ictx.effect?.(() => () => { for (const d of l0State.disposers) { try { d(); } catch { /* ignore */ } } });
-    ictx.logger?.('dshome')?.info?.(`dshome-mind L0 constitution injector: ${l0State.registered.join(',') || 'none'} (ok=${l0State.ok})`);
-  },
-};
-
 // ── 经 inject webServer 的子插件激活（仅 web profile）───────────────────────
 module.exports = {
   name: 'dshome-mind',
@@ -896,74 +887,6 @@ module.exports = {
       },
     };
     try { ctx.plugin?.(routesPlugin); } catch (e) { ctx.logger?.('dshome').warn(`dshome-mind disabled: ${e?.message ?? e}`); }
-
-    // ── L0 宪法注入器：注册子插件（inject systemPrompt → 服务 ready 后才 apply）──
-    try { ctx.plugin?.(l0InjectorPlugin); } catch (e) { ctx.logger?.('dshome').warn(`dshome-mind L0 injector plugin disabled: ${e?.message ?? e}`); }
-
-    // ── 心智生长哲学底座-组件B：主会话开机硬注入（boot recall hook）───────────
-    // 目标：每次 agent 会话（含主会话）第一步，结构性装配 mind-prime 产物进上下文，
-    // 不靠 agent 记得去跑（官方 dsh-agent-instructions / dsh-plan-mode 同款
-    // ctx.on('agent/pre-step') 机制；cron 任务已在 prompt 前置 prime，此处自动跳过）。
-    // 幂等：每 agent 运行实例只尝试一次；已含【上工自动召回】→ 跳过（防 cron 双份）。
-    // 优雅降级：无 mind-private / 脚本失败 / 输出空 → 不注入、不抛、不阻塞会话。
-    try {
-      const { createUserMessage } = require('@deepseek-ai/dsh-llm');
-      const primed = new WeakMap(); // agent -> 'ok' | 'skip' | 'empty' | 'failed'
-      const contentText = (m) => {
-        if (!m) return '';
-        if (typeof m.content === 'string') return m.content;
-        if (Array.isArray(m.content)) return m.content.map((c) => (typeof c === 'string' ? c : c && c.text ? c.text : '')).join('\n');
-        return '';
-      };
-      const record = (agent, state, injected = false) => {
-        try {
-          const id = String(agent?.id || agent?.session?.id || '?');
-          bootRecallState.agents[id] = { state, at: new Date().toISOString(), injected };
-          if (injected) bootRecallState.lastInject = { agentId: id, at: new Date().toISOString(), bytes: 0 };
-        } catch { /* 观测失败不影响主逻辑 */ }
-      };
-      ctx.on('agent/pre-step', async ({ agent, messages, step, signal }, next) => {
-        const decision = await next();
-        if (decision.kind === 'reject' || !agent || signal?.aborted) return decision;
-        const state = primed.get(agent);
-        if (state !== undefined) return decision; // 已处理过本 agent
-        // 只注入顶层会话（delegationDepth=0）：子代理由父上下文已带召回，避免重复 exec/上下文噪音
-        const depth = agent?.session?.header?.delegationDepth;
-        if (typeof depth === 'number' && depth > 0) { primed.set(agent, 'skip-child'); record(agent, 'skip-child'); return decision; }
-        // cron 等已在 prompt 前置【上工自动召回】→ 跳过，避免双份
-        const joined = [...(messages || []), ...(decision.messages || [])].map(contentText).join('\n');
-        if (joined.includes('【上工自动召回')) { primed.set(agent, 'skip'); record(agent, 'skip'); return decision; }
-        let primeText = '';
-        try {
-          primeText = execFileSync(process.execPath, [path.join(repoRoot(), 'scripts', 'mind-prime.mjs')], { cwd: repoRoot(), encoding: 'utf8', timeout: 15000 }).toString().trim();
-        } catch (e) {
-          primed.set(agent, 'failed');
-          record(agent, 'failed');
-          ctx.logger?.('dshome')?.warn?.('dshome-mind boot recall: mind-prime failed, skip inject', e?.message ?? e);
-          return decision;
-        }
-        // 无正文（无 L3/project/Learn 的干净机）→ 不注入（优雅降级，不刷空壳上下文）
-        if (!primeText.includes('■')) { primed.set(agent, 'empty'); record(agent, 'empty'); return decision; }
-        primed.set(agent, 'ok');
-        record(agent, 'ok', true);
-        const primeMessage = createUserMessage({
-          content: [{ type: 'text', text: primeText }],
-          source: { kind: 'plugin', plugin: 'dshome-mind', form: 'recall' },
-        });
-        // 对齐官方 dsh-agent-instructions：插到 claimed 用户消息之后（指令类上下文不被系统尾段稀释），
-        // 而不是简单 append 到末尾；无 claimed 则放最前。
-        const claimedSet = new Set(messages || []);
-        const lastClaimed = (decision.messages || []).findLastIndex((m) => claimedSet.has(m));
-        if (lastClaimed >= 0) {
-          return { ...decision, messages: decision.messages.toSpliced(lastClaimed + 1, 0, primeMessage) };
-        }
-        return { ...decision, messages: [primeMessage, ...(decision.messages || [])] };
-      });
-      bootRecallState.registered = true;
-    } catch (e) {
-      bootRecallState.hookError = String(e?.message ?? e);
-      ctx.logger?.('dshome').warn(`dshome-mind boot recall hook disabled: ${e?.message ?? e}`);
-    }
 
     // ── cron 自治：定时拉起 agent 会话执行任务（照 dsh-scheduler 蓝图）─────
     try {

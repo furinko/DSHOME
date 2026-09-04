@@ -1,6 +1,6 @@
 # DSHOME 架构说明（现状）
 
-> 版本：2.0 ～创建：2026-08-31 ～更新：2026-09-02（心智体系重构：dsh-evolve 退役 → mind/ 纯文件心智 + 可视化图谱）
+> 版本：2.1 ～创建：2026-08-31 ～更新：2026-09-04（心智体系重构：dsh-evolve 退役 → mind/ 纯文件心智 + 可视化图谱；记忆流轮级缓冲路径修正）
 > 定位：**现状架构 + 设计决策记录**（历史设计文档已归档移除，本文为唯一架构参考）
 > 目标读者：DSHOME 的维护者与接手者（包括未来的自己）
 
@@ -24,7 +24,7 @@ E:\DSHOME\（monorepo，pnpm workspace）
 ├─ profile-template/     # 示例 profile 脚手架
 ├─ profiles/dshome/      # 本机开发 profile（package.json + cordis.patch.yml 被跟踪为部署参考；patch 现为本机覆盖位，产品覆盖在 L3）
 ├─ docs/                 # 文档中心（分类导航见 docs/README.md；退役体系文档在 docs/archive/）
-├─ AGENTS.md             # 心智 L0 宪法·每会话注入（$DSH_HOME/AGENTS.md，DSH 机制决定留仓库根）
+├─ mind/L0/AGENTS.md     # 心智 L0 宪法·唯一权威版（由 dshome-mind-inject 插件每会话注入；根版 AGENTS.md 已于 09-04 退役删除）
 └─ build-stage/          # 构建产物与迁移备份（gitignore；退役资产在 mind-migration-backup-*/retired/）
 ```
 
@@ -71,8 +71,8 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖位（预留；apiKeyEnv 技�
 ### 5.1 四阶 + 双区
 
 ```
-四阶（参考外部心智架构：人格层/轮级缓冲/自动化进化理念）：
-L0 宪法  SOUL（人格）/ USER（关系，通用模板）/ AGENTS（纪律·常驻注入）/ TOOL（工具索引）
+四阶（参考 Cathome CCBP + Hermes 轮级缓冲）：
+L0 宪法  SOUL（人格）/ AGENTS（纪律·常驻注入）/ TOOL（工具索引）
 L1 法律  HUB / Wisdom / Tree（全索引）/ Power / Memory（归档规则）/ Dream（灵感）/ Learn（教训）
 L2 能力  Skill（方法论·frontmatter 标准化）/ Exp（工具手册）
 L3 记忆  index（结晶知识·按主题 + _index）/ history（时间胶囊·只写不改）
@@ -87,10 +87,11 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
 ### 5.2 加载模型与记忆流
 
 ```
-加载：注入层（L0 + AGENTS 每会话首步）→ 强制层（上工读 L1/Tree+Power+Memory+Dream+Learn）
+加载：注入层（dshome-mind-inject 插件每会话注入 L0 四件 + HUB/Wisdom 摘要，照官方 agent-instructions；AGENTS 权威在 mind/L0/AGENTS.md）
+      → 强制层（上工读 L1/Tree+Power+Memory+Dream+Learn）
       → 查询层（L2 关键词触发 / L3 grep 按需）
-记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/，未定型内容按类型分流）
-      → 收工闭环 7 步 → 蒸馏入 L3/通用层（外部体系吸收式沉淀模式）
+记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/：pending 待放行 / ideas.md 点子）
+      → 收工闭环 7 步 → 蒸馏入 L3/通用层（Hermes soyawl 模式）
 导入：import-artifact 技能（L2）——其他设备/agent 产物"直接丢给鱼鱼"即插即用
       （识别 → 校验 → 归类落 mind-private → 索引 → git checkpoint → 汇报）
 ```
@@ -154,4 +155,4 @@ dsh-evolve（22 工具/JSON 存储/自动召回注入）→ 2026-09-02 退役：
 
 ---
 
-_版本：2.0 | 2026-09-02 | 心智体系重构：dsh-evolve 退役 → mind/ 双区 + dshome-mind 图谱；文档清理（archive/）_
+_版本：2.1 | 2026-09-04 | 心智体系重构：dsh-evolve 退役 → mind/ 双区 + dshome-mind 图谱；文档清理（archive/）；记忆流轮级缓冲路径修正（00_约定 → tasks/pending/ideas）_

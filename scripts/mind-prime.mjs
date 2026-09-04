@@ -16,7 +16,16 @@ const args = process.argv.slice(2);
 const hasExplicitQuery = !!args[0] && !args[0].startsWith('--');
 const query = hasExplicitQuery ? args[0] : 'DSHOME 心智';
 const asJson = args.includes('--json');
-const limit = Number((args.find((a) => a.startsWith('--limit')) || '--limit 5').split(' ')[1] || 5);
+// --limit N：--limit 是独立 arg，值在它后面一个；支持 "--limit=5" 与 "--limit 5" 两种写法。
+let limit = 5;
+{
+  const idx = args.findIndex((a) => a === '--limit' || a.startsWith('--limit='));
+  if (idx >= 0) {
+    const raw = args[idx] === '--limit' ? args[idx + 1] : args[idx].split('=')[1];
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 1) limit = n;
+  }
+}
 
 // ── 词/二元组 + Jaccard（与 dshome-mind search 同思路）────────────────────
 function tokenize(text) {
@@ -105,6 +114,9 @@ function userRules() {
   if (!existsSync(f)) return '';
   return readFileSync(f, 'utf8').split('\n').filter((l) => /^##\s+\[/.test(l)).join('\n');
 }
+// ── 注：L0 注入摘要（核心纪律）由宿主插件 dshome-mind-inject 唯一维护，mind-prime 不再重复生成 ──
+// （旧版曾在这里重复一份 INJECT_LAYER 关键词抽取，与 mind-inject 漂移；已删——依据唯一）
+// 本脚本只装配：project 进度/待办 + L3 相关记忆 + Learn 最近教训 + user-rules。
 
 // ── 撞名消歧（组件D）：query 命中 Concepts 歧义表 → 提示钉身份再动手 ──────
 function disambiguationFor(query) {

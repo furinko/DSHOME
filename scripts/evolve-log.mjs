@@ -90,9 +90,15 @@ if (cmd === 'snapshot') {
   const logRows = src.split('\n').filter((l) => l.startsWith('|') && !l.includes('时间')).length;
   const invalid = (src.match(/↳回测:[^\n]*无效[^\n]*/g) || []).length;
   const m = readMetrics();
+  // 「未回填」= 有进化记录（非『↳快照/↳回测』的对象行）但还没有对应『↳回测:』行的欠账。
+  //   判定：只有真正以『↳回测:』开头的行才算已回填；其余对象行视为待回填。
+  //   （effect 回填是"改后观察效果再回填"的闭环；没回填 = 进化停留在一笔账本，没验证效果。）
+  const backfilled = (src.match(/^\|\s*\d{4}-\d{2}-\d{2}\s*\|\s*↳回测:/gm) || []).length;
+  const unwrapped = logRows - backfilled; // 进化/快照对象行中尚未被回填的部分
   console.log('[evolve-log] 元进化自检（自主信号）:');
-  console.log(`  进化记录 ${logRows} 条 · 无效回测 ${invalid} 条 · 信号 ${JSON.stringify(m)}`);
+  console.log(`  进化记录 ${logRows} 条 · 已回填 ${backfilled} 条 · 未回填 ${Math.max(0, unwrapped)} 条 · 无效回测 ${invalid} 条 · 信号 ${JSON.stringify(m)}`);
   let hit = false;
+  if (Math.max(0, unwrapped) >= 5) { console.log('  ⚠️ 未回填 ≥5 条 → 进化停留在账本，该回填 effect（有效/无效），别只记不改'); hit = true; }
   if (invalid >= 2) { console.log('  ⚠️ 机制连续无效(≥2) → 自主元进化：回滚/换思路'); hit = true; }
   if (logRows >= 15) { console.log('  ⚠️ 进化记录偏多 → 审视是否僵化/该深度体检'); hit = true; }
   if ((m.corrections || 0) >= 3) { console.log('  ⚠️ 被纠正 ≥3 次 → 审视我的行为/判断机制'); hit = true; }

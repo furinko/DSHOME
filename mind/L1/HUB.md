@@ -1,6 +1,6 @@
 # HUB.md — 知识网络之心
 
-> 版本：1.3 | 2026-09-04 | 评审修复：加载模型口径校准（注入层 = L0 四件经两通道；HUB/Wisdom 归查询层按需读）；版本日期校正；余同 1.2（缓冲落点对齐）
+> 版本：1.1 | 2026-09-04 | 初版（参考 Cathome HUB v2.3 蒸馏）+ 轮级缓冲路径更新（00_约定 → tasks\pending / ideas）
 > 加载：注入层（随每轮携带）
 > 定位：L1 中枢——心智基座的设计理念、加载规则、跨层红线
 
@@ -18,7 +18,7 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 
 | 层 | 回答 | 内容 |
 |---|---|---|
-| L0 | 我是谁？怎么活？ | SOUL + AGENTS + TOOL + USER |
+| L0 | 我是谁？怎么活？ | SOUL + AGENTS + TOOL |
 | L1 | 能做什么？怎么做？怎么存？ | HUB + Wisdom + Tree + Power + Memory + Dream + Learn |
 | L2 Skill | 某类问题怎么解决？ | 方法论——跨项目可复用的逻辑闭环 |
 | L2 Exp | 这个工具/平台怎么用？有什么坑？ | 经验公式——方法论的实例 + 踩坑记录 |
@@ -30,19 +30,19 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 **知识流动方向：**
 ```
 讨论中产生的经验 → L2 Exp 踩坑 → 积累到阈值 → L3/index 结晶 → 提炼成 L2 Skill → 旧版进 L3/history
-任务工作 → 轮级缓冲（任务缓冲：mind-private\tasks\，未定型内容按类型分流）→ 收工闭环 → 蒸馏入 L3/通用层
+任务工作 → 轮级缓冲（mind-private\tasks\：pending 待放行 / ideas.md 点子）→ 收工闭环 → 蒸馏入 L3/通用层
 ```
 
 ## 三、加载策略（三层）
 
-### 注入层（随每轮 API 调用携带——L0 四件经两通道合流）
-`AGENTS.md`（仓库根，经 dsh-agent-instructions workspace-instructions 通道）+ `SOUL / USER / TOOL`（经 dshome-mind L0 注入器 systemPrompt sections）——出厂固件与私有覆盖同名优先。
+### 注入层（系统提示词，随每轮 API 调用携带）
+`L0 四文件` + `L1/HUB.md` + `L1/Wisdom.md` —— 出厂固件。
 
 ### 强制层（每次上工必须加载）
 `L1/Tree.md`（有什么）+ `L1/Power.md`（怎么用 Skill/Exp）+ `L1/Memory.md`（怎么存 L3）+ `L1/Dream.md`（灵感）+ `L1/Learn.md`（教训）。
 
 ### 查询层（按需）
-L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read；L1 参考文档（Concepts / Design-Philosophy / HUB / Wisdom）按需查。
+L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read；L1 参考文档（Concepts / Design-Philosophy）按需查。
 
 ## 四、跨层红线
 
@@ -64,5 +64,5 @@ L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read；L
 | Power.md | 功法 | Skill/Exp 使用教程 + 沉淀路径 + 收工闭环 |
 | Memory.md | 规则书 | L3 index/history/Project 归档规则 |
 | Dream.md | 灵感池 | 松散点子 + 整理提醒 |
-| Learn.md | 痕迹库 | 精炼教训（笨鱼鱼💢/好鱼鱼🐱，≤200字/条） |
+| Learn.md | 痕迹库 | 精炼教训（笨鱼鱼💢/好鱼鱼🤗，≤200字/条） |
 | Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 唯一权威源 + 意图→概念→权威源路由表 |
