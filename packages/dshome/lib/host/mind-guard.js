@@ -108,13 +108,24 @@ function addApprovalPending(filePath, op) {
   });
   writeApprovals(items);
 }
-/** 是否"高危规则/宪法/门禁"区（2 方案：只有这里才真拦）。 */
+/**
+ * 高危规则/宪法/门禁区（2 方案：只有这里才真拦，需面板放行）。
+ * 判据 = 改这个文件是否【改变鱼鱼的行为逻辑】。
+ * 只有"规则/宪法/门禁"类才算高危；README/Tree/Concepts/Dream/Learn 是文档/索引/记录，更新是生长 → 放行。
+ * 高危名单（精确到文件/模式）：
+ *   mind\L0\SOUL.md / AGENTS.md / TOOL.md        （人格/纪律/工具规则）
+ *   mind\L1\HUB.md / Wisdom.md / Memory.md / Power.md / Invariants.md / Design-Philosophy.md
+ * 放行（文档/索引/记录，非行为规则）：README.md / Tree.md / Concepts.md / Dream.md / Learn.md
+ */
 function inHighRiskyZone(filePath) {
   const p = normalizePath(filePath);
   const candidates = [p, normalizePath(resolve(repoRoot(), p))];
-  return candidates.some((abs) =>
-    /\/(mind)\/(L0|L1)\//.test(abs) || /\/(mind)\/README\.md$/.test(abs)
-  );
+  const rules = [
+    '/mind/L0/SOUL.md', '/mind/L0/AGENTS.md', '/mind/L0/TOOL.md',
+    '/mind/L1/HUB.md', '/mind/L1/Wisdom.md', '/mind/L1/Memory.md',
+    '/mind/L1/Power.md', '/mind/L1/Invariants.md', '/mind/L1/Design-Philosophy.md',
+  ];
+  return candidates.some((abs) => rules.some((r) => abs.includes(r)));
 }
 
 /** 
@@ -135,14 +146,14 @@ const GUARDS = [
   },
   {
     id: 'self-modify',
-    // ② 自我修改门禁（高危区真拦 / 技能自身记忆提示不拦）。
-    // 只有【高危规则/宪法/门禁】── mind\L0/L1 与 README.md ──才是"改规则"级，需面板放行；
-    // 而技能(L2) / 自身记忆(mind-private\L1) 属日常生长，只提示不拦（改它不改变系统行为）。
+    // ② 自我修改门禁（高危规则区真拦 / 技能·自身记忆提示不拦 / 文档索引直接放行）。
+    // 高危=改"行为规则/宪法/门禁"（HUB/Wisdom/Memory/Power/Invariants/Design-Philosophy + L0 纪律三件）→ 需面板放行；
+    // 技能(L2)/自身记忆(mind-private\L1) → 只提示不拦；README/Tree/Concepts/Dream/Learn(文档·索引·记录) → 直接放行。
     // 放行记录(approvals.json)：已在【路径前缀+op】approved → 放行；否则拦 + 写 pending 供面板裁决。
     check: (filePath, _content, ctx) => {
       if (!inSelfModifyZone(filePath)) return undefined; // 非自我区（生长区/普通代码）→ 放行
 
-      // 高危规则区：必须凭放行记录，否则拦截。
+      // 高危规则区（HUB/Wisdom/Memory/Power/Invariants/Design-Philosophy + L0 纪律三件）：凭放行记录，否则拦。
       if (inHighRiskyZone(filePath)) {
         const op = 'edit'; // write/edit 统一按 edit 粒度（区分意义不大）
         if (isApproved(filePath, op)) return undefined; // 已放行 → 放行
@@ -151,11 +162,15 @@ const GUARDS = [
           `需要你先在「心智 → 动作放行」面板点「✓ 放行」。已生成一条待裁决，放行后重试即可。`;
       }
 
-      // 技能/自身记忆：只提示，不拦（日常生长，validate 兜底）。
-      ctx?.logger?.('dshome').warn(
-        `[mind-guard] 自我修改门禁（提示，不拦）：改"自我类"文件 ${filePath}（技能/自身记忆）。` +
-        `确保已按 AGENTS §五 硬流程：用户放行 + 快照 + node scripts/mind-validate.mjs 通过。`
-      );
+      // 技能(L2)/自身记忆(mind-private\L1)：只提示，不拦（日常生长，validate 兜底）。
+      // 文档/索引/记录（README/Tree/Concepts/Dream/Learn 模板）→ 命中上方 inSelfModifyZone 但非高危，
+      // 属日常维护，直接放行（不打扰）。
+      if (/\/(L2)\//.test(normalizePath(filePath)) || /\/mind-private\/L1\//.test(normalizePath(filePath))) {
+        ctx?.logger?.('dshome').warn(
+          `[mind-guard] 自我修改门禁（提示，不拦）：改"自我类"文件 ${filePath}（技能/自身记忆）。` +
+          `确保已按 AGENTS §五 硬流程：用户放行 + 快照 + node scripts/mind-validate.mjs 通过。`
+        );
+      }
       return undefined;
     }
   }
