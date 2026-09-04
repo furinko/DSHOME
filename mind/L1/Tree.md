@@ -1,6 +1,6 @@
 # Tree.md — 知识网络血管（全目录）
 
-> 版本：1.1 | 2026-09-06 | 索引同步：L2-Skill 补齐 5 项；L1 新增 Concepts.md
+> 版本：1.1 | 2026-09-04 | 索引收窄（私有区去具体资产名）+ AGENTS 指向 L0 权威版 + L2-Skill 补齐；版本日期校正（原错标 09-06）
 > 加载：强制层（每次上工必读）
 > 定位：L1 循环系统——全知识网络目录，AI 友好表格化。"有什么"的一键查询。
 
@@ -24,11 +24,13 @@
 | Design-Philosophy.md | 灵魂之纲 | 生长哲学：自生长/绽放 + 唯一防毒底座（别自欺） |
 | Wisdom.md | 大脑皮层 | 思维模式系统 + 元认知框架 |
 | Tree.md | 血管 | 全知识网络目录（本文件） |
-| Power.md | 功法 | Skill/Exp 使用教程 + 沉淀模板 |
+| Power.md | 功法 | 能力手册：Skill/Exp 使用教程 + 沉淀路径 + L2 格式 |
 | Memory.md | 规则书 | L3 归档规则 |
+| Invariants.md | 闸门 | 确定性内核：不可绕过的硬约束/门禁清单（🔴/🟡 不变式）——强制层加载 |
 | Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 的**唯一权威源** + 意图→概念→权威源路由表 |
 | Dream.md | 灵感池 | 松散点子 |
 | Learn.md | 痕迹库 | 好鱼鱼/笨鱼鱼教训（模板在 mind\，实际条目在 mind-private\L1\） |
+| Ritual.md | 行为规程 | 收工闭环 / 自主洗澡 / 元进化 / 行为纪律细则 / 自省判据（AGENTS 细则的家，按需读） |
 
 ## L2 — 能力层（mind\L2\）
 
@@ -38,8 +40,9 @@
 | import-artifact.md | 1.0.0 | 导入协议：其他设备/agent 产物即插即用 | import、导入、即插即用、artifact、蒸馏包 |
 | boot-recall.md | 1.0.1 | 上工自动召回：project.md+L3+Learn+user-rules 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
 | dshome-diagnostics.md | 1.0.0 | DSHOME 后端诊断（崩/卡/闪断：先分真假+证据） | 后端重启、卡、exit1、闪断 |
-| dshome-plugin-dev.md | 1.0.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚 | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败 |
-| scar-inference.md | 1.0.0 | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古、蒸、版本差、反推坑、咬痕、伤疤、为什么在、作者画像、同源盲区 |
+| dshome-plugin-dev.md | 1.1.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚；自有 host 插件落地三步（exports 易漏） | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败、启动崩溃 |
+| landing-audit.md | 1.0.0 | 落地审计三查法：查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」（定义/接线/数据逐层查） | 审计、落地、三查、落到实处吗、纸面定义、空壳、接线 |
+| scar-inference.md | 1.1.0 | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古、蒸、版本差、反推坑、咬痕、伤疤、为什么在、作者画像、同源盲区 |
 
 ### Exp 清单（工具手册）
 | 文件 | 版本 | 描述 | 触发关键词 |
@@ -82,4 +85,4 @@
 ## 更新规则
 - 新增/修改 L2/L3/Project 文件 → 同步更新本文件对应清单。
 - 版本号/关联变化 → 同步。
-- 每轮收工（Power.md 7 步）第 4 步强制检查本文件同步。
+- 每轮收工（Ritual.md §一 9 步）第 4 步强制检查本文件同步。
