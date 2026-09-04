@@ -53,5 +53,5 @@ metadata:
 
 ```
 讨论经验 → L2 Exp 踩坑 → 阈值触发 → L3/index 结晶 → 提炼成 L2 Skill → 旧版进 L3/history
-任务工作 → 轮级缓冲（00_约定）→ 收工闭环 → 蒸馏入 L3/通用层
+任务工作 → 轮级缓冲（mind-private\tasks\：pending 待放行 / ideas.md 点子）→ 收工闭环 → 蒸馏入 L3/通用层
 ```

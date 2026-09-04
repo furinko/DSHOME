@@ -1,6 +1,6 @@
 # DSHOME 架构说明（现状）
 
-> 版本：2.0 ～创建：2026-08-31 ～更新：2026-09-02（心智体系重构：dsh-evolve 退役 → mind/ 纯文件心智 + 可视化图谱）
+> 版本：2.1 ～创建：2026-08-31 ～更新：2026-09-04（心智体系重构：dsh-evolve 退役 → mind/ 纯文件心智 + 可视化图谱；记忆流轮级缓冲路径修正）
 > 定位：**现状架构 + 设计决策记录**（历史设计文档已归档移除，本文为唯一架构参考）
 > 目标读者：DSHOME 的维护者与接手者（包括未来的自己）
 
@@ -89,7 +89,7 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
 ```
 加载：注入层（L0 + AGENTS 每会话首步）→ 强制层（上工读 L1/Tree+Power+Memory+Dream+Learn）
       → 查询层（L2 关键词触发 / L3 grep 按需）
-记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/00_约定）
+记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/：pending 待放行 / ideas.md 点子）
       → 收工闭环 7 步 → 蒸馏入 L3/通用层（Hermes soyawl 模式）
 导入：import-artifact 技能（L2）——其他设备/agent 产物"直接丢给鱼鱼"即插即用
       （识别 → 校验 → 归类落 mind-private → 索引 → git checkpoint → 汇报）
@@ -154,4 +154,4 @@ dsh-evolve（22 工具/JSON 存储/自动召回注入）→ 2026-09-02 退役：
 
 ---
 
-_版本：2.0 | 2026-09-02 | 心智体系重构：dsh-evolve 退役 → mind/ 双区 + dshome-mind 图谱；文档清理（archive/）_
+_版本：2.1 | 2026-09-04 | 心智体系重构：dsh-evolve 退役 → mind/ 双区 + dshome-mind 图谱；文档清理（archive/）；记忆流轮级缓冲路径修正（00_约定 → tasks/pending/ideas）_
