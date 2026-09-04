@@ -24,7 +24,7 @@ E:\DSHOME\（monorepo，pnpm workspace）
 ├─ profile-template/     # 示例 profile 脚手架
 ├─ profiles/dshome/      # 本机开发 profile（package.json + cordis.patch.yml 被跟踪为部署参考；patch 现为本机覆盖位，产品覆盖在 L3）
 ├─ docs/                 # 文档中心（分类导航见 docs/README.md；退役体系文档在 docs/archive/）
-├─ AGENTS.md             # 心智 L0 宪法·每会话注入（$DSH_HOME/AGENTS.md，DSH 机制决定留仓库根）
+├─ mind/L0/AGENTS.md     # 心智 L0 宪法·唯一权威版（由 dshome-mind-inject 插件每会话注入；根版 AGENTS.md 已于 09-04 退役删除）
 └─ build-stage/          # 构建产物与迁移备份（gitignore；退役资产在 mind-migration-backup-*/retired/）
 ```
 
@@ -87,7 +87,8 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
 ### 5.2 加载模型与记忆流
 
 ```
-加载：注入层（L0 + AGENTS 每会话首步）→ 强制层（上工读 L1/Tree+Power+Memory+Dream+Learn）
+加载：注入层（dshome-mind-inject 插件每会话注入 L0 四件 + HUB/Wisdom 摘要，照官方 agent-instructions；AGENTS 权威在 mind/L0/AGENTS.md）
+      → 强制层（上工读 L1/Tree+Power+Memory+Dream+Learn）
       → 查询层（L2 关键词触发 / L3 grep 按需）
 记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/：pending 待放行 / ideas.md 点子）
       → 收工闭环 7 步 → 蒸馏入 L3/通用层（Hermes soyawl 模式）
