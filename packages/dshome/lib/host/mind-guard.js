@@ -92,9 +92,14 @@ function writeApprovals(items) {
 function isApproved(filePath, op) {
   const p = normalizePath(filePath);
   const items = readApprovals();
+  // 与 zone 判断（inSelfModifyZone/inHighRiskyZone/inFactoryZone）保持一致的双候选口径：
+  // 那些判断用 [原始路径, resolve(repoRoot, p)] 命中相对/绝对路径；此处若只用原始 p，
+  // 当 write/edit 传来相对路径（如 mind/L1/Power.md）时 match 不上 stored 的绝对路径，
+  // 就会"拦得住但仍把放行记录留在文件里、永不消费"——本修复把候选对齐为绝对/相对都能匹配。
+  const targets = [p, normalizePath(resolve(repoRoot(), p))];
   const matched = items.filter((a) =>
     a.status === 'approved' && a.op === op &&
-    (() => { const rp = normalizePath(a.path); return rp.endsWith('/') ? p.startsWith(rp) : p === rp; })()
+    (() => { const rp = normalizePath(a.path); return rp.endsWith('/') ? targets.some((t) => t.startsWith(rp)) : targets.some((t) => t === rp); })()
   );
   if (matched.length) {
     writeApprovals(items.filter((a) => !matched.includes(a))); // 消费即删，作废该放行
