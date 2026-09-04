@@ -1,6 +1,6 @@
 # Concepts.md — 心智概念注册表（L1 契约）
 
-> 版本：1.1 | 2026-09-04 | 语义层落地：概念 → 唯一权威源 的**单一契约**；todo/progress 权威源明确为「体系主线档（跨设备）」；版本日期校正（原错标 09-06）
+> 版本：1.2 | 2026-09-05 | suggestion 对齐实况：权威源 = 动作放行记录 approvals.json（guard 面板裁决闭环）；废弃 candidate/accepted/deferred 虚状态机字段
 > 定位：这是"某一概念的**权威源/入口在哪**"的**唯一挂号处**。系统要查询/流转一个概念，只在本表查一次；
 > 加载：按需（查询层，L1 参考文档）——概念权威源/路由表，按需查
 > 其他文档（AGENTS.md、Skill、记忆）**引用本表**，**不得各自重复定义**同一概念的权威源。
@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | todo | `mind-private\Project\DSHOME\project.md`「下一步」 | 需要/要求/该做/计划 | `/api/mind/todos` 读写 | status / priority / source / promotedFrom |
 | progress | `mind-private\Project\DSHOME\project.md`「进度状态」 | 现状/阶段/到哪一步 | `/api/mind/read`?zone=private（读 project.md）或 mind-prime | phase / health / updated |
-| suggestion | 评估/审计/巡检/判断产出（即时记忆类，落对应产出区 / pending） | 建议/可改/改进点 | 用户裁决后流转 | status=candidate/accepted/rejected/deferred · promotedTo |
+| suggestion | 待裁决的"动作/修改/评估产出"（`mind-private\tasks\approvals.json`——guard 护栏写入 + 面板裁决） | 建议/可改/改进点/需放行的动作 | 经护栏 `dshome-mind-guard` 面板 ✓/✗ 裁决 | 薄字段（开放标签）：id / kind(action·edit·delete) / path / op / reason / status(pending·approved) / requestedAt / decidedAt / decidedBy |
 | memory | `mind-private\L3\index\<主题>\` + 各目录 `_index` | 教训/偏好/跨会话记忆 | `/api/mind/search` + `/api/mind/dup-check` | kind / importance / scope / topic / tags |
 | skill | `mind\L2\Skill\<id>.md` + `_index` | 怎么做/能力/流程/积木 | 关键词触发加载 | name / version / triggers / inputs / outputs |
 
@@ -21,13 +21,21 @@
 > 用户业务项目（各自独立目录）在 `Project\<项目>\project.md`，**不入 todo API**。
 > 新设备首次收工时：若无 `Project\DSHOME\project.md` → 按 `mind\L1\Memory.md` §四 模板初始化一份（含「进度状态」表 + 「下一步」`- [ ]` 列表，标题不带序号前缀，机器解析器按固定标题读）。
 
+> 📌 **suggestion 权威源 = 动作放行记录（实况对齐 2026-09-05）**：suggestion 概念落地为护栏的动作放行机制
+> （`dshome-mind-guard` 插件）——它**不是**抽象的"建议流"，而是**真实在跑的裁决闭环**：
+> - **产生**：改"自我类高危文件"（L0 纪律 / L1 规则）时护栏真拦 → 写一条 `approvals.json` 待裁决（kind=action，status=pending，含 path/op/reason 摘要）；
+> - **裁决**：用户在「心智 → 动作放行」面板 ✓ 放行（→approved）或 ✗ 拒绝（不入 TRASH——被拦的本就是未落盘改动，拒绝即不落盘）；
+> - **消费**：放行记录**一次性**——命中即删，下次改同文件需重新裁决（不永久放行）；
+> - **产出类建议**（评估/审计/巡检发现）不走此机制：直接汇报用户，用户口头裁决——不入 approvals。
+> 机器可读薄字段即 approvals.json 条目字段（id/kind/path/op/reason/status/requestedAt/decidedAt/decidedBy）；不再使用 candidate/accepted/rejected/deferred 虚字段（原理想状态机无实现，废弃）。
+
 ## 意图 → 概念 → 唯一权威源（路由表）
 
 | 意图（我想…） | 概念 | 去哪里（权威源 / 入口） |
 |---|---|---|
 | 下一步 / 该做什么 / 有什么待办 | todo | 体系主线档「下一步」→ 经 `/api/mind/todos` 读写 |
 | 到哪一步 / 进度 / 项目状态 | progress | 体系主线档「进度状态」 |
-| 建议 / 可改 / 评估 / 审计 / 巡检 / 改进点 | suggestion | 评估/审计/巡检产出 → 用户裁决（candidate/accepted/rejected/deferred） |
+| 建议 / 可改 / 评估 / 审计 / 巡检 / 改进点 / 需放行动作 | suggestion | 动作放行面板（approvals.json）→ 用户 ✓ 放行 / ✗ 拒绝；裁决后消费即删（一次性） |
 | 教训 / 偏好 / 记忆 / 上次怎么做 | memory | `/api/mind/search?q=` 模糊召回 → `mind-private\L3\index\` grep 深读；写前 `/api/mind/dup-check` |
 | 怎么做 / 技能 / 能力 / 流程 / 积木 | skill | `mind\L2\Skill\` + `_index.md`（关键词触发加载） |
 
@@ -53,4 +61,4 @@
 - **改契约流程**：增删概念 / 调整权威源属"自我类文件"改动 → 走 `AGENTS.md` §五 硬流程：**用户放行 → 快照 → `mind-validate.mjs` 通过 → 失败回滚**。
 
 ---
-_版本：1.1 | 2026-09-04 | 语义层落地：todo / progress / suggestion / memory / skill 唯一权威源_
+_版本：1.2 | 2026-09-05 | suggestion 权威源对齐动作放行（approvals.json + guard 面板裁决）——废弃无实现的理想状态机；todo/progress/memory/skill 不变_
