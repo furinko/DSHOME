@@ -175,40 +175,66 @@ window.__ModuleLoader__.load({
       parts.forEach(function (p) { if (p) c.appendChild(el("span", "dshome-mind-chip", p)); });
       return c;
     }
-    function renderPending(govEl, reload) {
+    function renderApproval(govEl, reload) {
       govEl.innerHTML = "";
-      govEl.appendChild(el("div", "dshome-mind-gov-head", "⏳ 待放行 — 鱼鱼提议的记忆，你放行后才入正式库"));
-      fetch("/api/mind/pending").then(function (r) { return r.json(); }).then(function (d) {
+      govEl.appendChild(el("div", "dshome-mind-gov-head", "🛡 动作放行 — 自我类「高危规则/宪法/门禁」改动，放行后才放行（护栏真拦，凭此记录）"));
+      fetch("/api/mind/approvals").then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) throw new Error(d.error);
-        if (!d.items || !d.items.length) {
-          govEl.appendChild(el("div", "dshome-mind-empty", "🎉 没有待放行的记忆"));
-          return;
+        var items = d.items || [];
+        var pending = items.filter(function (x) { return x.status === "pending"; });
+        var decided = items.filter(function (x) { return x.status !== "pending"; });
+
+        // 栏1：待裁决
+        govEl.appendChild(el("div", "dshome-mind-gov-head", "⏳ 待裁决（护栏拦截待你放行）"));
+        if (!pending.length) {
+          govEl.appendChild(el("div", "dshome-mind-empty", "🎉 没有待裁决的动作"));
         }
-        d.items.forEach(function (it) {
+        pending.forEach(function (it) {
           var card = el("div", "dshome-mind-gov-card");
           card.appendChild(govChips([
-            (it.kind || "note") + "/imp" + (it.importance || 2),
-            it.topic ? "主题: " + it.topic : "主题: general",
-            it.proposedBy ? "提议: " + it.proposedBy : "",
-            it.proposedAt || "",
+            "action/" + (it.op || "edit"),
+            it.path || "",
+            (it.reason || "高风险改动").slice(0, 40),
           ]));
-          var body = it.content || "";
-          var pre = el("pre", "dshome-mind-pre", body.length > 500 ? body.slice(0, 500) + "\n…" : body);
+          var pre = el("pre", "dshome-mind-pre", "路径: " + (it.path || "") + "  操作: " + (it.op || "edit"));
           pre.style.margin = "8px 0 2px";
           card.appendChild(pre);
           var row = el("div", "dshome-mind-gov-actions");
-          var ok = el("button", "dshome-mind-gov-ok", "✓ 放行入 L3");
+          var ok = el("button", "dshome-mind-gov-ok", "✓ 放行");
           var no = el("button", "dshome-mind-gov-no", "✗ 拒绝");
           row.appendChild(ok); row.appendChild(no);
           card.appendChild(row);
           govEl.appendChild(card);
           ok.addEventListener("click", function () {
-            postJSON("/api/mind/pending/approve", { file: it.file }).then(function () { reload(); });
+            postJSON("/api/mind/approvals/decide", { id: it.id, decision: "approved" }).then(function () { reload(); });
           });
           no.addEventListener("click", function () {
-            postJSON("/api/mind/pending/reject", { file: it.file }).then(function () { reload(); });
+            postJSON("/api/mind/approvals/decide", { id: it.id, decision: "denied" }).then(function () { reload(); });
           });
         });
+
+        // 栏2：已裁决（可撤销）
+        if (decided.length) {
+          govEl.appendChild(el("div", "dshome-mind-gov-head", "✅ 已裁决"));
+          decided.forEach(function (it) {
+            var card = el("div", "dshome-mind-gov-card");
+            card.appendChild(govChips([
+              it.status === "approved" ? "已放行" : "已拒绝",
+              it.path || "",
+              it.op || "edit",
+            ]));
+            var row = el("div", "dshome-mind-gov-actions");
+            if (it.status === "approved") {
+              var revoke = el("button", "dshome-mind-gov-arch", "↺ 撤销");
+              row.appendChild(revoke);
+              revoke.addEventListener("click", function () {
+                postJSON("/api/mind/approvals/revoke", { id: it.id }).then(function () { reload(); });
+              });
+            }
+            card.appendChild(row);
+            govEl.appendChild(card);
+          });
+        }
       }).catch(function (e) {
         govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
       });
@@ -809,7 +835,7 @@ window.__ModuleLoader__.load({
       var toolbar = el("div", "dshome-mind-toolbar");
       var viewSw = el("div", "dshome-mind-vswitch");
       var btns = {};
-      [["graph", "📊 图谱"], ["pending", "⏳ 待放行"], ["curate", "🧹 整理"], ["todos", "📋 待办"]].forEach(function (v) {
+      [["graph", "📊 图谱"], ["approval", "🛡 动作放行"], ["curate", "🧹 整理"], ["todos", "📋 待办"]].forEach(function (v) {
         var b = el("button", v[0] === "graph" ? "on" : "", v[1]);
         btns[v[0]] = b;
         viewSw.appendChild(b);
@@ -852,22 +878,22 @@ window.__ModuleLoader__.load({
       function showView(mode) {
         state.view = mode;
         Object.keys(btns).forEach(function (k) { btns[k].className = k === mode ? "on" : ""; });
-        var isGov = mode === "pending" || mode === "curate" || mode === "todos";
+        var isGov = mode === "approval" || mode === "curate" || mode === "todos";
         graphWrap.style.display = isGov ? "none" : "";
         detail.style.display = isGov ? "none" : "";
         govEl.style.display = isGov ? "" : "none";
         legend.style.display = mode === "graph" ? "" : "none";
         zoom.style.display = mode === "graph" ? "" : "none";
-        search.placeholder = mode === "graph" ? "搜索节点…" : (mode === "pending" ? "筛选待放行…" : "筛选整理候选…");
+        search.placeholder = mode === "graph" ? "搜索节点…" : (mode === "approval" ? "筛选动作放行…" : "筛选整理候选…");
         stat.textContent = mode === "graph" && state.graphStat ? state.graphStat : "";
         // 治理视图共用一个容器：每次切入都重渲染，避免残留上一个视图的内容
         if (isGov) {
-          if (mode === "pending") renderPending(govEl, loadPending);
+          if (mode === "approval") renderApproval(govEl, loadApproval);
           else if (mode === "curate") renderCurate(govEl, loadCurate);
           else renderTodos(govEl, loadTodosView);
         }
       }
-      function loadPending() { renderPending(govEl, loadPending); }
+      function loadApproval() { renderApproval(govEl, loadApproval); }
       function loadCurate() { renderCurate(govEl, loadCurate); }
       function loadTodosView() { renderTodos(govEl, loadTodosView); }
       Object.keys(btns).forEach(function (k) {
@@ -925,10 +951,11 @@ window.__ModuleLoader__.load({
           graphWrap.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
         });
 
-      // 治理计数徽标（图谱 stat 之外的待放行/整理数量）
+      // 治理计数徽标（图谱 stat 之外的动作放行/整理数量）
       function refreshCounts() {
-        fetch("/api/mind/pending").then(function (r) { return r.json(); }).then(function (d) {
-          btns.pending.textContent = "⏳ 待放行" + (d.ok && d.items && d.items.length ? " (" + d.items.length + ")" : "");
+        fetch("/api/mind/approvals").then(function (r) { return r.json(); }).then(function (d) {
+          var pcount = d.ok && d.items ? d.items.filter(function (x) { return x.status === "pending"; }).length : 0;
+          btns.approval.textContent = "🛡 动作放行" + (pcount > 0 ? " (" + pcount + ")" : "");
         }).catch(function () {});
         fetch("/api/mind/curate").then(function (r) { return r.json(); }).then(function (d) {
           btns.curate.textContent = "🧹 整理" + (d.ok && d.items && d.items.length ? " (" + d.items.length + ")" : "");

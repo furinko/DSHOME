@@ -16,6 +16,7 @@
 
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 /** Stable Cordis plugin name (cordis.patch.yml: name dshome/mind-guard). */
 export const name = 'dshome-mind-guard';
@@ -74,11 +75,53 @@ function contentOf(args) {
   return args?.content ?? args?.new_string ?? args?.str ?? '';
 }
 
+// ── 动作放行记录（与 dshome-mind API 共用同一文件：mind-private\tasks\approvals.json）──
+// 护栏独立读写该文件，不 require index.cjs（那是 cordis 插件对象，重引用会循环）。
+// 放行粒度 = 路径前缀 + 操作（op）：一条 approved 覆盖其下所有文件同类操作。
+const approvalsFile = () => join(repoRoot(), 'mind-private', 'tasks', 'approvals.json');
+function readApprovals() {
+  try { return JSON.parse(readFileSync(approvalsFile(), 'utf8')).items || []; }
+  catch { return []; }
+}
+function writeApprovals(items) {
+  try { writeFileSync(approvalsFile(), JSON.stringify({ items }, null, 2)); } catch { /* 忽略 */ }
+}
+/** 是否已有"approved"的放行记录覆盖 目标路径+操作。
+ *  记录 path 以 "/" 结尾 → 视为目录前缀，覆盖其下所有同类文件；
+ *  否则视为单文件，精确匹配。 */
+function isApproved(filePath, op) {
+  const p = normalizePath(filePath);
+  return readApprovals().some((a) => {
+    if (a.status !== 'approved' || a.op !== op) return false;
+    const rp = normalizePath(a.path);
+    return rp.endsWith('/') ? p.startsWith(rp) : p === rp;
+  });
+}
+/** 高危区未放行时往 approvals.json 追加一条待裁决（存完整文件路径；匹配按目录/文件区分）。 */
+function addApprovalPending(filePath, op) {
+  const items = readApprovals();
+  items.push({
+    id: 'ap-' + Date.now(), kind: 'action',
+    path: normalizePath(filePath), op,
+    reason: '高危自我类文件改动被护栏拦截', status: 'pending',
+    requestedAt: new Date().toISOString(), decidedAt: null, decidedBy: '',
+  });
+  writeApprovals(items);
+}
+/** 是否"高危规则/宪法/门禁"区（2 方案：只有这里才真拦）。 */
+function inHighRiskyZone(filePath) {
+  const p = normalizePath(filePath);
+  const candidates = [p, normalizePath(resolve(repoRoot(), p))];
+  return candidates.some((abs) =>
+    /\/(mind)\/(L0|L1)\//.test(abs) || /\/(mind)\/README\.md$/.test(abs)
+  );
+}
+
 /** 
  * 护栏判定表。每个条目 check(filePath, content, ctx) 返回：
  *   非空 string  → 拦截（把该 string 作为 reason 抛给模型）
  *   undefined    → 放行
- * 顺序执行：先命中 privacy（真红线）才拦；self-modify 只记录+提示，不拦（validate 兜底）。
+ * 顺序执行：先命中 privacy（真红线）才拦；self-modify 只拦【高危规则区】，且凭放行记录。
  */
 const GUARDS = [
   {
@@ -92,16 +135,28 @@ const GUARDS = [
   },
   {
     id: 'self-modify',
-    // ② 自我修改门禁（软闸，不拦）：改规则/宪法/技能/自我记忆时记录一条提示并放行。
-    // 依据唯一：validate（node scripts/mind-validate.mjs）才是这道闸；guard 不重复硬拦，
-    // 避免"过了 validate 仍被拦"的双闸矛盾，也避免把正常固件维护当红线压死生长。
+    // ② 自我修改门禁（高危区真拦 / 技能自身记忆提示不拦）。
+    // 只有【高危规则/宪法/门禁】── mind\L0/L1 与 README.md ──才是"改规则"级，需面板放行；
+    // 而技能(L2) / 自身记忆(mind-private\L1) 属日常生长，只提示不拦（改它不改变系统行为）。
+    // 放行记录(approvals.json)：已在【路径前缀+op】approved → 放行；否则拦 + 写 pending 供面板裁决。
     check: (filePath, _content, ctx) => {
-      if (!inSelfModifyZone(filePath)) return undefined;
+      if (!inSelfModifyZone(filePath)) return undefined; // 非自我区（生长区/普通代码）→ 放行
+
+      // 高危规则区：必须凭放行记录，否则拦截。
+      if (inHighRiskyZone(filePath)) {
+        const op = 'edit'; // write/edit 统一按 edit 粒度（区分意义不大）
+        if (isApproved(filePath, op)) return undefined; // 已放行 → 放行
+        addApprovalPending(filePath, op); // 未放行 → 追加待裁决供面板
+        return `[mind-guard] 自我修改门禁（高危规则区）：改 ${filePath} 被拦——这是"改规则/宪法/门禁"，` +
+          `需要你先在「心智 → 动作放行」面板点「✓ 放行」。已生成一条待裁决，放行后重试即可。`;
+      }
+
+      // 技能/自身记忆：只提示，不拦（日常生长，validate 兜底）。
       ctx?.logger?.('dshome').warn(
-        `[mind-guard] 自我修改门禁（提示，不拦）：改"自我类"文件 ${filePath}。` +
+        `[mind-guard] 自我修改门禁（提示，不拦）：改"自我类"文件 ${filePath}（技能/自身记忆）。` +
         `确保已按 AGENTS §五 硬流程：用户放行 + 快照 + node scripts/mind-validate.mjs 通过。`
       );
-      return undefined; // 放行——validate 负责真实把关。
+      return undefined;
     }
   }
 ];

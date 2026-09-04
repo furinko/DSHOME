@@ -261,6 +261,52 @@ function rejectPending(file) {
   return { ok: true, movedTo: `TRASH/${path.basename(target)}` };
 }
 
+// ── 动作放行（action-approval）：自我类"高危"文件改动的放行记录 ─────────────
+// 被护栏（dshome-mind-guard）拦截的高危改动，会在此追加一条 pending 供面板裁决；
+// 玩家点"放行"→ status=approved（按路径前缀+op 粒度），护栏读到即放行；点"拒绝"→ denied。
+const approvalsFile = () => path.join(mindPrivateDir(), 'tasks', 'approvals.json');
+function readApprovals() {
+  try { return JSON.parse(fs.readFileSync(approvalsFile(), 'utf8')).items || []; }
+  catch { return []; }
+}
+function writeApprovals(items) {
+  fs.mkdirSync(path.join(mindPrivateDir(), 'tasks'), { recursive: true });
+  fs.writeFileSync(approvalsFile(), JSON.stringify({ items }, null, 2));
+  return items;
+}
+/** 护栏拦截时追加一条待裁决动作。返回该条 id。 */
+function addApprovalPending(pathName, op, reason) {
+  const items = readApprovals();
+  const id = 'ap-' + Date.now();
+  items.push({
+    id, kind: 'action', path: pathName, op,
+    reason: reason || '', status: 'pending',
+    requestedAt: new Date().toISOString(), decidedAt: null, decidedBy: '',
+  });
+  writeApprovals(items);
+  return id;
+}
+/** 裁决：pending → approved / denied。返回更新后的条目或 {ok:false}。 */
+function decideApproval(id, decision) {
+  const items = readApprovals();
+  const it = items.find((x) => x.id === id);
+  if (!it) return { ok: false, error: 'not-found' };
+  it.status = decision === 'approved' ? 'approved' : 'denied';
+  it.decidedAt = new Date().toISOString();
+  it.decidedBy = 'user';
+  writeApprovals(items);
+  return { ok: true, item: it };
+}
+/** 撤销一条已放行（回到 pending 或直接删）：撤销后护栏重新拦。 */
+function revokeApproval(id) {
+  const items = readApprovals();
+  const idx = items.findIndex((x) => x.id === id);
+  if (idx < 0) return { ok: false, error: 'not-found' };
+  items.splice(idx, 1);
+  writeApprovals(items);
+  return { ok: true, removed: id };
+}
+
 /** 整理候选扫描（L3/index 全部内容文件）。 */
 const CURATE_OVERSIZED = 20 * 1024;   // >20KB：建议蒸馏/拆分
 const CURATE_THIN = 400;              // <400B：合集文件过薄提示（单记忆文件除外）
@@ -598,6 +644,43 @@ function makeMindRoutes() {
         try {
           const body = await readJsonBody(req);
           const out = assignCurate(body?.file);
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    // ── 动作放行（action-approval）──────────────────────────────────────────
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/approvals`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try { json(res, 200, { ok: true, items: readApprovals() }); }
+        catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/approvals/decide`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = decideApproval(body?.id, body?.decision);
+          json(res, out.ok ? 200 : 404, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/approvals/revoke`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const out = revokeApproval(body?.id);
           json(res, out.ok ? 200 : 404, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
