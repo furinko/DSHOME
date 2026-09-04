@@ -64,5 +64,5 @@ L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read；L
 | Power.md | 功法 | Skill/Exp 使用教程 + 沉淀路径 + 收工闭环 |
 | Memory.md | 规则书 | L3 index/history/Project 归档规则 |
 | Dream.md | 灵感池 | 松散点子 + 整理提醒 |
-| Learn.md | 痕迹库 | 精炼教训（笨鱼鱼💢/好鱼鱼🐱，≤200字/条） |
+| Learn.md | 痕迹库 | 精炼教训（笨鱼鱼💢/好鱼鱼🤗，≤200字/条） |
 | Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 唯一权威源 + 意图→概念→权威源路由表 |

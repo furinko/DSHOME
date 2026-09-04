@@ -34,7 +34,7 @@
 |---|---|
 | **概念权威源**（todo/progress/suggestion/memory/skill 唯一挂号处） | `mind\L1\Concepts.md`——判断"某概念权威源/入口在哪"一律以它为准；本表其余行仅常用速查，勿重复定义 |
 | 跨会话记忆 / 偏好 / 教训 | 先 `GET /api/mind/search?q=关键词` **模糊召回**（bigram 相似 top6 + snippet），再 `mind-private\L3\index\<主题>\`（`mind\L1\Tree.md` 定位）grep 深读 |
-| 用户批评 / 表扬 | **立即**写 `mind-private\L1\Learn.md`（批评→「笨鱼鱼 💢」，表扬→「好鱼鱼 🐱」）；不靠"下次记住" |
+| 用户批评 / 表扬 | **立即**写 `mind-private\L1\Learn.md`（批评→「笨鱼鱼 💢」，表扬→「好鱼鱼 🤗」）；不靠"下次记住" |
 | 可复用流程 | `mind\L2\Skill\`（frontmatter 标准化，关键词触发加载；**能力积木总索引 `mind\L2\Skill\_index.md`**——盘点/组合我有哪些积木） |
 | 确定性内核（不可绕过的硬约束/门禁） | `mind\L1\Invariants.md`（🔴/🟡 不变式清单 + 门禁链——判断层不能违反） |
 | **完整行为纪律**（进化/治理/自治/会诊细则） | `mind\L1\Power.md` §九（常驻只读核心，细则按需去这） |
