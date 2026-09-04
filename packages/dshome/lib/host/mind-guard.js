@@ -16,7 +16,7 @@
 
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 /** Stable Cordis plugin name (cordis.patch.yml: name dshome/mind-guard). */
 export const name = 'dshome-mind-guard';
@@ -84,7 +84,10 @@ function readApprovals() {
   catch { return []; }
 }
 function writeApprovals(items) {
-  try { writeFileSync(approvalsFile(), JSON.stringify({ items }, null, 2)); } catch { /* 忽略 */ }
+  try {
+    mkdirSync(dirname(approvalsFile()), { recursive: true }); // mind-private\tasks\ 可能未初始化：先建目录再写，否则写入静默失败、放行/待裁决全丢
+    writeFileSync(approvalsFile(), JSON.stringify({ items }, null, 2));
+  } catch { /* 忽略 */ }
 }
 /** 是否已有"approved"的放行记录覆盖 目标路径+操作（一次性消费）。
  *  "每次都要问"：放行记录命中即删除，用完作废——下次改该文件需重新放行，不永久放行。

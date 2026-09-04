@@ -102,16 +102,51 @@ function saveState(patch) {
 }
 
 // ---- 后端生命周期 ----
+// 自有插件清单从 cordis.patch.yml 动态解析（v2，2026-09-05）：
+// 静态清单曾漏掉 mind 系插件（mind/mind-inject/mind-guard/mind-recall），
+// 崩溃源是 mind 插件时安全模式兜不住 → 现以 patch 文件为准，新增插件自动纳入。
+// 定位：profDir\node_modules\dshome\cordis.patch.yml（junction→packages\dshome）；
+// spec 未解析（纯 UI 客户端）时向上遍历查找；找不到才回退静态清单并告警。
+function ownPluginIdsFromPatch() {
+  const spec = resolveBackendSpec();
+  const candidates = [];
+  if (spec && spec.profDir) candidates.push(path.join(spec.profDir, 'node_modules', 'dshome', 'cordis.patch.yml'));
+  if (spec && spec.instDir) candidates.push(path.join(spec.instDir, 'packages', 'dshome', 'cordis.patch.yml'));
+  let dir = __dirname;
+  for (let i = 0; i < 6; i++) {
+    candidates.push(path.join(dir, 'cordis.patch.yml'));
+    candidates.push(path.join(dir, '..', 'cordis.patch.yml'));
+    dir = path.dirname(dir);
+  }
+  for (const f of candidates) {
+    try {
+      if (!fs.existsSync(f)) continue;
+      const text = fs.readFileSync(f, 'utf8');
+      const ids = [];
+      for (const line of text.split(/\r?\n/)) {
+        const m = /^\s*- id:\s*(dshome[\w-]+)\s*$/.exec(line.trim());
+        if (m && !ids.includes(m[1])) ids.push(m[1]);
+      }
+      if (ids.length) return { ids, from: f };
+    } catch { /* try next */ }
+  }
+  return null;
+}
 function safeOverlayContent() {
-  // 禁用全部自有插件（对应 dshome 包 cordis.patch.yml 的 7 行）
+  const parsed = ownPluginIdsFromPatch();
+  if (parsed) {
+    return [
+      '# DSHOME safe-mode overlay: disable every own plugin row (dynamic from cordis.patch.yml).',
+      ...parsed.ids.map((id) => `- id: ${id}\n  disabled: true`),
+      '',
+    ].join('\n');
+  }
+  // 回退：找不到 patch → 静态保底清单（最后一次同步 = 13 个自有插件），并告警
+  try { logLine({ safeOverlayFallback: 'cordis.patch.yml not found, using static list' }); } catch { /* ignore */ }
   const ids = [
-    'dshome-core',
-    'dshome-shell',
-    'dshome-theme',
-    'dshome-palette',
-    'dshome-notify',
-    'dshome-plugin-manager',
-    'dshome-desktop',
+    'dshome-core', 'dshome-shell', 'dshome-theme', 'dshome-palette', 'dshome-notify',
+    'dshome-plugin-manager', 'dshome-plugin-center', 'dshome-assistant-identity',
+    'dshome-mind', 'dshome-mind-inject', 'dshome-mind-guard', 'dshome-mind-recall', 'dshome-desktop',
   ];
   return [
     '# DSHOME safe-mode overlay: disable every own plugin row.',
