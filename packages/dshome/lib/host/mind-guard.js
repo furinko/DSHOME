@@ -164,7 +164,11 @@ const GUARDS = [
         const op = 'edit'; // write/edit 统一按 edit 粒度（区分意义不大）
         if (isApproved(filePath, op)) return undefined; // 已放行 → 放行
         addApprovalPending(filePath, op); // 未放行 → 追加待裁决供面板
-        return `[mind-guard] 自我修改门禁（高危规则区）：改 ${filePath} 被拦——这是"改规则/宪法/门禁"，` +
+        const p = normalizePath(filePath);
+        const label = p.includes('mind/L0/') ? '宪法/人格/纪律'
+          : /\/?(HUB|Wisdom|Memory|Power|Invariants|Design-Philosophy)\.md$/.test(p) ? '规则/宪法/门禁'
+          : '自我类文件';
+        return `[mind-guard] 自我修改门禁（高危规则区）：要改 ${label} ${p}，此改动会影响系统行为——` +
           `需要你先在「心智 → 动作放行」面板点「✓ 放行」。已生成一条待裁决，放行后重试即可。`;
       }
 
