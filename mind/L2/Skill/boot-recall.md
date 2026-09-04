@@ -6,13 +6,13 @@ author: 鱼鱼 (DSHOME)
 license: internal
 metadata:
   tags: [boot, recall, 召回, 上工, 记忆, 待办]
-  related: [mind-protect/mind-prime, scripts/mind-prime.mjs, mind-private/Project/DSHOME/project.md, mind-private/L1/Learn.md, mind-private/L3/index/user-rules/rules.md]
+  related: [scripts/mind-prime.mjs, mind-private/, mind/L1/Tree.md]
 contract:
   id: boot-recall
   triggers: [上工, 会话开始, 你想起来了, 有什么待办, 我忘了]
   inputs: [项目/任务关键词]
   outputs: [注入上下文（注入层 L0/HUB/Wisdom 决策规则摘要 + 进度+待办+相关 L3+教训+用户偏好）, 一次 refresh/update]
-  deps: [scripts/mind-prime.mjs, mind-private/Project/DSHOME/project.md, mind-private/L3/index]
+  deps: [scripts/mind-prime.mjs, mind-private/]
 ---
 
 # boot-recall — 上工自动召回（boot recall）
@@ -50,7 +50,7 @@ contract:
 
 - **L1**：`mind\L1\Power.md` §九（行为纪律）· `mind\L1\Tree.md`（索引）· `mind\L1\Invariants.md`（确定性内核）
 - **脚本**：`scripts/mind-prime.mjs`（回召）· `scripts/mind-validate.mjs`（自写校验/事务门禁验证一半）
-- **L3**：`mind-private\Project\DSHOME\project.md`（待办/进度）· `mind-private\L3\index\_index.md`（记忆总索引）· `mind-private\L1\Learn.md` · `mind-private\L3\index\user-rules\rules.md`
+- **L3**：`mind-private\`（本机私有：项目待办/进度、L3 记忆、教训、用户规则）——由 `scripts/mind-prime.mjs` 动态读取并容错（不存在则跳过）；具体文件清单不在此罗列（见 `mind\L1\Tree.md` 主题级索引）。
 
 ---
 _版本：1.0.0 | 2026-09-03 | 初版（上工自动召回积木化，机器版）_
