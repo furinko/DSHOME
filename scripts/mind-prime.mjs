@@ -88,6 +88,12 @@ function userRules() {
   if (!existsSync(f)) return '';
   return readFileSync(f, 'utf8').split('\n').filter((l) => /^##\s+\[/.test(l)).join('\n');
 }
+// ── 人设卡（本机私密，演绎唯一权威源）——上工召回自动装配，让鱼鱼开机即带人设 ──
+function persona() {
+  const f = join(PRIV, 'L0', '人设卡.md');
+  if (!existsSync(f)) return '';
+  return readFileSync(f, 'utf8').trim();
+}
 // ── 注：L0 注入摘要（核心纪律）由宿主插件 dshome-mind-inject 唯一维护，mind-prime 不再重复生成 ──
 // （旧版曾在这里重复一份 INJECT_LAYER 关键词抽取，与 mind-inject 漂移；已删——依据唯一）
 // 本脚本只装配：project 进度/待办 + L3 相关记忆 + Learn 最近教训 + user-rules。
@@ -121,11 +127,12 @@ const p = project();
 const memories = search(limit);
 const lrn = learn();
 const rules = userRules();
+const prs = persona();
 // 歧义检测只对显式传入的 query 生效（用户/调用方给的搜索词）；内部默认装配关键词不提示
 const ambiguous = hasExplicitQuery ? disambiguationFor(query) : [];
 
 if (asJson) {
-  console.log(JSON.stringify({ query, project: p, memories, learn: lrn, userRules: rules, ambiguous }, null, 2));
+  console.log(JSON.stringify({ query, project: p, memories, learn: lrn, userRules: rules, persona: prs, ambiguous }, null, 2));
   process.exit(0);
 }
 
@@ -143,4 +150,5 @@ if (p.todos.length) out.push(`\n■ project.md「下一步」待办（未勾选 
 if (memories.length) out.push(`\n■ L3 相关记忆（top${memories.length}）\n${memories.map((m) => `- [${m.score}] ${m.file} :: ${m.section}\n  ${m.snippet}`).join('\n')}`);
 if (lrn.length) out.push(`\n■ Learn 最近教训\n${lrn.join('\n')}`);
 if (rules) out.push(`\n■ user-rules（用户偏好/铁律）\n${rules}`);
+if (prs) out.push(`\n■ 人设卡（本机私密，演绎唯一权威源）\n${prs}`);
 console.log(out.join('\n'));
