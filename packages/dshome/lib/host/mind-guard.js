@@ -92,6 +92,10 @@ function writeApprovals(items) {
 /** 是否已有"approved"的放行记录覆盖 目标路径+操作（一次性消费）。
  *  "每次都要问"：放行记录命中即删除，用完作废——下次改该文件需重新放行，不永久放行。
  *  记录 path 以 "/" 结尾 → 视为目录前缀，覆盖其下所有同类文件；否则视为单文件，精确匹配。 */
+/** 批准通道权威值：仅「心智 → 动作放行」面板点✓时写入的 decidedBy。
+ *  agent 自批 / 绕过写入的批准，只要 decidedBy 非此值 → 视为伪造、不生效（L2 防"糊涂自批"）。 */
+const APPROVAL_CHANNEL_USER = 'user';
+
 function isApproved(filePath, op) {
   const p = normalizePath(filePath);
   const items = readApprovals();
@@ -101,7 +105,7 @@ function isApproved(filePath, op) {
   // 就会"拦得住但仍把放行记录留在文件里、永不消费"——本修复把候选对齐为绝对/相对都能匹配。
   const targets = [p, normalizePath(resolve(repoRoot(), p))];
   const matched = items.filter((a) =>
-    a.status === 'approved' && a.op === op &&
+    a.status === 'approved' && a.decidedBy === APPROVAL_CHANNEL_USER && a.op === op &&
     (() => { const rp = normalizePath(a.path); return rp.endsWith('/') ? targets.some((t) => t.startsWith(rp)) : targets.some((t) => t === rp); })()
   );
   if (matched.length) {
