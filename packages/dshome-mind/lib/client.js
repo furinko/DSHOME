@@ -27,11 +27,11 @@ window.__ModuleLoader__.load({
       ".dshome-mind-zoom{display:inline-flex;align-items:center;gap:2px}",
       ".dshome-mind-zoom button{width:22px;height:22px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2,#d3dcea);background:var(--dsw-alias-bg-base,#f7f9fc);color:var(--dsw-alias-label-secondary,#4a5a78);cursor:pointer;font-size:13px;line-height:1}",
       ".dshome-mind-zoom button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.08));color:var(--dsw-alias-brand-primary,#4D6BFE)}",
-      ".dshome-mind-main{flex:1;min-height:0;display:flex;overflow:hidden;align-items:stretch}",
+      ".dshome-mind-main{flex:1;min-height:0;display:flex;overflow:hidden;align-items:stretch;position:relative}",
       ".dshome-mind-graph{flex:1 1 0;min-width:0;overflow:auto;background:var(--dsw-alias-bg-layer-1,#fbfcfe);position:relative}",
       ".dshome-mind-graph svg{display:block}",
-      ".dshome-mind-detail{flex:0 0 350px;width:350px;min-height:0;align-self:stretch;overflow-y:auto;overflow-x:hidden;border-left:1px solid var(--dsw-alias-border-l1,#e3e9f3);padding:10px 14px 18px;background:var(--dsw-alias-bg-layer-1,#fbfcfe);box-sizing:border-box}",
-      ".dshome-mind-detail-head{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;margin-bottom:8px;word-break:break-all}",
+      ".dshome-mind-detail{position:absolute;top:12px;right:12px;bottom:12px;width:380px;max-width:min(380px,60%);overflow-y:auto;overflow-x:hidden;border:1px solid var(--dsw-alias-border-l1,#e3e9f3);border-radius:12px;padding:12px 16px 18px;background:var(--dsw-alias-bg-layer-1,#fbfcfe);box-sizing:border-box;box-shadow:0 6px 24px rgba(0,0,0,.14);z-index:20}",
+      ".dshome-mind-detail-head{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;word-break:break-all;position:sticky;top:-12px;z-index:2;background:var(--dsw-alias-bg-layer-1,#fbfcfe);padding:12px 16px 8px;margin:0 -16px 8px}",
       ".dshome-mind-detail-close{margin-left:auto;border:none;background:none;color:var(--dsw-alias-label-tertiary,#6b7a99);cursor:pointer;font-size:15px;padding:2px 6px;border-radius:6px}",
       ".dshome-mind-detail-close:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.08))}",
       ".dshome-mind-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}",
@@ -123,6 +123,7 @@ window.__ModuleLoader__.load({
     function openDetail(zone, rel) {
       var panel = document.querySelector(".dshome-mind-detail");
       if (!panel) return;
+      panel.style.display = "";
       panel.innerHTML = "";
       panel.appendChild(el("div", "dshome-mind-empty", "读取中…"));
       fetch("/api/mind/read?zone=" + zone + "&rel=" + encodeURIComponent(rel))
@@ -136,12 +137,7 @@ window.__ModuleLoader__.load({
           head.appendChild(tag);
           head.appendChild(document.createTextNode(d.rel));
           var close = el("button", "dshome-mind-detail-close", "✕");
-          close.addEventListener("click", function () {
-            panel.innerHTML = "";
-            panel.appendChild(el("div", "dshome-mind-empty", "点击图谱节点查看内容"));
-            var sel = document.querySelectorAll(".dshome-mind-graph-node.sel");
-            for (var i = 0; i < sel.length; i++) sel[i].classList.remove("sel");
-          });
+          close.addEventListener("click", closeDetail);
           head.appendChild(close);
           panel.appendChild(head);
           var meta = parseFrontmatter(d.content);
@@ -160,6 +156,14 @@ window.__ModuleLoader__.load({
           panel.innerHTML = "";
           panel.appendChild(el("div", "dshome-mind-empty", "⚠️ 读取失败: " + e));
         });
+    }
+
+    /** 关闭详情浮层 + 取消选中。供浮层关闭按钮与"点图谱空白"共用。 */
+    function closeDetail() {
+      var panel = document.querySelector(".dshome-mind-detail");
+      if (panel) panel.style.display = "none";
+      var sel = document.querySelectorAll(".dshome-mind-graph-node.sel");
+      for (var i = 0; i < sel.length; i++) sel[i].classList.remove("sel");
     }
 
     // ── 治理视图：待放行 / 剪枝候选 ───────────────────────────────────────────
@@ -732,6 +736,7 @@ window.__ModuleLoader__.load({
         g.appendChild(t);
         g.appendChild(svgEl("title", null)).textContent = (priv ? "🔒 " : "") + n.rel;
         g.addEventListener("click", function () {
+          if (state.panMoved) return; // 拖拽平移后不应算"点击节点"
           var sel = svg.querySelectorAll("g.sel");
           for (var i = 0; i < sel.length; i++) sel[i].classList.remove("sel");
           g.classList.add("sel");
@@ -875,7 +880,7 @@ window.__ModuleLoader__.load({
       var main = el("div", "dshome-mind-main");
       var graphWrap = el("div", "dshome-mind-graph");
       var detail = el("div", "dshome-mind-detail");
-      detail.appendChild(el("div", "dshome-mind-empty", "点击图谱节点查看内容"));
+      detail.style.display = "none";
       var govEl = el("div", "dshome-mind-gov");
       govEl.style.display = "none";
       main.appendChild(graphWrap);
@@ -890,7 +895,7 @@ window.__ModuleLoader__.load({
         Object.keys(btns).forEach(function (k) { btns[k].className = k === mode ? "on" : ""; });
         var isGov = mode === "approval" || mode === "curate" || mode === "todos";
         graphWrap.style.display = isGov ? "none" : "";
-        detail.style.display = isGov ? "none" : "";
+        detail.style.display = "none";
         govEl.style.display = isGov ? "" : "none";
         legend.style.display = mode === "graph" ? "" : "none";
         zoom.style.display = mode === "graph" ? "" : "none";
@@ -910,29 +915,43 @@ window.__ModuleLoader__.load({
         btns[k].addEventListener("click", function () { showView(k); });
       });
 
-      // 拖拽平移画布（空白/层带拖动；节点上留给点击）
+      // 拖拽平移画布：节点上也可拖（拖到阈值才算平移），非拖拽的点击归"节点点击/空白关闭"
       var pan = null;
       graphWrap.addEventListener("pointerdown", function (e) {
         if (e.button !== 0) return;
-        if (e.target.closest(".dshome-mind-graph-node")) return;
-        pan = { x: e.clientX, y: e.clientY, sl: graphWrap.scrollLeft, st: graphWrap.scrollTop };
-        graphWrap.classList.add("panning");
-        try { graphWrap.setPointerCapture(e.pointerId); } catch (err) {}
-        e.preventDefault();
+        state.panMoved = false;
+        pan = { x: e.clientX, y: e.clientY, sl: graphWrap.scrollLeft, st: graphWrap.scrollTop, captured: false, pid: e.pointerId };
+        // 不 preventDefault、不 capture：先让"点击"有机会；拖过阈值才进入平移
       });
       graphWrap.addEventListener("pointermove", function (e) {
         if (!pan) return;
-        graphWrap.scrollLeft = pan.sl - (e.clientX - pan.x);
-        graphWrap.scrollTop = pan.st - (e.clientY - pan.y);
+        var dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          state.panMoved = true;
+          if (!pan.captured) {
+            pan.captured = true;
+            graphWrap.classList.add("panning");
+            try { graphWrap.setPointerCapture(pan.pid); } catch (err) {}
+            try { e.preventDefault(); } catch (err) {}
+          }
+          graphWrap.scrollLeft = pan.sl - dx;
+          graphWrap.scrollTop = pan.st - dy;
+        }
       });
       function endPan(e) {
         if (!pan) return;
+        if (pan.captured) { try { graphWrap.releasePointerCapture(pan.pid); } catch (err) {} }
         pan = null;
         graphWrap.classList.remove("panning");
-        try { graphWrap.releasePointerCapture(e.pointerId); } catch (err) {}
       }
       graphWrap.addEventListener("pointerup", endPan);
       graphWrap.addEventListener("pointercancel", endPan);
+      // 点图谱空白 → 关闭详情浮层（拖拽平移后不算点击；点节点交给节点自身 click）
+      graphWrap.addEventListener("click", function (e) {
+        if (state.panMoved) return;
+        if (e.target.closest(".dshome-mind-graph-node")) return;
+        closeDetail();
+      });
 
       zIn.addEventListener("click", function () { zoomSvg(1.15); });
       zOut.addEventListener("click", function () { zoomSvg(1 / 1.15); });
