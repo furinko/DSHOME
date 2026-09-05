@@ -28,8 +28,7 @@
     <div class="logo">DSHOME</div>
     <h1>后端未连接</h1>
     <p>DSH 服务没有在 <span class="url" id="url"></span> 上运行</p>
-    <p>请先用 <code>dsh --profile dshome</code> 启动后端；<br />后端恢复后窗口会自动重连。</p>
-    <p class="hint">后端由 DSHOME 壳守护：异常退出会自动重启并重连。<br />「重新连接」立即触发一次探活，不用等轮询。</p>
+    <p class="hint">后端由 DSHOME 壳守护：异常退出会自动重启并重连。<br />点击「重新连接」可立即探活并拉起后端，不用等轮询。</p>
     <button id="retry">重新连接</button>
   </div>
   <script>
