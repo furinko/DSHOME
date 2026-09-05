@@ -267,6 +267,62 @@ if (reg.ok) {
   }
 }
 
+// ⑥c Concepts 接口 ↔ 后端路由 对应（K3 ② 补半：改表不改后端=纸面漂移；后端删接口未同步表=实现漂移）
+function backendMindRoutes() {
+  const p = join(repoRoot, 'packages', 'dshome-mind', 'lib', 'index.cjs');
+  if (!existsSync(p)) return { ok: false, set: new Set() };
+  const src = readFileSync(p, 'utf8');
+  const set = new Set();
+  // 路由两种写法：字面量 path: '/api/mind/...'  或 模板 path: `${API_PREFIX}/...`（API_PREFIX=/api/mind）
+  for (const m of src.matchAll(/path:\s*'(\/api\/mind\/[^']+)'/g)) set.add(m[1]);
+  for (const m of src.matchAll(/path:\s*`\$\{API_PREFIX\}\/([^`]+)`/g)) set.add('/api/mind/' + m[1]);
+  return { ok: true, set };
+}
+function conceptInterfaces() {
+  const p = join(MIND, 'L1', 'Concepts.md');
+  if (!existsSync(p)) return [];
+  const src = readFileSync(p, 'utf8');
+  const out = new Set();
+  // 抽行内 /api/mind/<path>（去 query 尾）——主路径与后端 route 精确比对
+  for (const m of src.matchAll(/\/api\/mind\/[a-z][a-z-]*(?:\/[a-z][a-z-]*)*/g)) out.add(m[0]);
+  return [...out];
+}
+const bRoutes = backendMindRoutes();
+if (bRoutes.ok) {
+  for (const iface of conceptInterfaces()) {
+    if (!bRoutes.set.has(iface))
+      issues.push({ sev: 'warn', file: 'mind/L1/Concepts.md', msg: `(c) Concepts 接口「${iface}」在后端 index.cjs 路由中未找到——改表没改后端 / 后端接口已删未同步（路由表↔后端符号缺失）` });
+  }
+}
+
+// ⑥d L0 摘要纪律标签（mind-inject.js L0_SUMMARY）↔ L0 权威正文 出现性（K3 四.1 副本漂移，启发式 warn）
+//   诚实设计取舍：摘要用极简标签、权威正文是散述，纯 substring 会大量误报（违背本系统"不做模糊匹配/薄契约"）。
+//   故用宽松 token 命中：标签任一词元（≥2字符）出现在 SOUL/AGENTS/TOOL 任一即视为对应；全无才报「真漂移」。
+function l0SummaryLabels() {
+  const p = join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'mind-inject.js');
+  if (!existsSync(p)) return { ok: false, labels: [] };
+  const src = readFileSync(p, 'utf8');
+  const m = /const L0_SUMMARY = `([\s\S]*?)`;/.exec(src);
+  if (!m) return { ok: false, labels: [] };
+  const content = m[1].replace(/\r\n/g, '\n');
+  const labels = [];
+  for (const ln of content.split('\n')) {
+    const mm = /^([^\s：:【】]{2,16})[：:]/.exec(ln.trim());
+    if (mm) labels.push(mm[1]);
+  }
+  return { ok: true, labels };
+}
+const l0Body = ['SOUL.md', 'AGENTS.md', 'TOOL.md'].map((f) => existsSync(join(MIND, 'L0', f)) ? readFileSync(join(MIND, 'L0', f), 'utf8') : '').join('\n');
+const ls = l0SummaryLabels();
+if (ls.ok) {
+  const tok = (s) => (s.match(/[\u4e00-\u9fa5A-Za-z]{2,}/g) || []).filter((t) => t.length >= 2);
+  for (const label of ls.labels) {
+    const parts = tok(label);
+    if (parts.length && !parts.some((t) => l0Body.includes(t)))
+      issues.push({ sev: 'warn', file: 'mind/L0/AGENTS.md', msg: `L0 摘要纪律标签「${label}」在 SOUL/AGENTS/TOOL 中完全未出现——摘要副本可能漂移（摘要提到权威正文已无的纪律）` });
+  }
+}
+
 // ⑦ (c) AGENTS 双版本同步：权威版 mind\L0\AGENTS.md 与打包快照 build-stage\payload\AGENTS.md 全文一致
 //    （根版 E:\DSHOME\AGENTS.md 已于 2026-09-04 退役删除，权威版唯一 = mind\L0\AGENTS.md。
 //      原「根版 vs payload」基准的条件恒假，导致 (c) 从未真正执行；且旧判定用"反引号路径集合"近似，

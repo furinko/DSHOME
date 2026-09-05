@@ -116,7 +116,7 @@ function addApprovalPending(filePath, op, content) {
   const items = readApprovals();
   const p = normalizePath(filePath);
   const label = p.includes('mind/L0/') ? '宪法/人格/纪律'
-    : /\/?(HUB|Wisdom|Memory|Power|Invariants|Design-Philosophy)\.md$/.test(p) ? '规则/宪法/门禁'
+    : /\/?(HUB|Wisdom|Memory|Power|Invariants|Design-Philosophy|Ritual|Concepts)\.md$/.test(p) ? '规则/宪法/门禁'
     : '自我类文件';
   const snippet = String(content || '').replace(/\s+/g, ' ').trim().slice(0, 48);
   const what = snippet ? `；改动内容≈「${snippet}${content && String(content).length > 48 ? '…' : ''}」` : '';
@@ -130,13 +130,15 @@ function addApprovalPending(filePath, op, content) {
   writeApprovals(items);
 }
 /**
- * 高危规则/宪法/门禁区（2 方案：只有这里才真拦，需面板放行）。
+ * 高危规则/宪法/门禁区（只有这里才真拦，需面板放行）。
  * 判据 = 改这个文件是否【改变鱼鱼的行为逻辑】。
- * 只有"规则/宪法/门禁"类才算高危；README/Tree/Concepts/Dream/Learn 是文档/索引/记录，更新是生长 → 放行。
  * 高危名单（精确到文件/模式）：
  *   mind\L0\SOUL.md / AGENTS.md / TOOL.md        （人格/纪律/工具规则）
  *   mind\L1\HUB.md / Wisdom.md / Memory.md / Power.md / Invariants.md / Design-Philosophy.md
- * 放行（文档/索引/记录，非行为规则）：README.md / Tree.md / Concepts.md / Dream.md / Learn.md
+ *   mind\L1\Ritual.md                             （行为规程·元进化·收工·自省——AGENTS 声明的行为唯一权威）
+ *   mind\L1\Concepts.md                           （概念注册表·意图路由——确定性枢纽，非文档）
+ * 放行（文档/索引/记录，非行为规则）：README.md / Tree.md / Dream.md / Learn.md
+ *   （Concepts 2026-09-05 升为高危：改它=改全局落点语义，且声明有后端对应——须面板裁决防纸面/实现漂移）
  */
 function inHighRiskyZone(filePath) {
   const p = normalizePath(filePath);
@@ -145,6 +147,7 @@ function inHighRiskyZone(filePath) {
     '/mind/L0/SOUL.md', '/mind/L0/AGENTS.md', '/mind/L0/TOOL.md',
     '/mind/L1/HUB.md', '/mind/L1/Wisdom.md', '/mind/L1/Memory.md',
     '/mind/L1/Power.md', '/mind/L1/Invariants.md', '/mind/L1/Design-Philosophy.md',
+    '/mind/L1/Ritual.md', '/mind/L1/Concepts.md',
   ];
   return candidates.some((abs) => rules.some((r) => abs.includes(r)));
 }
@@ -168,8 +171,8 @@ const GUARDS = [
   {
     id: 'self-modify',
     // ② 自我修改门禁（高危规则区真拦 / 技能·自身记忆提示不拦 / 文档索引直接放行）。
-    // 高危=改"行为规则/宪法/门禁"（HUB/Wisdom/Memory/Power/Invariants/Design-Philosophy + L0 纪律三件）→ 需面板放行；
-    // 技能(L2)/自身记忆(mind-private\L1) → 只提示不拦；README/Tree/Concepts/Dream/Learn(文档·索引·记录) → 直接放行。
+    // 高危=改"行为规则/宪法/门禁"（HUB/Wisdom/Memory/Power/Invariants/Design-Philosophy/Ritual/Concepts + L0 纪律三件）→ 需面板放行；
+    // 技能(L2)/自身记忆(mind-private\L1) → 只提示不拦；README/Tree/Dream/Learn(文档·索引·记录) → 直接放行。
     // 放行记录(approvals.json)：已在【路径前缀+op】approved → 放行；否则拦 + 写 pending 供面板裁决。
     check: (filePath, _content, ctx) => {
       if (!inSelfModifyZone(filePath)) return undefined; // 非自我区（生长区/普通代码）→ 放行
@@ -181,7 +184,7 @@ const GUARDS = [
         addApprovalPending(filePath, op, _content); // 未放行 → 追加待裁决（带改动内容摘要）供面板
         const p = normalizePath(filePath);
         const label = p.includes('mind/L0/') ? '宪法/人格/纪律'
-          : /\/?(HUB|Wisdom|Memory|Power|Invariants|Design-Philosophy)\.md$/.test(p) ? '规则/宪法/门禁'
+          : /\/?(HUB|Wisdom|Memory|Power|Invariants|Design-Philosophy|Ritual|Concepts)\.md$/.test(p) ? '规则/宪法/门禁'
           : '自我类文件';
         const sn = String(_content || '').replace(/\s+/g, ' ').trim().slice(0, 48);
         const what = sn ? `；改动内容≈「${sn}${_content && String(_content).length > 48 ? '…' : ''}」` : '';
@@ -190,8 +193,8 @@ const GUARDS = [
       }
 
       // 技能(L2)/自身记忆(mind-private\L1)：只提示，不拦（日常生长，validate 兜底）。
-      // 文档/索引/记录（README/Tree/Concepts/Dream/Learn 模板）→ 命中上方 inSelfModifyZone 但非高危，
-      // 属日常维护，直接放行（不打扰）。
+      // 文档/索引/记录（README/Tree/Dream/Learn 模板）→ 命中上方 inSelfModifyZone 但非高危，
+      // 属日常维护，直接放行（不打扰）。Concepts 已升为高危(确定性枢纽)，不在此放行列。
       if (/\/(L2)\//.test(normalizePath(filePath)) || /\/mind-private\/L1\//.test(normalizePath(filePath))) {
         ctx?.logger?.('dshome').warn(
           `[mind-guard] 自我修改门禁（提示，不拦）：改"自我类"文件 ${filePath}（技能/自身记忆）。` +
