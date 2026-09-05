@@ -325,29 +325,43 @@ window.__ModuleLoader__.load({
       return rowShell("助手头像", react_jsx_runtime.jsx(react.Fragment, { children: [preview, grid, actions] }));
     }
 
-    /** 人设卡编辑：读/写 mind-private\L0\人设卡.md（/api/mind/persona GET+POST），设置里直接填改。 */
+    /** 人设卡编辑：读/写 mind-private\L0\人设卡.md（/api/mind/persona GET+POST）。
+     * 防误改：默认只读，点「编辑人设卡」才进入编辑；保存前二次确认；取消恢复原内容。 */
     function PersonaEditor() {
-      var state = react.useState("");
-      var content = state[0];
-      var setContent = state[1];
+      var contentState = react.useState("");
+      var content = contentState[0];
+      var setContent = contentState[1];
+      var originalState = react.useState(""); // 基线（加载/保存成功时内容），用于 dirty 判断与取消恢复
+      var original = originalState[0];
+      var setOriginal = originalState[1];
+      var editState = react.useState(false); // 是否处于编辑态
+      var editing = editState[0];
+      var setEditing = editState[1];
       var statusState = react.useState("idle"); // idle|loading|saving|saved|error
       var status = statusState[0];
       var setStatus = statusState[1];
 
       react.useEffect(function () {
         fetch("/api/mind/persona").then(function (r) { return r.json(); }).then(function (d) {
-          setContent(d && d.ok ? (d.content || "") : "");
+          var c = d && d.ok ? (d.content || "") : "";
+          setContent(c); setOriginal(c);
         }).catch(function () { setStatus("error"); });
       }, []);
 
+      var beginEdit = function () { setEditing(true); setStatus("idle"); };
+      var cancel = function () { setContent(original); setEditing(false); setStatus("idle"); };
+
       var save = function () {
+        if (content === original) { setEditing(false); return; } // 无改动，直接退出编辑
+        if (!window.confirm("确定保存对「人设卡」的修改？")) return; // 二次确认
         setStatus("saving");
         fetch("/api/mind/persona", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ content: content || "" }),
-        }).then(function (r) { return r.json(); }).then(function () { setStatus("saved"); })
-        .catch(function () { setStatus("error"); });
+        }).then(function (r) { return r.json(); }).then(function () {
+          setOriginal(content); setEditing(false); setStatus("saved");
+        }).catch(function () { setStatus("error"); });
       };
 
       return rowShell("人设卡（性格/口癖，本机私密）", react_jsx_runtime.jsx("div", {
@@ -355,18 +369,26 @@ window.__ModuleLoader__.load({
         children: [
           react_jsx_runtime.jsx("textarea", {
             value: content,
-            onChange: function (e) { setContent(e.target.value); setStatus("idle"); },
+            onChange: function (e) { if (!editing) return; setContent(e.target.value); setStatus("idle"); },
+            readOnly: !editing,
             placeholder: "在这写下助手的专属性格、口癖、演绎方式……（不填=干净通用助手）",
             rows: 7,
-            style: { boxSizing: "border-box", width: "100%", padding: "8px 12px", borderRadius: 9, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-base,#f7f9fc)", color: "var(--dsw-alias-label-primary)", fontSize: 13, lineHeight: "20px", outline: "none", resize: "vertical", fontFamily: "inherit" },
+            style: Object.assign({}, {
+              boxSizing: "border-box", width: "100%", padding: "8px 12px", borderRadius: 9, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-base,#f7f9fc)", color: "var(--dsw-alias-label-primary)", fontSize: 13, lineHeight: "20px", outline: "none", resize: "vertical", fontFamily: "inherit",
+            }, editing ? {} : { cursor: "default", opacity: 0.85 }),
           }),
           react_jsx_runtime.jsx("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
-            react_jsx_runtime.jsx("button", { type: "button", onClick: save, style: { border: "1px solid var(--dsw-alias-brand-primary,#4D6BFE)", borderRadius: 9, padding: "6px 14px", fontSize: 13, cursor: "pointer", color: "var(--dsw-alias-label-primary)", background: "var(--dsw-alias-bg-base,#f7f9fc)" }, children: "保存人设卡" }),
+            editing
+              ? react_jsx_runtime.jsx("button", { type: "button", onClick: save, style: { border: "1px solid var(--dsw-alias-brand-primary,#4D6BFE)", borderRadius: 9, padding: "6px 14px", fontSize: 13, cursor: "pointer", color: "var(--dsw-alias-label-primary)", background: "var(--dsw-alias-bg-base,#f7f9fc)" }, children: "💾 保存修改" })
+              : react_jsx_runtime.jsx("button", { type: "button", onClick: beginEdit, style: { border: "1px solid var(--dsw-alias-brand-primary,#4D6BFE)", borderRadius: 9, padding: "6px 14px", fontSize: 13, cursor: "pointer", color: "var(--dsw-alias-label-primary)", background: "var(--dsw-alias-bg-base,#f7f9fc)" }, children: "✏️ 编辑人设卡" }),
+            editing
+              ? react_jsx_runtime.jsx("button", { type: "button", onClick: cancel, style: { border: "1px solid var(--dsw-alias-border-l2)", borderRadius: 9, padding: "6px 14px", fontSize: 13, cursor: "pointer", color: "var(--dsw-alias-label-secondary,#4a5a78)", background: "var(--dsw-alias-bg-base,#f7f9fc)" }, children: "取消" })
+              : null,
             status === "saved" ? react_jsx_runtime.jsx("span", { style: { fontSize: 12, color: "var(--dsw-alias-state-success-primary,#2fbf8f)" }, children: "已保存" }) : null,
             status === "saving" ? react_jsx_runtime.jsx("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary,#4a5a78)" }, children: "保存中…" }) : null,
             status === "error" ? react_jsx_runtime.jsx("span", { style: { fontSize: 12, color: "var(--dsw-alias-state-error-primary,#e5534b)" }, children: "加载/保存失败" }) : null,
           ] }),
-          react_jsx_runtime.jsx("span", { style: { fontSize: 11.5, color: "var(--dsw-alias-label-secondary,#4a5a78)", lineHeight: "17px" }, children: "本机私密（mind-private\\L0\\人设卡.md），永不推 GitHub。设了按它演；清空=干净通用助手。" }),
+          react_jsx_runtime.jsx("span", { style: { fontSize: 11.5, color: "var(--dsw-alias-label-secondary,#4a5a78)", lineHeight: "17px" }, children: "本机私密（mind-private\\L0\\人设卡.md），永不推 GitHub。设了按它演；清空=干净通用助手。默认只读，点「编辑人设卡」、保存前二次确认。" }),
         ],
       }));
     }
