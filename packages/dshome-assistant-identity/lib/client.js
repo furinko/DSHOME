@@ -325,6 +325,17 @@ window.__ModuleLoader__.load({
       return rowShell("助手头像", react_jsx_runtime.jsx(react.Fragment, { children: [preview, grid, actions] }));
     }
 
+    /** 人设卡提示行：告诉用户可设"性格/口癖"人设卡（本机私密，可选；无感提示，不强制）。 */
+    function PersonaHint() {
+      return rowShell("性格 / 人设卡（可选）", react_jsx_runtime.jsx("div", {
+        style: { display: "flex", flexDirection: "column", gap: 6, fontSize: 12.5, color: "var(--dsw-alias-label-secondary,#4a5a78)", lineHeight: "20px" },
+        children: [
+          react_jsx_runtime.jsx("span", { style: { fontSize: 13.5, color: "var(--dsw-alias-label-primary,#1f2a44)" }, children: "想让鱼鱼有专属性格、口癖、演绎方式？" }),
+          react_jsx_runtime.jsx("span", { children: "→ 在本机私密区建一张『人设卡』（mind-private\\L0\\人设卡.md）。设了它就会按你的设定演；不设就是干净通用智能体。" }),
+        ],
+      }));
+    }
+
     // ── 插件体 ─────────────────────────────────────────────────────────────
     var inject = ["slots"];
     function apply(ctx) {
@@ -345,6 +356,13 @@ window.__ModuleLoader__.load({
             id: "dshome-assistant-identity-avatar",
             order: 41,
           }, AvatarRow);
+        });
+        ctx.slots.inject("settings.general.item", function () {
+          return ctx.slots.register({
+            name: "settings.general.item",
+            id: "dshome-assistant-identity-persona",
+            order: 42,
+          }, PersonaHint);
         });
       } catch (e) { console.warn("dshome-assistant-identity: settings rows failed", e); }
     }

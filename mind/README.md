@@ -22,11 +22,12 @@
 注入层：L0 三文件 + L1/HUB ｜ 强制层：Tree/Power/Memory/Learn/Invariants ｜ 查询层：其余 L1 参考 + L2/L3/Project 按需
 ```
 
-## 三、双区知识基座
+## 三、怎么用私密区（本机，一句话）
 
-- `mind\`（本目录）：出厂固件，GitHub 可推送
-- `mind-private\`（同级目录，.gitignore）：本机运行时自进化（真实记忆/项目/Learn 条目/个性化覆盖）
-- **同名文件私有区优先**：加载时规则从 mind\ 读，记忆和项目从 mind-private\ 读
+- **要记关于你/本机的事、存偏好、建人设卡** → 放 `mind-private\`（本机，gitignore 永不推）。
+- **要人设演绎** → 在 `mind-private\L0\` 建你的**人设卡**（不建就是干净通用智能体）。
+- 出厂 `mind\` 是通用逻辑，**别把私密写这**（会推出去）。
+- **用就是了，不用先懂双区架构**——真要存私密/加人设时，Assistant/护栏会指点你放哪。
 
 ## 四、文件格式规范（frontmatter）
 
