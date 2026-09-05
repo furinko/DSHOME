@@ -15,7 +15,7 @@ window.__ModuleLoader__.load({
 
     // ── 样式（DSHOME 品牌 + 图谱视觉）────────────────────────────────────────
     var STYLE = [
-      ".dshome-mind-root{flex:1;width:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;font-size:13px;color:var(--dsw-alias-label-primary,#1a2233)}",
+      ".dshome-mind-root{flex:1;width:100%;min-height:0;max-height:calc(100vh - 220px);display:flex;flex-direction:column;overflow:hidden;font-size:13px;color:var(--dsw-alias-label-primary,#1a2233)}",
       ".dshome-mind-header{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#e3e9f3);flex:none}",
       ".dshome-mind-title{font-size:14px;font-weight:700;letter-spacing:.2px;display:inline-flex;align-items:center;gap:6px}",
       ".dshome-mind-stat{font-size:11.5px;color:var(--dsw-alias-label-tertiary,#6b7a99);margin-left:auto;white-space:nowrap}",
@@ -177,7 +177,7 @@ window.__ModuleLoader__.load({
     }
     function renderApproval(govEl, reload) {
       govEl.innerHTML = "";
-      govEl.appendChild(el("div", "dshome-mind-gov-head", "🛡 放行 — 自我类「高危规则/宪法/门禁」改动，你放行后才生效（护栏真拦，凭此记录）"));
+      govEl.appendChild(el("div", "dshome-mind-gov-head", "🔓 放行 — 自我类「高危规则/宪法/门禁」改动，你放行后才生效（护栏真拦，凭此记录）"));
       fetch("/api/mind/approvals").then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) throw new Error(d.error);
         var items = d.items || [];
@@ -515,13 +515,13 @@ window.__ModuleLoader__.load({
 
     function renderCurate(govEl, reload) {
       govEl.innerHTML = "";
-      var head = el("div", "dshome-mind-gov-head", "🧹 剪枝建议 — 扫描 L3 的膨胀候选");
+      var head = el("div", "dshome-mind-gov-head", "✂️ 剪枝建议 — 扫描 L3 的膨胀候选");
       head.appendChild(el("div", "dshome-mind-gov-reason", "操作说明：归档=移入 history（可找回）；保留=以后不再提示；合并/蒸馏/改写等内容级处理→在对话里告诉鱼鱼来做"));
       govEl.appendChild(head);
       fetch("/api/mind/curate").then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) throw new Error(d.error);
         if (!d.items || !d.items.length) {
-          govEl.appendChild(el("div", "dshome-mind-empty", "🧹 L3 很干净，暂无剪枝候选"));
+          govEl.appendChild(el("div", "dshome-mind-empty", "✂️ L3 很干净，暂无剪枝候选"));
           return;
         }
         d.items.forEach(function (it) {
@@ -808,7 +808,7 @@ window.__ModuleLoader__.load({
       function apply() {
         var sb = findScroller();
         if (sb) {
-          host.style.height = Math.max(320, sb.clientHeight - 2) + "px";
+          host.style.height = Math.max(320, sb.clientHeight - 16) + "px";
           if (lastSb !== sb) { lastSb = sb; if (ro) { try { ro.observe(sb); } catch (err) {} } }
         } else {
           host.style.height = Math.max(380, (window.innerHeight || 900) - 260) + "px";
@@ -845,7 +845,7 @@ window.__ModuleLoader__.load({
       var toolbar = el("div", "dshome-mind-toolbar");
       var viewSw = el("div", "dshome-mind-vswitch");
       var btns = {};
-      [["graph", "📊 图谱"], ["approval", "🛡 放行"], ["curate", "🧹 剪枝"], ["todos", "📋 待办"]].forEach(function (v) {
+      [["graph", "📊 图谱"], ["approval", "🔓 放行"], ["curate", "✂️ 剪枝"], ["todos", "📋 待办"]].forEach(function (v) {
         var b = el("button", v[0] === "graph" ? "on" : "", v[1]);
         btns[v[0]] = b;
         viewSw.appendChild(b);
@@ -965,10 +965,10 @@ window.__ModuleLoader__.load({
       function refreshCounts() {
         fetch("/api/mind/approvals").then(function (r) { return r.json(); }).then(function (d) {
           var pcount = d.ok && d.items ? d.items.filter(function (x) { return x.status === "pending"; }).length : 0;
-          btns.approval.textContent = "🛡 放行" + (pcount > 0 ? " (" + pcount + ")" : "");
+          btns.approval.textContent = "🔓 放行" + (pcount > 0 ? " (" + pcount + ")" : "");
         }).catch(function () {});
         fetch("/api/mind/curate").then(function (r) { return r.json(); }).then(function (d) {
-          btns.curate.textContent = "🧹 剪枝" + (d.ok && d.items && d.items.length ? " (" + d.items.length + ")" : "");
+          btns.curate.textContent = "✂️ 剪枝" + (d.ok && d.items && d.items.length ? " (" + d.items.length + ")" : "");
         }).catch(function () {});
       }
       refreshCounts();
