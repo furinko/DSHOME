@@ -350,13 +350,13 @@ window.__ModuleLoader__.load({
         .catch(function () { setStatus("error"); });
       };
 
-      return rowShell("人设卡（本机私密 · 鱼鱼的专属性格/口癖）", react_jsx_runtime.jsx("div", {
+      return rowShell("人设卡（性格/口癖，本机私密）", react_jsx_runtime.jsx("div", {
         style: { display: "flex", flexDirection: "column", gap: 8 },
         children: [
           react_jsx_runtime.jsx("textarea", {
             value: content,
             onChange: function (e) { setContent(e.target.value); setStatus("idle"); },
-            placeholder: "在这写下鱼鱼的专属性格、口癖、演绎方式……（写给本机，永不推 GitHub；不填=干净通用智能体）",
+            placeholder: "在这写下助手的专属性格、口癖、演绎方式……（不填=干净通用助手）",
             rows: 7,
             style: { boxSizing: "border-box", width: "100%", padding: "8px 12px", borderRadius: 9, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-base,#f7f9fc)", color: "var(--dsw-alias-label-primary)", fontSize: 13, lineHeight: "20px", outline: "none", resize: "vertical", fontFamily: "inherit" },
           }),
@@ -366,7 +366,7 @@ window.__ModuleLoader__.load({
             status === "saving" ? react_jsx_runtime.jsx("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary,#4a5a78)" }, children: "保存中…" }) : null,
             status === "error" ? react_jsx_runtime.jsx("span", { style: { fontSize: 12, color: "var(--dsw-alias-state-error-primary,#e5534b)" }, children: "加载/保存失败" }) : null,
           ] }),
-          react_jsx_runtime.jsx("span", { style: { fontSize: 11.5, color: "var(--dsw-alias-label-secondary,#4a5a78)", lineHeight: "17px" }, children: "本机私密（mind-private\\L0\\人设卡.md），永不推 GitHub。设了鱼鱼按它演；清空=干净通用智能体。" }),
+          react_jsx_runtime.jsx("span", { style: { fontSize: 11.5, color: "var(--dsw-alias-label-secondary,#4a5a78)", lineHeight: "17px" }, children: "本机私密（mind-private\\L0\\人设卡.md），永不推 GitHub。设了按它演；清空=干净通用助手。" }),
         ],
       }));
     }
