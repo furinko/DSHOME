@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cron.cjs');
 // L3 检索共享库（§十 权威排序单一实现——F3：index.cjs 与 mind-prime 共用 tokenize/jaccard/fmValue/confidenceRank）
-const { tokenize, jaccard, fmValue, confidenceRank } = require('../../../scripts/mind-search-lib.cjs');
+const { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files } = require('../../../scripts/mind-search-lib.cjs');
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
@@ -421,42 +421,10 @@ function dupCheck(topic, content) {
   return hits.slice(0, 5);
 }
 
-/** 记忆模糊检索：扫 mind-private/L3/index 全库，bigram 相似度召回 top-N（附 snippet）。§十 可信度取自共享库。 */
+/** 记忆模糊检索：扫 mind-private/L3/index 全库，用共享 searchL3（单一真源——F3：index.cjs 不再内联重复循环）。 */
 function searchMind(query, limit = 6) {
-  const files = [];
-  walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
-  const q = tokenize(query);
-  const hits = [];
-  for (const f of files) {
-    let content = '';
-    try { content = fs.readFileSync(f.full, 'utf8'); } catch { continue; }
-    const rel = f.rel.replace(/^L3\/index\//, '');
-    const sections = content.replace(/^---\n[\s\S]*?\n---\n?/, '').split(/\n(?=## )/).map((s) => s.trim()).filter(Boolean);
-    let best = null;
-    for (const sec of sections) {
-      const sc = jaccard(q, tokenize(sec));
-      if (!best || sc > best.score) best = { score: sc, sec };
-    }
-    if (best && best.score >= 0.03) {
-      const conf = confidenceRank(content);
-      const scope = (fmValue(content, 'scope') || 'project').toLowerCase();
-      const importance = Number(fmValue(content, 'importance')) || 2;
-      // §十 排序：可信度(A/B/C) 优先级最高；同级内 scope（user>self>project）> importance > score
-      const scopeRank = scope === 'user' ? 3 : scope === 'self' ? 2 : 1;
-      hits.push({
-        score: Math.round(best.score * 100),
-        conf,
-        scopeRank,
-        importance,
-        sortKey: conf * 1000 + scopeRank * 100 + importance * 10 + best.score,
-        file: rel,
-        section: ((best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),
-        snippet: best.sec.replace(/\s+/g, ' ').slice(0, 160),
-      });
-    }
-  }
-  hits.sort((a, b) => b.sortKey - a.sortKey);
-  return hits.slice(0, limit);
+  const files = listL3Files(path.join(mindPrivateDir(), 'L3', 'index'));
+  return searchL3(query, files, limit);
 }
 
 // ── 待办（project.md「下一步」区 `- [ ]` 行）───────────────────────────────

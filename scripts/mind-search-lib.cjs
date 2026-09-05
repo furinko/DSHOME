@@ -11,6 +11,9 @@
 // 本库只做"检索"，不含 fs 遍历（目录来源由调用方传入，避免双份 walk 差异）。
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 /** 词/二元组 tokenize（CJK bigram + ascii 词），与旧实现逐行一致。 */
 function tokenize(text) {
   const s = String(text).toLowerCase();
@@ -92,4 +95,28 @@ function searchL3(query, files, limit = 6, opts = {}) {
   return hits.slice(0, limit);
 }
 
-module.exports = { tokenize, jaccard, fmValue, confidenceRank, searchL3 };
+/**
+ * 遍历 L3/index 下的记忆 .md 文件（同 index.cjs walkContentMd 的过滤：仅 .md、排除 README/_index/.gitkeep）。
+ * @param {string} rootDir 如 <root>/mind-private/L3/index
+ * @returns {Array<{full:string, rel:string}>} rel 相对 rootDir（无前缀），供 searchL3 使用。
+ */
+function listL3Files(rootDir) {
+  const out = [];
+  (function walk(dir, rel) {
+    let es; try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    es.sort((a, b) => a.name.localeCompare(b.name));
+    for (const e of es) {
+      if (e.name.startsWith('.')) continue;
+      const full = path.join(dir, e.name);
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      try {
+        if (e.isDirectory()) walk(full, r);
+        else if (e.isFile() && e.name.endsWith('.md')
+          && e.name !== 'README.md' && e.name !== '_index.md' && e.name !== '.gitkeep') out.push({ full, rel: r });
+      } catch { /* ignore */ }
+    }
+  })(rootDir, '');
+  return out;
+}
+
+module.exports = { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files };

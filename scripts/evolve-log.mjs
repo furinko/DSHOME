@@ -162,8 +162,12 @@ if (cmd === 'snapshot') {
   const snapRows = rows.filter((l) => /\|\s*↳快照:/.test(l)).length;
   const objectRows = rows.filter((l) => !/\|\s*↳(快照|回测):/.test(l)); // 真正的进化对象行（非快照/非回测）
   const backfilledObjs = new Set(rows.map((l) => (/\|\s*↳回测:([^|\s]+)/.exec(l) || [])[1]).filter(Boolean));
+  // 机判可判 = 对象行带 [signal= 绑定（机器判依据主信号）；无绑定 = 旧行（legacy-unbound，封存不追——不洗存量）
+  const isSignalBound = (l) => /\[[a-z-]+=\d+\]/.test(l);
+  const machineRows = objectRows.filter(isSignalBound);
+  const legacyUnbound = objectRows.length - machineRows.length;
   const logRows = objectRows.length;
-  const unwrapped = objectRows.filter((l) => {
+  const unwrapped = machineRows.filter((l) => {
     const m = /^\|\s*\d{4}-\d{2}-\d{2}\s*\|\s*([^|\[]+)/.exec(l); // 对象名（去 [signal=N] 后缀）
     const n = m ? m[1].trim() : null;
     return n && !backfilledObjs.has(n);
@@ -174,7 +178,7 @@ if (cmd === 'snapshot') {
   const m = readMetrics();
   const backfilled = (src.match(/^\|\s*\d{4}-\d{2}-\d{2}\s*\|\s*↳回测:/gm) || []).length;
   console.log('[evolve-log] 元进化自检（自主信号）:');
-  console.log(`  进化记录 ${logRows} 条（另 ↳快照存档 ${snapRows} 行不计）· 已回填 ${backfilled} 条 · 未回填 ${Math.max(0, unwrapped)} 条 · 无效 ${invalid} 条(机器判 ${machineInvalid}/自评 ${selfInvalid}) · 信号 ${JSON.stringify(m)}`);
+  console.log(`  进化记录 ${logRows} 条（另 ↳快照存档 ${snapRows} 行不计）· 已回填 ${backfilled} 条 · 未回填 ${Math.max(0, unwrapped)} 条(机判可判) · 封存 legacy-unbound ${legacyUnbound} 条(不追不洗) · 无效 ${invalid} 条(机器判 ${machineInvalid}/自评 ${selfInvalid}) · 信号 ${JSON.stringify(m)}`);
   let hit = false;
   if (Math.max(0, unwrapped) >= 5) { console.log('  ⚠️ 未回填 ≥5 条 → 该回填 effect（机器判，见 `effect auto`），别只记不改'); hit = true; }
   if (invalid >= 2) { console.log('  ⚠️ 机制连续无效(≥2) → 自主元进化：回滚/换思路（回滚由用户拍板）'); hit = true; }
