@@ -325,13 +325,48 @@ window.__ModuleLoader__.load({
       return rowShell("助手头像", react_jsx_runtime.jsx(react.Fragment, { children: [preview, grid, actions] }));
     }
 
-    /** 人设卡提示行：告诉用户可设"性格/口癖"人设卡（本机私密，可选；无感提示，不强制）。 */
-    function PersonaHint() {
-      return rowShell("性格 / 人设卡（可选）", react_jsx_runtime.jsx("div", {
-        style: { display: "flex", flexDirection: "column", gap: 6, fontSize: 12.5, color: "var(--dsw-alias-label-secondary,#4a5a78)", lineHeight: "20px" },
+    /** 人设卡编辑：读/写 mind-private\L0\人设卡.md（/api/mind/persona GET+POST），设置里直接填改。 */
+    function PersonaEditor() {
+      var state = react.useState("");
+      var content = state[0];
+      var setContent = state[1];
+      var statusState = react.useState("idle"); // idle|loading|saving|saved|error
+      var status = statusState[0];
+      var setStatus = statusState[1];
+
+      react.useEffect(function () {
+        fetch("/api/mind/persona").then(function (r) { return r.json(); }).then(function (d) {
+          setContent(d && d.ok ? (d.content || "") : "");
+        }).catch(function () { setStatus("error"); });
+      }, []);
+
+      var save = function () {
+        setStatus("saving");
+        fetch("/api/mind/persona", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: content || "" }),
+        }).then(function (r) { return r.json(); }).then(function () { setStatus("saved"); })
+        .catch(function () { setStatus("error"); });
+      };
+
+      return rowShell("人设卡（本机私密 · 鱼鱼的专属性格/口癖）", react_jsx_runtime.jsx("div", {
+        style: { display: "flex", flexDirection: "column", gap: 8 },
         children: [
-          react_jsx_runtime.jsx("span", { style: { fontSize: 13.5, color: "var(--dsw-alias-label-primary,#1f2a44)" }, children: "想让鱼鱼有专属性格、口癖、演绎方式？" }),
-          react_jsx_runtime.jsx("span", { children: "→ 在本机私密区建一张『人设卡』（mind-private\\L0\\人设卡.md）。设了它就会按你的设定演；不设就是干净通用智能体。" }),
+          react_jsx_runtime.jsx("textarea", {
+            value: content,
+            onChange: function (e) { setContent(e.target.value); setStatus("idle"); },
+            placeholder: "在这写下鱼鱼的专属性格、口癖、演绎方式……（写给本机，永不推 GitHub；不填=干净通用智能体）",
+            rows: 7,
+            style: { boxSizing: "border-box", width: "100%", padding: "8px 12px", borderRadius: 9, border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-base,#f7f9fc)", color: "var(--dsw-alias-label-primary)", fontSize: 13, lineHeight: "20px", outline: "none", resize: "vertical", fontFamily: "inherit" },
+          }),
+          react_jsx_runtime.jsx("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+            react_jsx_runtime.jsx("button", { type: "button", onClick: save, style: { border: "1px solid var(--dsw-alias-brand-primary,#4D6BFE)", borderRadius: 9, padding: "6px 14px", fontSize: 13, cursor: "pointer", color: "var(--dsw-alias-label-primary)", background: "var(--dsw-alias-bg-base,#f7f9fc)" }, children: "保存人设卡" }),
+            status === "saved" ? react_jsx_runtime.jsx("span", { style: { fontSize: 12, color: "var(--dsw-alias-state-success-primary,#2fbf8f)" }, children: "已保存" }) : null,
+            status === "saving" ? react_jsx_runtime.jsx("span", { style: { fontSize: 12, color: "var(--dsw-alias-label-secondary,#4a5a78)" }, children: "保存中…" }) : null,
+            status === "error" ? react_jsx_runtime.jsx("span", { style: { fontSize: 12, color: "var(--dsw-alias-state-error-primary,#e5534b)" }, children: "加载/保存失败" }) : null,
+          ] }),
+          react_jsx_runtime.jsx("span", { style: { fontSize: 11.5, color: "var(--dsw-alias-label-secondary,#4a5a78)", lineHeight: "17px" }, children: "本机私密（mind-private\\L0\\人设卡.md），永不推 GitHub。设了鱼鱼按它演；清空=干净通用智能体。" }),
         ],
       }));
     }
@@ -362,7 +397,7 @@ window.__ModuleLoader__.load({
             name: "settings.general.item",
             id: "dshome-assistant-identity-persona",
             order: 42,
-          }, PersonaHint);
+          }, PersonaEditor);
         });
       } catch (e) { console.warn("dshome-assistant-identity: settings rows failed", e); }
     }

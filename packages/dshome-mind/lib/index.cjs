@@ -513,6 +513,28 @@ function makeMindRoutes() {
     },
     {
       kind: 'exact',
+      path: `${API_PREFIX}/persona`,
+      handler: async (req, res) => {
+        if (!guard(req, res)) return;
+        try {
+          const personaFile = path.join(mindPrivateDir(), 'L0', '人设卡.md');
+          if (req.method === 'GET') {
+            const content = fs.existsSync(personaFile) ? fs.readFileSync(personaFile, 'utf8') : '';
+            return json(res, 200, { ok: true, content });
+          }
+          if (req.method === 'POST') {
+            const body = await readJsonBody(req);
+            const content = String(body?.content ?? '');
+            fs.mkdirSync(path.dirname(personaFile), { recursive: true });
+            fs.writeFileSync(personaFile, content, 'utf8');
+            return json(res, 200, { ok: true, saved: true });
+          }
+          return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
       path: `${API_PREFIX}/graph`,
       handler: async (req, res) => {
         if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
