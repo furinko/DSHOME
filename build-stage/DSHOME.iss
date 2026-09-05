@@ -1,11 +1,11 @@
 ; DSHOME Setup Script — Inno Setup 7（全量自包含安装包，含 node_modules 与自带 node 运行时）
-; 构建：ISCC.exe DSHOME.iss  →  build-stage\DSHOME-setup-0.2.0.exe
+; 构建：ISCC.exe DSHOME.iss  →  build-stage\DSHOME-setup-0.3.1.exe
 ; ISSUE-003 修复（2026-09-01）：
 ;   ① [Files] Excludes 排除 profiles\node_modules（dsh 首启自愈重建为 junction，不得随包分发）
 ;   ② 启动入口 exe 化：快捷方式/装后启动直接指向 {app}\DSHOME.exe（布局无关启动器，无控制台闪烁）
 ;   ③ Uninstallable=yes + CreateUninstallRegKey=no：生成卸载 exe（unins000.exe）但零注册表残留
 #define MyAppName "DSHOME"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.3.1"
 #define MyAppPublisher "furinko"
 ; 启动入口：DSHOME.exe（scripts\launcher.cs 编译的布局无关启动器，逻辑同 开发启动.cmd；
 ; Electron 壳在 <home>\packages\dshome\shell-app，后端由壳拉起/守护）

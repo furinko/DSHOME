@@ -1,4 +1,4 @@
-// DSHOME shell — Electron main process (v0.3.0).
+// DSHOME shell — Electron main process (v0.3.1).
 // 崩溃保护自包含：壳（本进程）是后端的唯一守护者，零外部依赖（不依赖任何外部 watchdog/计划任务）。
 // - 单实例锁（二次启动只聚焦已有窗口）
 // - 后端生命周期：壳负责启动 / 3s 探活 / 挂了自动重启（指数退避）/ 安全模式 / fail-loud 错误弹窗

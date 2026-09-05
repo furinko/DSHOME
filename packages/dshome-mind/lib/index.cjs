@@ -429,6 +429,15 @@ function searchMind(query, limit = 6) {
 
 // ── 待办（project.md「下一步」区 `- [ ]` 行）───────────────────────────────
 function todoFile() { return path.join(mindPrivateDir(), 'Project', 'DSHOME', 'project.md'); }
+// 首装自建：project.md 缺失时先建目录 + 种最小文件（含「## 下一步」区），
+// 否则「面板加第一条待办」会因文件不存在抛 ENOENT（干净安装无 mind-private 的场景）。
+function ensureTodoFile() {
+  const f = todoFile();
+  if (fs.existsSync(f)) return f;
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, '# DSHOME 项目\n## 下一步\n', 'utf8');
+  return f;
+}
 function readTodos() {
   const f = todoFile(); if (!fs.existsSync(f)) return [];
   const todos = [];
@@ -439,7 +448,7 @@ function readTodos() {
   return todos;
 }
 function mutateTodos(op, arg) {
-  const f = todoFile(); const body = fs.readFileSync(f, 'utf8');
+  const f = ensureTodoFile(); const body = fs.readFileSync(f, 'utf8');
   const lines = body.split('\n');
   const idxs = [];
   lines.forEach((line, i) => { if (/^\s*-\s*\[( |x)\]/.test(line)) idxs.push(i); });

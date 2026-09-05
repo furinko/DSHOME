@@ -1,5 +1,5 @@
 @echo off
-rem DSHOME dev launcher (v0.3.0)
+rem DSHOME dev launcher (v0.3.1)
 rem Starts the Electron shell; the shell launches+guards the backend via DSHOME_BACKEND_CMD.
 rem No extra console windows. Closing this cmd does NOT stop DSHOME.
 rem To stop: tray menu -> Exit (or close DSHOME window and tray).
