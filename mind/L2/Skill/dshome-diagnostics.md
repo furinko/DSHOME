@@ -2,7 +2,7 @@
 name: dshome-diagnostics
 description: DSHOME 后端崩溃/卡顿诊断——先分真假(exit崩 vs offline闪断)，再 shell log errTail/进程/隔离复现。触发：后端重启/卡顿/exit1/offline闪断。
 version: 1.0.0
-author: 鱼鱼 (DSHOME)
+author: DSHOME
 license: internal
 metadata:
   tags: [dshome, 诊断, 崩溃, 卡顿, 重启, errTail]

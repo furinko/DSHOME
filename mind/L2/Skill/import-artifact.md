@@ -2,7 +2,7 @@
 name: import-artifact
 description: 导入协议——其他设备/agent 蒸馏产物即插即用。触发：用户丢来文件/路径/内容/压缩包（"直接丢给你"）。
 version: 1.0.0
-author: 鱼鱼 (DSHOME)
+author: DSHOME
 license: internal
 metadata:
   tags: [import, 导入, 即插即用, artifact, 蒸馏包]

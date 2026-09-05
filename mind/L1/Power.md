@@ -3,7 +3,7 @@
 > 版本：1.8 | 2026-09-05 | 通用筛补专项/通用判据 + DSHOME 自身技能直接出厂例外；余同 1.7（四筛法）
 > 加载：强制层（每次上工必读）——能力怎么用、怎么长，常驻
 > 定位：L1 能力手册——如何使用 L2 Skill/Exp，沉淀路径，L2 格式规范。
-> 🔴 **权威声明**：本文件只管**能力域**（Skill/Exp 是什么、怎么沉淀、什么格式）。行为/流程/纪律类内容在 `mind\L1\Ritual.md`（收工/洗澡/元进化/纪律/自省判据）——不要在本文件追加行为类规则。
+> 本文件只管**能力域**（Skill/Exp 是什么、怎么沉淀、什么格式）。行为/流程/纪律类内容在 `mind\L1\Ritual.md`（收工/洗澡/元进化/纪律/自省判据）——不要在本文件追加行为类规则。
 
 ## 一、什么是 Skill，什么是 Exp
 
@@ -21,7 +21,7 @@
 
 对话中出现关键词 → 加载对应 Skill/Exp（未命中不加载）。加载后即生效——是硬约束不是参考资料，不凭"我记得"替代。
 
-**触发登记唯一权威 = `mind\L2\Skill\_index.md`（能力积木总索引）+ Skill/Exp 文件自身的 frontmatter `contract.triggers`**——不在此另列表格（曾有空壳表重复定义，已废弃）。盘点/查询能力积木去 `_index.md`。
+**触发登记权威 = `mind\L2\Skill\_index.md`（能力积木总索引）+ Skill/Exp 文件自身的 frontmatter `contract.triggers`**——不在此另列表格（曾有空壳表重复定义，已废弃）。盘点/查询能力积木去 `_index.md`。
 
 > **实现状态（2026-09-05 更新）**：
 > - **触发加载已有机器实现**：host 插件 `dshome-mind-skill-loader` 每步检测对话触发词，命中注入方法论卡片（frontmatter description + outputs 摘要，约 150 词元，防全文灌上下文）。检测触发词唯一来源 = frontmatter `contract.triggers`（改触发词即改检测行为）。_index.md 仍是人类盘点索引；机器加载不依赖它（插件直接扫 Skill 目录 frontmatter）。
@@ -87,6 +87,12 @@ description: 一句话描述（含触发关键词）
 version: 1.0.0
 author: 来源
 license: internal | MIT
+contract:
+  id: 技能id
+  triggers: [触发该技能的关键词]   # 机器触发来源（加载器按此匹配）
+  inputs: 输入
+  outputs: 输出
+  deps: 依赖
 metadata:
   tags: [触发关键词]
   related: [关联的 skill/记忆/文档]

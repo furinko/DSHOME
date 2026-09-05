@@ -2,7 +2,7 @@
 name: boot-recall
 description: 上工自动召回——会话/任务开始时把 project.md + L3 相关记忆 + Learn + user-rules 装配成注入上下文。触发：每次会话/任务开始（上工）、"我忘了/你想起来/有什么待办"。
 version: 1.0.1
-author: 鱼鱼 (DSHOME)
+author: DSHOME
 license: internal
 metadata:
   tags: [boot, recall, 召回, 上工, 记忆, 待办]

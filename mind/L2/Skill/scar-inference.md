@@ -2,7 +2,7 @@
 name: scar-inference
 description: 伤疤反推法 / 咬痕考古法——不蒸整体蒸版本差，不读架构图读咬痕。从 L3/history 归档 + AGENTS 判例 + 门禁/防御性写法反推作者踩过的坑。触发：考古 / 蒸 / 版本差 / 反推坑 / 咬痕 / 伤疤 / 为什么在 / 作者画像 / 同源盲区。
 version: 1.1.0
-author: 鱼鱼 (DSHOME)
+author: DSHOME
 license: internal
 metadata:
   tags: [蒸, 考古, 版本差, diff, 反推, 咬痕, 伤疤, 判例, 门禁, 同源盲区]

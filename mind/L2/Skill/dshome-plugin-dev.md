@@ -2,7 +2,7 @@
 name: dshome-plugin-dev
 description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地三步（exports 注册易漏）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
 version: 1.1.0
-author: 鱼鱼 (DSHOME)
+author: DSHOME
 license: internal
 metadata:
   tags: [DSHOME, DSH, harness, cordis, plugin, 插件, code.host, code.client, slot]
@@ -19,7 +19,7 @@ contract:
 
 ## 一、DSHOME 是什么
 
-DSHOME（鱼鱼）运行在 **DeepSeek Harness (DSH)** 之上，本机宿主源码/运行时在 `$DSH_HOME`（本仓库根，环境变量解析——勿硬编码盘符，换设备路径不同）：
+DSHOME（DSHOME）运行在 **DeepSeek Harness (DSH)** 之上，本机宿主源码/运行时在 `$DSH_HOME`（本仓库根，环境变量解析——勿硬编码盘符，换设备路径不同）：
 
 - 宿主包在 `$DSH_HOME\node_modules\@deepseek-ai\*`（`dsh-client-runtime`、`dsh-client-ui-slots`、`dsh-client-ui-conversation`、`dsh-client-ui-primitives`、`dsh-attachment`、`cordis` 等）。
 - 自带/upstream 的 Cordis 插件开发 skill 在

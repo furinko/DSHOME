@@ -1,6 +1,6 @@
-# mind — 鱼鱼心智基座（出厂版）
+# mind — 心智基座（出厂版）
 
-> DSHOME 智能体（鱼鱼）的 L0-L3 四阶知识系统，参考 Cathome CCBP 架构 + Hermes 轮级缓冲 + dsh-evolve 自动化理念重构。
+> DSHOME 智能体（DSHOME）的 L0-L3 四阶知识系统，参考 Cathome CCBP 架构 + Hermes 轮级缓冲 + dsh-evolve 自动化理念重构。
 > 本目录 = **出厂固件**（架构 + 默认内容），可推送 GitHub。运行时自进化数据在 `$DSH_HOME\mind-private\`（仓库同级 `mind-private\`，gitignore，永不上传）。
 
 ## 一、四阶架构
@@ -16,7 +16,7 @@
 
 ## 二、三层加载模型
 
-> 完整加载策略（注入/强制/查询 每层含哪些文件）的**唯一权威在 `mind\L1\HUB.md` §三**。此处仅速览：
+> 完整加载策略（注入/强制/查询 每层含哪些文件）的**权威在 `mind\L1\HUB.md` §三**。此处仅速览：
 
 ```
 注入层：L0 三文件 + L1/HUB ｜ 强制层：Tree/Power/Memory/Learn/Invariants ｜ 查询层：其余 L1 参考 + L2/L3/Project 按需
@@ -38,7 +38,7 @@
 name: 条目名
 description: 一句话摘要
 version: 1.0.0
-author: 来源（鱼鱼/Hermes/cathome/其他设备）
+author: 来源（DSHOME/Hermes/cathome/其他设备）
 license: internal | MIT
 metadata:
   tags: [关键词触发]
@@ -48,7 +48,7 @@ metadata:
 
 ## 五、导入协议（即插即用）
 
-其他设备/agent 产物"直接丢给鱼鱼"→ 识别（frontmatter/结构）→ 校验（版本/死链）→ 归类放置（mind-private\）→ 更新索引 → git checkpoint → 汇报。详见 `mind-private\L1\` 导入规则与 import-artifact 技能。
+其他设备/agent 产物"直接丢给智能体"→ 识别（frontmatter/结构）→ 校验（版本/死链）→ 归类放置（mind-private\）→ 更新索引 → git checkpoint → 汇报。详见 `mind-private\L1\` 导入规则与 import-artifact 技能。
 
 ## 六、知识流动方向
 

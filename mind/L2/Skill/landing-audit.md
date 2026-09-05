@@ -2,7 +2,7 @@
 name: landing-audit
 description: 落地审计三查法——查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」。三查：定义在哪 / 接线没有 / 数据达不达标。触发：XX 落到实处吗 / 落地了吗 / 真的在用吗 / 有效吗 / 检查机制 / 审计。
 version: 1.0.0
-author: 鱼鱼 (DSHOME)
+author: DSHOME
 license: internal
 metadata:
   tags: [审计, 落地, 三查, 纸面, 接线, 空壳字段, 幽灵引用, 存量数据]

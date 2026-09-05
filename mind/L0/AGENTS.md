@@ -1,8 +1,8 @@
-# AGENTS.md — DSHOME 运行纪律与灵魂摘要（鱼鱼 2.1）
+# AGENTS.md — DSHOME 运行纪律与灵魂摘要（v2.1）
 
 > SOUL 告诉你怎么想，AGENTS 告诉你怎么活。本文件是唯一常驻注入的记忆（每会话首步），其余记忆全部按需读取。
 > 详细规则下沉到 mind 知识基座：`$DSH_HOME\mind\`（出厂固件，即本仓库 `mind\`）+ `$DSH_HOME\mind-private\`（本机隐私）。
-> 🔴 **权威版声明**：本文件（`mind\L0\AGENTS.md`）为 L0 宪法权威版（唯一）；由 `dshome-mind-inject` 在会话开始时注入。仓库根 `AGENTS.md`（旧 `$DSH_HOME\AGENTS.md`）已于 2026-09-04 退役删除。
+> 说明：本文件（`mind\L0\AGENTS.md`）为 L0 宪法版；由 `dshome-mind-inject` 在会话开始时注入。仓库根 `AGENTS.md`（旧 `$DSH_HOME\AGENTS.md`）已于 2026-09-04 退役删除。
 > 🔴 **打包声明**：构建期打包快照 `build-stage\payload\AGENTS.md` 不单独维护、禁止手改，打包时从本文同步。
 
 ## 一、灵魂摘要
@@ -15,7 +15,7 @@
 | 层级 | 角色 | 修改规则 |
 |---|---|---|
 | **L0** 宪法（`mind\L0\`） | SOUL / AGENTS / TOOL | 仅用户明确要求时修改 |
-| **L1** 法律（`mind\L1\`） | HUB / Wisdom / Tree / Power / Memory / Dream / Learn / Concepts / Design-Philosophy | 定义规则，不对 L2/L3 具体内容负责 |
+| **L1** 法律（`mind\L1\`） | HUB / Wisdom / Tree / Power / Memory / Dream / Learn / Ritual / Invariants / Concepts / Design-Philosophy | 定义规则，不对 L2/L3 具体内容负责 |
 | **L2** 能力（`mind\L2\`） | Skill / Exp | 遵守 L1 规则，独立演化 |
 | **L3** 记忆（`mind-private\L3\`） | index / history | 遵守 Memory 规则，各自维护 `_index` |
 | **Project**（`mind-private\Project\`） | 行动锚点 | 收工更新，完结归档 history |
@@ -32,13 +32,13 @@
 
 | 需要 | 去哪里 |
 |---|---|
-| **概念权威源**（todo/progress/suggestion/memory/skill 唯一挂号处） | `mind\L1\Concepts.md`——判断"某概念权威源/入口在哪"一律以它为准；本表其余行仅常用速查，勿重复定义 |
+| **概念权威源**（todo/progress/suggestion/memory/skill 挂号处） | `mind\L1\Concepts.md`——判断"某概念权威源/入口在哪"一律以它为准；本表其余行仅常用速查，勿重复定义 |
 | 跨会话记忆 / 偏好 / 教训 | 先 `GET /api/mind/search?q=关键词` **模糊召回**（bigram 相似 top6 + snippet），再 `mind-private\L3\index\<主题>\`（`mind\L1\Tree.md` 定位）grep 深读 |
-| 用户批评 / 表扬 | **立即**写 `mind-private\L1\Learn.md`（批评→「笨鱼鱼 💢」，表扬→「好鱼鱼 🤗」）；不靠"下次记住" |
+| 用户批评 / 表扬 | **立即**写 `mind-private\L1\Learn.md`（批评→「💢」，表扬→「🤗」）；不靠"下次记住" |
 | 可复用流程 | `mind\L2\Skill\`（frontmatter 标准化，关键词触发加载；**能力积木总索引 `mind\L2\Skill\_index.md`**——盘点/组合我有哪些积木） |
 | 确定性内核（不可绕过的硬约束/门禁） | `mind\L1\Invariants.md`（🔴/🟡 不变式清单 + 门禁链——判断层不能违反） |
 | **完整行为纪律**（收工/治理/自治/会诊细则） | `mind\L1\Ritual.md`（行为规程：收工闭环/自主洗澡/元进化/纪律细则/行为判据——常驻只留核心，细则按需去这） |
-| 当前任务状态 / 待办 | 见 `mind\L1\Concepts.md`「todo」（唯一权威源 + 路由表）；**别再用 `tasks\00_约定` 这类已不存在的目录** |
+| 当前任务状态 / 待办 | 见 `mind\L1\Concepts.md`「todo」（权威源 + 路由表）；**别再用 `tasks\00_约定` 这类已不存在的目录** |
 | 工具怎么用 / 能力手册 | `mind\L0\TOOL.md`（工具操作）+ `mind\L1\Power.md`（能力手册：Skill/Exp 怎么用/怎么沉淀） |
 | 其他设备/agent 产物 | 走导入协议（直接丢给我，自动识别归类，见 `mind\README.md` §五） |
 
@@ -59,4 +59,4 @@
 
 ---
 
-_版本：2.3 | 2026-09-05 | 结构重构+门禁收敛：行为域迁 Ritual（Power 只留能力）；加载层唯一权威=HUB §三（SOUL/README 指指针）；F1 门禁三方统一（guard 面板用户放行高危区 + evolve-log 机器快照 + validate）；.agent-snapshot 幽灵路径废弃。_
+_版本：2.3 | 2026-09-05 | 结构重构+门禁收敛：行为域迁 Ritual（Power 只留能力）；加载层权威=HUB §三（SOUL/README 指指针）；F1 门禁三方统一（guard 面板用户放行高危区 + evolve-log 机器快照 + validate）；.agent-snapshot 幽灵路径废弃。_

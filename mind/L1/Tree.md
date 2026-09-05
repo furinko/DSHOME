@@ -27,9 +27,9 @@
 | Power.md | 功法 | 能力手册：Skill/Exp 使用教程 + 沉淀路径 + L2 格式 |
 | Memory.md | 规则书 | L3 归档规则 |
 | Invariants.md | 闸门 | 确定性内核：不可绕过的硬约束/门禁清单（🔴/🟡 不变式）——强制层加载 |
-| Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 的**唯一权威源** + 意图→概念→权威源路由表 |
+| Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 的**权威源** + 意图→概念→权威源路由表 |
 | Dream.md | 灵感池 | 松散点子 |
-| Learn.md | 痕迹库 | 好鱼鱼/笨鱼鱼教训（模板在 mind\，实际条目在 mind-private\L1\） |
+| Learn.md | 痕迹库 | 🤗/💢教训（模板在 mind\，实际条目在 mind-private\L1\） |
 | Ritual.md | 行为规程 | 收工闭环 / 自主洗澡 / 元进化 / 行为纪律细则 / 自省判据（AGENTS 细则的家，按需读） |
 
 ## L2 — 能力层（mind\L2\）
@@ -74,7 +74,7 @@
 
 | 项目 | 阶段 | 状态 |
 |---|---|---|
-| DSHOME | v0.3-dev | 心智重构后主线（鱼鱼 2.0） |
+| DSHOME | v0.3-dev | 心智重构后主线（v2.0） |
 
 ## TRASH — 回收站（不删只移）
 

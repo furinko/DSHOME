@@ -19,7 +19,7 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 | 层 | 回答 | 内容 |
 |---|---|---|
 | L0 | 我是谁？怎么活？ | SOUL + AGENTS + TOOL |
-| L1 | 能做什么？怎么做？怎么存？ | HUB + Wisdom + Tree + Power + Memory + Dream + Learn |
+| L1 | 能做什么？怎么做？怎么存？ | HUB + Wisdom + Tree + Power + Memory + Dream + Learn + Ritual + Invariants + Concepts + Design-Philosophy |
 | L2 Skill | 某类问题怎么解决？ | 方法论——跨项目可复用的逻辑闭环 |
 | L2 Exp | 这个工具/平台怎么用？有什么坑？ | 经验公式——方法论的实例 + 踩坑记录 |
 | L3/index | 踩过的坑、做过的设计，去哪查？ | 结晶知识——踩坑沉淀 / 设计文档 / 速查表 |
@@ -64,6 +64,7 @@ L2 Skill/Exp 关键词触发；L3 index/history 与 Project 按需 grep/read；L
 | Power.md | 功法 | 能力手册：Skill/Exp 使用教程 + 沉淀路径 + L2 格式 |
 | Memory.md | 规则书 | L3 index/history/Project 归档规则 |
 | Dream.md | 灵感池 | 松散点子 + 整理提醒 |
-| Learn.md | 痕迹库 | 精炼教训（笨鱼鱼💢/好鱼鱼🤗，≤200字/条） |
+| Learn.md | 痕迹库 | 精炼教训（💢/🤗，≤200字/条） |
 | Ritual.md | 行为规程 | 收工闭环 / 自主洗澡 / 元进化 / 行为纪律细则 / 自省判据（AGENTS 细则的家） |
-| Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 唯一权威源 + 意图→概念→权威源路由表 |
+| Invariants.md | 闸门 | 确定性内核：不可绕过的硬约束/门禁清单（🔴/🟡 不变式）——强制层加载 |
+| Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 权威源 + 意图→概念→权威源路由表 |

@@ -53,4 +53,9 @@ _版本：1.0.0 | 2026-09-02 | 变更摘要_
 
 | 技能 | 版本 | 描述 |
 |---|---|---|
-| （import-artifact 建设中） | — | 导入协议：其他设备/agent 产物即插即用 |
+| import-artifact | 1.0.0 | 导入协议：其他设备/agent 产物即插即用 |
+| boot-recall | 1.0.1 | 上工自动召回：project+相关L3+教训+user-rules 装配成注入上下文 |
+| dshome-diagnostics | 1.0.0 | DSHOME 后端诊断（崩/卡/闪断：先分真假+证据） |
+| dshome-plugin-dev | 1.1.0 | DSHOME/DSH 结构与 Cordis 插件开发 |
+| landing-audit | 1.0.0 | 落地审计三查法（定义/接线/数据逐层查） |
+| scar-inference | 1.1.0 | 伤疤反推法/咬痕考古法（版本差/反推坑/作者画像） |
