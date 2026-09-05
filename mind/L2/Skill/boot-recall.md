@@ -1,7 +1,7 @@
 ---
 name: boot-recall
-description: 上工自动召回——会话/任务开始时把 project.md + L3 相关记忆 + Learn + user-rules 装配成注入上下文。触发：每次会话/任务开始（上工）、"我忘了/你想起来/有什么待办"。
-version: 1.0.1
+description: 上工自动召回——会话/任务开始时把 project.md + L3 相关记忆 + Learn + user-rules + 人设卡 装配成注入上下文。触发：每次会话/任务开始（上工）、"我忘了/你想起来/有什么待办"。
+version: 1.0.2
 author: DSHOME
 license: internal
 metadata:
@@ -11,7 +11,7 @@ contract:
   id: boot-recall
   triggers: [上工, 会话开始, 你想起来了, 有什么待办, 我忘了]
   inputs: [项目/任务关键词]
-  outputs: [注入上下文（注入层 L0/HUB/Wisdom 决策规则摘要 + 进度+待办+相关 L3+教训+用户偏好）, 一次 refresh/update]
+  outputs: [注入上下文（注入层 L0/HUB/Wisdom 决策规则摘要 + 进度+待办+相关 L3+教训+用户偏好+人设卡）, 一次 refresh/update]
   deps: [scripts/mind-prime.mjs, mind-private/]
 ---
 
@@ -22,7 +22,7 @@ contract:
 **主会话已机器自动**：宿主插件 `dshome-mind-recall` 会在每主会话首步自动注入 mind-prime 产物（顶层会话、幂等、cron/子代理跳过、空机降级）——**无需手动跑**。本 skill 用于：机器未注入时的兜底、换项目/刷新召回、诊断召回问题。
 
 1. 确定当前项目/任务关键词（默认 `DSHOME 心智`；换项目则传对应词）。
-2. 手动兜底召回：`node scripts/mind-prime.mjs "<项目/任务>"` —— 输出可注入上下文（project.md 进度+下一步、相关 L3 记忆 top-N、最近教训、用户偏好）。**L0 注入层摘要（核心纪律）由宿主插件 `dshome-mind-inject` 唯一维护；主会话自动召回由 `dshome-mind-recall` 插件注入（依据唯一，本脚本不重复生成）。**
+2. 手动兜底召回：`node scripts/mind-prime.mjs "<项目/任务>"` —— 输出可注入上下文（project.md 进度+下一步、相关 L3 记忆 top-N、最近教训、用户偏好、**人设卡**）。**L0 注入层摘要（核心纪律）由宿主插件 `dshome-mind-inject` 唯一维护；主会话自动召回由 `dshome-mind-recall` 插件注入（依据唯一，本脚本不重复生成）。**
 3. 把这段上下文**纳入思考**（作为初始上下文），再进入用户问题。
 4. 需要刷新时重跑（`--json` 可结构化，供 build 后注入）。
 
@@ -50,7 +50,7 @@ contract:
 
 - **L1**：`mind\L1\Ritual.md` §四（行为纪律）· `mind\L1\Tree.md`（索引）· `mind\L1\Invariants.md`（确定性内核）
 - **脚本**：`scripts/mind-prime.mjs`（回召）· `scripts/mind-validate.mjs`（自写校验/事务门禁验证一半）
-- **L3**：`mind-private\`（本机私有：项目待办/进度、L3 记忆、教训、用户规则）——由 `scripts/mind-prime.mjs` 动态读取并容错（不存在则跳过）；具体文件清单不在此罗列（见 `mind\L1\Tree.md` 主题级索引）。
+- **L3**：`mind-private\`（本机私有：项目待办/进度、L3 记忆、教训、用户规则、**人设卡**）——由 `scripts/mind-prime.mjs` 动态读取并容错（不存在则跳过）；具体文件清单不在此罗列（见 `mind\L1\Tree.md` 主题级索引）。
 
 ---
-_版本：1.0.1 | 2026-09-04 | 上工召回积木化（增 frontmatter contract；描述去注入层摘要，依据唯一）_
+_版本：1.0.2 | 2026-09-05 | 描述补"人设卡"（上工召回现装配 `mind-private\L0\人设卡.md`，开机即带演绎）；余同 1.0.1_

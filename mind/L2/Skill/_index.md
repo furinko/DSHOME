@@ -9,7 +9,7 @@
 | 积木 (id) | 一句话 | 触发 | 输入 → 输出 | 依赖 | 版本 |
 |---|---|---|---|---|---|
 | `import-artifact` | 导入协议·其他设备/agent 产物即插即用 | 直接丢给你 / 导入 / 蒸馏包 | 路径/粘贴内容/压缩包 → 归类放置 + 索引更新 + 汇报 | L1 Tree/Memory · mind README | 1.0.0 |
-| `boot-recall` | 上工自动召回（project.md+L3+Learn+user-rules 装配成注入上下文；L0 注入摘要由宿主插件维护，本脚本不再重复生成） | 上工 / 你想不起来 / 有什么待办 | 项目/任务关键词 → 可注入上下文（`--json` 结构化） | scripts/mind-prime.mjs · mind L3/Project · mind-validate | 1.0.1 |
+| `boot-recall` | 上工自动召回（project.md+L3+Learn+user-rules+人设卡 装配成注入上下文；L0 注入摘要由宿主插件维护，本脚本不再重复生成） | 上工 / 你想不起来 / 有什么待办 | 项目/任务关键词 → 可注入上下文（`--json` 结构化） | scripts/mind-prime.mjs · mind L3/Project · mind-validate | 1.0.2 |
 | `dshome-diagnostics` | DSHOME 后端诊断(崩/卡/闪断：先分真假+证据) | 后端重启/卡/exit1/闪断 | 现象→证据→结论 | shell log/进程/隔离复现 | 1.0.0 |
 | `dshome-plugin-dev` | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS `code.host`/`code.client`，生命周期/修复/回滚；自有 host 插件落地三步（exports 易漏） | 做/改插件 / cordis / slot / `is not declared` / `host.call` 失败 / 启动崩溃 | 目标能力 → 平台归属 + 已读真实接口 + 插件源码 + 修复判断 | cordis-plugin-development (upstream) · mind/L1/Power | 1.1.0 |
 | `landing-audit` | 落地审计三查法：查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」（定义/接线/数据逐层查） | 审计 / 落地 / 三查 / 落到实处吗 / 纸面定义 / 空壳 / 接线 | 被质疑概念/机制 → 三查证据链 + 每层 verdict(有/无/半) + 病灶定位 | mind/L1/Design-Philosophy · mind/L1/Memory · mind/L1/Power | 1.0.0 |

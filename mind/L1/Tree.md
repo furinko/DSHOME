@@ -38,7 +38,7 @@
 | 文件 | 版本 | 描述 | 触发关键词 |
 |---|---|---|---|
 | import-artifact.md | 1.0.0 | 导入协议：其他设备/agent 产物即插即用 | import、导入、即插即用、artifact、蒸馏包 |
-| boot-recall.md | 1.0.1 | 上工自动召回：project.md+L3+Learn+user-rules 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
+| boot-recall.md | 1.0.2 | 上工自动召回：project.md+L3+Learn+user-rules+人设卡 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
 | dshome-diagnostics.md | 1.0.0 | DSHOME 后端诊断（崩/卡/闪断：先分真假+证据） | 后端重启、卡、exit1、闪断 |
 | dshome-plugin-dev.md | 1.1.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚；自有 host 插件落地三步（exports 易漏） | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败、启动崩溃 |
 | landing-audit.md | 1.0.0 | 落地审计三查法：查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」（定义/接线/数据逐层查） | 审计、落地、三查、落到实处吗、纸面定义、空壳、接线 |
