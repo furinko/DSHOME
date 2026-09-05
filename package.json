@@ -6,6 +6,7 @@
     "build": "node scripts/syntax-check.mjs",
     "smoke": "node scripts/smoke.mjs",
     "verify": "pnpm build && pnpm smoke",
+    "sync-version": "node scripts/sync-version.mjs",
     "publish": "pnpm -r publish",
     "setup": "node scripts/install-electron.mjs"
   },
