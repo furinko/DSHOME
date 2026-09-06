@@ -20,6 +20,7 @@ import { prepareRedraw, resolveRedrawRegion, findLatestUserImageRef, sourceShaOf
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CONFIG_PATH = join(__dirname, '..', 'comfyui-config.json')
+const LOCAL_CONFIG_PATH = join(__dirname, '..', 'comfyui.local.json')
 
 export const name = 'dsh-imagegen'
 
@@ -56,11 +57,11 @@ function loadConfig() {
   } catch {
     out = { ...DEFAULTS, dsMappings: [...DEFAULTS.dsMappings] }
   }
-  // 本机配置走环境变量（更可移植、不污染包）：DSH_COMFYUI_DIR / DSH_COMFYUI_PYTHON / DSH_COMFYUI_OUTPUT
-  const env = process.env
-  if (env.DSH_COMFYUI_DIR) out.comfyuiCwd = env.DSH_COMFYUI_DIR
-  if (env.DSH_COMFYUI_PYTHON) out.comfyuiStartCommand = env.DSH_COMFYUI_PYTHON
-  if (env.DSH_COMFYUI_OUTPUT) out.outputDir = env.DSH_COMFYUI_OUTPUT
+  // 本机配置（gitignore，不入库）：comfyui.local.json 存在则覆盖。每次读 → 改文件即热生效（免重启）
+  try {
+    const local = JSON.parse(readFileSync(LOCAL_CONFIG_PATH, 'utf-8'))
+    out = { ...out, ...local, dsMappings: Array.isArray(local.dsMappings) ? local.dsMappings : out.dsMappings }
+  } catch { /* 无本机配置则用默认 */ }
   return out
 }
 

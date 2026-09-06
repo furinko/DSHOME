@@ -4,3 +4,5 @@ imagegen-store.json
 imagegen-userregions.json
 _imgcache/
 _redraw/
+# 本机配置（热生效，不入库）
+comfyui.local.json
