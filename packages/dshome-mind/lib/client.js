@@ -1044,7 +1044,10 @@ window.__ModuleLoader__.load({
       return react_jsx_runtime.jsx("div", { className: "dshome-mind-root", ref });
     }
 
-    // ── 接入心智开关（conversation.input.right）──────────────────────────────
+    // ── 接入心智开关（conversation.input.left）───────────────────────────────
+    // 槽位说明：官方 `conversation.input.left` = 工具行左端、常驻 chrome（access
+    // 模式/权限、plan、attach）之后——即「权限选择器右边」。原先注册在
+    // `conversation.input.right`（send 按钮前），按主人要求挪到权限右边。
     // per-session：读 /api/mind/connect?session= 复现当前态；点按 POST 翻转。
     // 开关 = 该会话是否「接入心智」：接入则注入 R0 宪法（SOUL+AGENTS）+ 上工召回；
     // 关闭＝纯助手（不注入人格纪律，也不做记忆召回）。默认接入。
@@ -1132,14 +1135,14 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // ── 插件体：conversation.view（对话/轨迹同级）+ conversation.input.right（接入心智开关）─
+    // ── 插件体：conversation.view（对话/轨迹同级）+ conversation.input.left（接入心智开关，权限右边）─
     var inject = ["slots"];
     function apply(ctx) {
       try {
         ensureStyle();
-        ctx.slots.inject("conversation.input.right", function () {
+        ctx.slots.inject("conversation.input.left", function () {
           return ctx.slots.register({
-            name: "conversation.input.right",
+            name: "conversation.input.left",
             id: "mind-connect",
             order: 100,
             label: function () { return "心智"; },
