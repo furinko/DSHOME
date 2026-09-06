@@ -188,6 +188,19 @@ window.__ModuleLoader__.load({
         var pending = items.filter(function (x) { return x.status === "pending"; });
         var decided = items.filter(function (x) { return x.status !== "pending"; });
 
+        // ⚡ 自动同意（仅本人可勾选）：开启后高危改动免逐条确认——护栏直接放行（隐私红线 / 快照 / validate 不受影响）
+        var aaRow = el("label");
+        aaRow.style.cssText = "display:flex;align-items:center;gap:6px;margin:8px 0 2px;font-size:12px;color:var(--dsw-alias-text-secondary,#999);cursor:pointer";
+        var aaBox = el("input", "dshome-mind-gov-aa-box");
+        aaBox.type = "checkbox";
+        aaBox.checked = !!(d.autoApprove && d.autoApprove.enabled);
+        aaRow.appendChild(aaBox);
+        aaRow.appendChild(document.createTextNode(" 自动同意（免逐条放行；仅本人可勾）"));
+        govEl.appendChild(aaRow);
+        aaBox.addEventListener("change", function () {
+          postJSON("/api/mind/approvals/auto-approve", { enabled: aaBox.checked }).then(function () { reload(); });
+        });
+
         // 栏1：待裁决
         govEl.appendChild(el("div", "dshome-mind-gov-head", "⏳ 待裁决（护栏拦截待你放行）"));
         if (!pending.length) {

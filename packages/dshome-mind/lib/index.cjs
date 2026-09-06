@@ -265,10 +265,27 @@ function readApprovals() {
   try { return JSON.parse(fs.readFileSync(approvalsFile(), 'utf8')).items || []; }
   catch { return []; }
 }
+/** 读 approvals 完整状态（items + autoApprove 开关）。 */
+function readApprovalsState() {
+  try {
+    const d = JSON.parse(fs.readFileSync(approvalsFile(), 'utf8'));
+    return { items: d.items || [], autoApprove: d.autoApprove || null };
+  } catch { return { items: [], autoApprove: null }; }
+}
+/** 写 items 时保留顶层 autoApprove 开关（防覆盖丢失）。 */
 function writeApprovals(items) {
   fs.mkdirSync(path.join(mindPrivateDir(), 'tasks'), { recursive: true });
-  fs.writeFileSync(approvalsFile(), JSON.stringify({ items }, null, 2));
+  const { autoApprove } = readApprovalsState();
+  fs.writeFileSync(approvalsFile(), JSON.stringify(autoApprove ? { items, autoApprove } : { items }, null, 2));
   return items;
+}
+/** 设置「自动同意」开关——仅面板人操作（decidedBy=user；同 approve 通道语义，行为约束层非安全边界）。
+ *  开启后高危改动免逐条面板确认；隐私红线（出厂区写私密）与快照/validate 流程不受影响。 */
+function setAutoApprove(enabled) {
+  const state = readApprovalsState();
+  state.autoApprove = { enabled: !!enabled, decidedBy: 'user', at: new Date().toISOString() };
+  fs.writeFileSync(approvalsFile(), JSON.stringify(state, null, 2));
+  return state.autoApprove;
 }
 /** 护栏拦截时追加一条待裁决动作。返回该条 id。 */
 function addApprovalPending(pathName, op, reason) {
@@ -645,8 +662,24 @@ function makeMindRoutes() {
       handler: async (req, res) => {
         if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
         if (!guard(req, res)) return;
-        try { json(res, 200, { ok: true, items: readApprovals() }); }
+        try {
+          const st = readApprovalsState();
+          json(res, 200, { ok: true, items: st.items, autoApprove: st.autoApprove });
+        }
         catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${API_PREFIX}/approvals/auto-approve`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const body = await readJsonBody(req);
+          const aa = setAutoApprove(body?.enabled === true);
+          json(res, 200, { ok: true, autoApprove: aa });
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
     {

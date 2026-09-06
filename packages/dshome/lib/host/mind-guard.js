@@ -86,8 +86,19 @@ function readApprovals() {
 function writeApprovals(items) {
   try {
     mkdirSync(dirname(approvalsFile()), { recursive: true }); // mind-private\tasks\ 可能未初始化：先建目录再写，否则写入静默失败、放行/待裁决全丢
-    writeFileSync(approvalsFile(), JSON.stringify({ items }, null, 2));
+    let aa = null;
+    try { aa = JSON.parse(readFileSync(approvalsFile(), 'utf8')).autoApprove || null; } catch { /* 无既有文件 */ }
+    writeFileSync(approvalsFile(), JSON.stringify(aa ? { items, autoApprove: aa } : { items }, null, 2));
   } catch { /* 忽略 */ }
+}
+/** 面板「自动同意」开关——仅 decidedBy=user 生效（面板人勾选写入；agent 直写文件伪造同 decidedBy 校验，不生效）。
+ *  行为约束层（同 approved 记录定位），不当安全边界。开启后高危改动免逐条面板确认。 */
+function readAutoApprove() {
+  try {
+    const d = JSON.parse(readFileSync(approvalsFile(), 'utf8'));
+    const aa = d.autoApprove;
+    return aa && aa.enabled && aa.decidedBy === 'user' ? aa : null;
+  } catch { return null; }
 }
 /** 是否已有"approved"的放行记录覆盖 目标路径+操作（一次性消费）。
  *  "每次都要问"：放行记录命中即删除，用完作废——下次改该文件需重新放行，不永久放行。
@@ -184,7 +195,8 @@ const GUARDS = [
       // 高危规则区（HUB/Wisdom/Memory/Power/Invariants/Design-Philosophy + L0 纪律三件）：凭放行记录，否则拦。
       if (inHighRiskyZone(filePath)) {
         const op = 'edit'; // write/edit 统一按 edit 粒度（区分意义不大）
-        if (isApproved(filePath, op)) return undefined; // 已放行 → 放行
+        if (isApproved(filePath, op)) return undefined; // 已逐条放行 → 放行
+        if (readAutoApprove()) return undefined;        // 面板「自动同意」已开（人勾选）→ 免逐条拦；隐私红线/快照/validate 不受影响
         addApprovalPending(filePath, op, _content); // 未放行 → 追加待裁决（带改动内容摘要）供面板
         const p = normalizePath(filePath);
         const label = p.includes('mind/L0/') ? '宪法/人格/纪律'
