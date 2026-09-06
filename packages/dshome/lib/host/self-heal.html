@@ -23,6 +23,21 @@
   .tip b { color: #b26a00; }
   .ok { background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 8px; padding: 8px 14px; font-size: 14px; margin-bottom: 12px; }
   .err { background: #ffebee; border: 1px solid #ef9a9a; border-radius: 8px; padding: 8px 14px; font-size: 14px; margin-bottom: 12px; }
+  .searchbar {
+    display: flex; gap: 8px; align-items: center;
+    background: #fff; border: 1px solid #ddd; border-radius: 8px;
+    padding: 8px 12px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  .searchbar svg { flex: none; color: #888; }
+  .searchbar input {
+    flex: 1; border: none; outline: none; font-size: 14px; background: transparent; color: inherit;
+  }
+  .searchbar input::placeholder { color: #aaa; }
+  .count { color: #666; font-size: 13px; margin: 0 0 8px; }
+  .empty {
+    background: #fff; border: 1px dashed #ddd; border-radius: 8px;
+    padding: 18px; text-align: center; color: #888; font-size: 14px; display: none;
+  }
   table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
   th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: middle; }
   th { background: #fafafa; font-weight: 600; color: #444; }
@@ -52,13 +67,19 @@
   <p class="sub">这个页面不加载任何插件，所以它永远能打开。页面刚才崩了？多半是某个插件坏了——把它停用再重启即可。</p>
   <div class="tip">💡 <b>怎么判断是哪个插件：</b>崩溃提示里点名的（如 <code>loaded without registering "xxx"</code> 里的 xxx）就是它；没有点名就选<b>最近新装/改过的</b>。<a class="back" href="/">我其实没事，返回主界面 →</a></div>
   <div id="status" class="ok">正在读取插件列表…</div>
+  <div class="searchbar">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+    <input id="search" type="text" autocomplete="off" placeholder="按插件名 / 说明搜索…">
+  </div>
   <div id="msg"></div>
+  <div id="count" class="count"></div>
   <table>
     <thead>
       <tr><th style="width:26%">插件</th><th>说明</th><th style="width:10%">状态</th><th style="width:16%">操作</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
+  <div id="empty" class="empty">没有匹配的插件</div>
   <p class="foot">连这个页面都打不开？说明<b>后端</b>崩了（前端问题后端一定是活的）。请在终端运行：<code>node scripts/plugin-change-guard.mjs --recover</code></p>
 </div>
 <script>
@@ -66,6 +87,10 @@
   var rows = document.getElementById('rows');
   var status = document.getElementById('status');
   var msgBox = document.getElementById('msg');
+  var searchInput = document.getElementById('search');
+  var countEl = document.getElementById('count');
+  var emptyEl = document.getElementById('empty');
+  var allPlugins = [];
   function showMsg(text, isErr) {
     msgBox.innerHTML = '';
     var d = document.createElement('div');
@@ -82,13 +107,28 @@
     fetch('/api/dshome/plugins').then(function (r) { return r.json(); }).then(function (data) {
       if (!data || !data.ok) throw new Error((data && data.error) || '接口异常');
       status.textContent = '后端连接正常，共 ' + data.plugins.length + ' 个插件';
-      render(data.plugins);
+      allPlugins = data.plugins;
+      applyFilter();
     }).catch(function (e) {
       status.className = 'err';
       status.textContent = '读取失败：' + e.message + '（如果连这个都失败，说明后端未就绪）';
     });
   }
-  function render(list) {
+  function applyFilter() {
+    var q = (searchInput.value || '').trim().toLowerCase();
+    var total = allPlugins.length;
+    var matched = allPlugins;
+    if (q) {
+      matched = allPlugins.filter(function (p) {
+        var hay = [p.moduleName, p.entryId, p.description]
+          .filter(function (x) { return x != null; })
+          .join(' ').toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+    }
+    render(matched, total, q);
+  }
+  function render(list, total, q) {
     rows.innerHTML = '';
     list.forEach(function (p) {
       var tr = document.createElement('tr');
@@ -139,7 +179,16 @@
       tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
       rows.appendChild(tr);
     });
+    if (q) {
+      countEl.textContent = '共 ' + total + ' 个插件，匹配 ' + list.length + ' 个';
+      countEl.style.display = list.length ? '' : 'none';
+      emptyEl.style.display = list.length ? 'none' : '';
+    } else {
+      countEl.style.display = 'none';
+      emptyEl.style.display = 'none';
+    }
   }
+  searchInput.addEventListener('input', applyFilter);
   fetchList();
 })();
 </script>
