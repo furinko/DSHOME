@@ -102,6 +102,34 @@ function persona() {
   } catch { /* 忽略 */ }
   return '';
 }
+// ── 上工地图速览（知识发现机器化，2026-09-06）────────────────────────────
+// 目的：把 Tree/Power 的"存在与用法"随 R1 机器到场——不靠模型记得"上工先 read"（AGENTS §八
+//      由动作条款升级为机器带，堵"条款在场≠执行"的 gap）。速览=头部说明 + Tree 层骨架，
+//      动态读原文，无拷贝漂移；完整内容按需 read 对应文件。
+function mapSight() {
+  const out = [];
+  const tree = join(repoRoot, 'mind', 'L1', 'Tree.md');
+  if (existsSync(tree)) {
+    try {
+      const lines = readFileSync(tree, 'utf8').split('\n');
+      const heads = lines.filter((l) => /^##\s/.test(l)).map((l) => l.replace(/^##\s+/, '').trim()).filter((h) => h !== '使用说明' && h !== '更新规则').slice(0, 12);
+      const usage = lines.slice(0, 12).find((l) => l.includes('查"X 在哪"'));
+      if (heads.length) {
+        let t = `Tree 全库目录（${usage ? usage.trim() + '；' : ''}深查 read 本文件）：${heads.join(' / ')}`;
+        out.push(t);
+      }
+    } catch { /* 忽略 */ }
+  }
+  const power = join(repoRoot, 'mind', 'L1', 'Power.md');
+  if (existsSync(power)) {
+    try {
+      const lines = readFileSync(power, 'utf8').split('\n');
+      const pos = (lines.find((l) => /^> 定位/.test(l)) || '').replace(/^>\s*/, '').replace(/\*\*/g, '').trim();
+      if (pos) out.push(`Power：${pos}（Skill 触发已机器化：skill-loader 扫 frontmatter contract.triggers；积木盘点 _index.md）`);
+    } catch { /* 忽略 */ }
+  }
+  return out.join('\n');
+}
 // ── 注：R0 宪法（mind\L0\SOUL.md 人格 + AGENTS.md 运行）由宿主插件 dshome-mind-inject 运行时读双件全文注入
 //    （正文=注入源，无手写摘要副本）；mind-prime 不再重复生成任何 R0 内容（旧版关键词抽取已删——依据唯一）。
 // 本脚本只装配动态召回：project 进度/待办 + L3 相关记忆 + Learn 最近教训 + user-rules + 人设。
@@ -136,6 +164,7 @@ const memories = search(limit);
 const lrn = learn();
 const rules = userRules();
 const prs = persona();
+const mp = mapSight();
 // 歧义检测只对显式传入的 query 生效（用户/调用方给的搜索词）；内部默认装配关键词不提示
 const ambiguous = hasExplicitQuery ? disambiguationFor(query) : [];
 
@@ -158,6 +187,7 @@ const openTodos = p.todos.filter((t) => !t.done);
 if (openTodos.length) out.push(`\n■ project.md「下一步」待办（未勾选 ${openTodos.length}）\n${openTodos.slice(0, 8).map((t) => `- [ ] ${t.text}`).join('\n')}`);
 if (memories.length) out.push(`\n■ L3 相关记忆（top${memories.length}）\n${memories.map((m) => `- [${m.score}] ${m.file} :: ${m.section}\n  ${m.snippet}`).join('\n')}`);
 if (lrn.length) out.push(`\n■ Learn 最近教训\n${lrn.join('\n')}`);
+if (mp) out.push(`\n■ 上工地图（知识库速览——Tree/Power，深查 read 对应文件）\n${mp}`);
 if (rules) out.push(`\n■ user-rules（用户偏好/铁律）\n${rules}`);
 if (prs) out.push(`\n■ 人设卡（本机私密，演绎唯一权威源）\n${prs}`);
 console.log(out.join('\n'));
