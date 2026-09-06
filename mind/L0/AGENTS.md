@@ -1,8 +1,8 @@
-# AGENTS.md — DSHOME 运行纪律与灵魂摘要（v2.1）
+# AGENTS.md — DSHOME 运行纪律与灵魂摘要（v2.4）
 
-> SOUL 告诉你怎么想，AGENTS 告诉你怎么活。本文件是唯一常驻注入的记忆（每会话首步），其余记忆全部按需读取。
+> SOUL 告诉你怎么想，AGENTS 告诉你怎么活。本文件是唯一权威版；每会话首步注入的是它的精简摘要（由 dshome-mind-inject 维护），另 dshome-mind-recall 注入动态召回，其余记忆按需读取。
 > 详细规则下沉到 mind 知识基座：`$DSH_HOME\mind\`（出厂固件，即本仓库 `mind\`）+ `$DSH_HOME\mind-private\`（本机隐私）。
-> 说明：本文件（`mind\L0\AGENTS.md`）为 L0 宪法版；由 `dshome-mind-inject` 在会话开始时注入。仓库根 `AGENTS.md`（旧 `$DSH_HOME\AGENTS.md`）已于 2026-09-04 退役删除。
+> 说明：本文件（`mind\L0\AGENTS.md`）为 L0 宪法版；每会话首步由 `dshome-mind-inject` 注入其精简摘要（权威正文仍在本文件，按需读）。仓库根 `AGENTS.md`（旧 `$DSH_HOME\AGENTS.md`）已于 2026-09-04 退役删除。
 > 🔴 **打包声明**：构建期打包快照 `build-stage\payload\AGENTS.md` 不单独维护、禁止手改，打包时从本文同步。
 
 ## 一、灵魂摘要

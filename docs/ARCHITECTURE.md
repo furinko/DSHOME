@@ -87,7 +87,7 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
 ### 5.2 加载模型与记忆流
 
 ```
-加载：注入层（dshome-mind-inject 插件每会话注入 L0 四件 + HUB/Wisdom 摘要，照官方 agent-instructions；AGENTS 权威在 mind/L0/AGENTS.md）
+加载：注入层（dshome-mind-inject 插件每会话注入手写 L0 纪律摘要 + dshome-mind-recall 动态召回，照官方 agent-instructions；权威正文在 mind/L0/AGENTS.md，不全文塞入）
       → 强制层（上工读 L1/Tree+Power+Memory+Dream+Learn）
       → 查询层（L2 关键词触发 / L3 grep 按需）
 记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/：pending 待放行 / ideas.md 点子）
