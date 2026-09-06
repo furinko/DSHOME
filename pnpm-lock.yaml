@@ -54,6 +54,12 @@ importers:
 
   packages/dshome-theme: {}
 
+  packages/imagegen-plugin:
+    dependencies:
+      sharp:
+        specifier: 0.35.4
+        version: 0.35.4
+
   profiles/dshome:
     dependencies:
       '@bananasoldier01/dsh-tidychat':
@@ -164,6 +170,9 @@ importers:
       dsh-better-sidebar:
         specifier: 0.17.1
         version: 0.17.1(e4a437d0b9efa642571a916ed8ae9e3e)
+      dsh-imagegen:
+        specifier: workspace:*
+        version: link:../../packages/imagegen-plugin
       dsh-input-traffic:
         specifier: ^0.2.9
         version: 0.2.9(83db7772f479e5575e739061a53dad94)

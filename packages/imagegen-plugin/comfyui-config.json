@@ -1,0 +1,59 @@
+{
+  "comfyuiBaseUrl": "http://127.0.0.1:8188",
+  "workflowPath": "workflows/anima.json",
+  "comfyuiCwd": null,
+  "comfyuiStartCommand": null,
+  "comfyuiStartArgs": [],
+  "dsMappings": [
+    {
+      "prefix": "DS-01-",
+      "param": "prompt_tags",
+      "description": "标签词提示（英文标签）"
+    },
+    {
+      "prefix": "DS-02-",
+      "param": "prompt_nl",
+      "description": "自然语言描述"
+    },
+    {
+      "prefix": "DS-03-",
+      "param": "reference_name",
+      "description": "角色参考名"
+    },
+    {
+      "prefix": "DS-04-",
+      "param": "width",
+      "description": "图片宽度"
+    },
+    {
+      "prefix": "DS-05-",
+      "param": "height",
+      "description": "图片高度"
+    },
+    {
+      "prefix": "DS-07-",
+      "param": "characters",
+      "description": "画面人数"
+    },
+    {
+      "prefix": "DS-08-",
+      "param": "negative_tags",
+      "description": "标签词负面提示"
+    },
+    {
+      "prefix": "DS-09-",
+      "param": "mode",
+      "description": "文生图/局部重绘（透传，不在工具参数中暴露）"
+    },
+    {
+      "prefix": "DS-10-",
+      "param": "redraw_image",
+      "description": "重绘图像（host 上传后注入的 ComfyUI 文件名，模型不可见）"
+    },
+    {
+      "prefix": "DS-11-",
+      "param": "redraw_strength",
+      "description": "重绘强度（局部重绘 denoise，默认 0.5）"
+    }
+  ]
+}

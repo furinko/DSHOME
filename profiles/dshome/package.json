@@ -41,6 +41,7 @@
     "dsh-input-traffic": "^0.2.9",
     "dsh-status-rotator": "^0.10.0",
     "dsh-whale-widget": "^0.2.10",
+    "dsh-imagegen": "workspace:*",
     "dshmarket": "^1.38.1",
     "dshome": "workspace:*",
     "dshome-assistant-identity": "workspace:*",

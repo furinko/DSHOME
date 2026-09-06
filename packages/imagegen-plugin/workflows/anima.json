@@ -1,0 +1,18 @@
+{
+  "10": { "class_type": "UNETLoader", "inputs": { "unet_name": "Anima-2.9B-preview-v1_int8_convrot.safetensors", "weight_dtype": "default" } },
+  "11": { "class_type": "CLIPLoader", "inputs": { "clip_name": "qwen_3_06b_base.safetensors", "type": "qwen_image" } },
+  "12": { "class_type": "VAELoader", "inputs": { "vae_name": "qwen_image_vae.safetensors" } },
+  "4": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["11", 0], "text": "" }, "_meta": { "title": "DS-01-" } },
+  "13": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["11", 0], "text": "" }, "_meta": { "title": "DS-02-" } },
+  "14": { "class_type": "ConditioningCombine", "inputs": { "conditioning_1": ["4", 0], "conditioning_2": ["13", 0] } },
+  "6": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["11", 0], "text": "" }, "_meta": { "title": "DS-08-" } },
+  "15": { "class_type": "PrimitiveInt", "inputs": { "value": 812 }, "_meta": { "title": "DS-04-" } },
+  "16": { "class_type": "PrimitiveInt", "inputs": { "value": 1216 }, "_meta": { "title": "DS-05-" } },
+  "17": { "class_type": "PrimitiveInt", "inputs": { "value": 1 }, "_meta": { "title": "DS-07-" } },
+  "5": { "class_type": "EmptyLatentImage", "inputs": { "width": ["15", 0], "height": ["16", 0], "batch_size": 1 } },
+  "7": { "class_type": "KSampler", "inputs": {
+    "model": ["10", 0], "positive": ["14", 0], "negative": ["6", 0], "latent_image": ["5", 0],
+    "seed": 0, "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": 1.0 } },
+  "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0], "vae": ["12", 0] } },
+  "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0], "filename_prefix": "anima" } }
+}

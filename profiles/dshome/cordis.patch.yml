@@ -4,4 +4,7 @@
 #   - dshome-desktop 默认 disabled（dshmarket 回归 CLI 安装路径）
 # 本文件保留为「本机覆盖位」：plugin-manager 的行级启停写入不受影响
 # （profiles/*/cordis.yml 为合成产物，勿手改）
-[]
+# ── 自制生图插件（最小能跑版）──
+- insert:
+    - id: dsh-imagegen
+      name: dsh-imagegen

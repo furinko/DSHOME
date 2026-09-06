@@ -1,0 +1,4 @@
+# 最小生图插件装配（进 profile L4 覆盖位生效）
+- insert:
+    - id: dsh-imagegen
+      name: dsh-imagegen

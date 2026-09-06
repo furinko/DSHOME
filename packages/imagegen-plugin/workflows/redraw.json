@@ -1,0 +1,17 @@
+{
+  "10": { "class_type": "AnimaBoosterLoader", "inputs": { "model_name": "anima-base-v1.0.safetensors", "sage_attention": "disabled", "torch_compile": false } },
+  "11": { "class_type": "CLIPLoader", "inputs": { "clip_name": "qwen_3_06b_base.safetensors", "type": "qwen_image" } },
+  "12": { "class_type": "VAELoader", "inputs": { "vae_name": "qwen_image_vae.safetensors" } },
+  "18": { "class_type": "LoadImage", "inputs": { "image": "" }, "_meta": { "title": "DS-10-" } },
+  "25": { "class_type": "AnimaLLLiteApply_sdscripts", "inputs": { "model": ["10", 0], "lllite_name": "anima-lllite-inpainting-v1.safetensors", "image": ["18", 0], "mask": ["18", 1], "strength": 1.0, "start_percent": 0.0, "end_percent": 1.0, "preserve_wrapper": true } },
+  "21": { "class_type": "VAEEncode", "inputs": { "pixels": ["18", 0], "vae": ["12", 0] } },
+  "22": { "class_type": "SetLatentNoiseMask", "inputs": { "samples": ["21", 0], "mask": ["18", 1] } },
+  "4": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["11", 0], "text": "" }, "_meta": { "title": "DS-01-" } },
+  "6": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["11", 0], "text": "" }, "_meta": { "title": "DS-08-" } },
+  "20": { "class_type": "PrimitiveFloat", "inputs": { "value": 0.85 }, "_meta": { "title": "DS-11-" } },
+  "7": { "class_type": "KSampler", "inputs": {
+    "model": ["25", 0], "positive": ["4", 0], "negative": ["6", 0], "latent_image": ["22", 0],
+    "seed": 0, "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "sgm_uniform", "denoise": ["20", 0] } },
+  "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0], "vae": ["12", 0] } },
+  "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0], "filename_prefix": "redraw" } }
+}
