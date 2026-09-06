@@ -295,33 +295,22 @@ if (bRoutes.ok) {
   }
 }
 
-// ⑥d L0 摘要纪律标签（mind-inject.js L0_SUMMARY）↔ L0 权威正文 出现性（K3 四.1 副本漂移，启发式 warn）
-//   诚实设计取舍：摘要用极简标签、权威正文是散述，纯 substring 会大量误报（违背本系统"不做模糊匹配/薄契约"）。
-//   故用宽松 token 命中：标签任一词元（≥2字符）出现在 SOUL/AGENTS/TOOL 任一即视为对应；全无才报「真漂移」。
-function l0SummaryLabels() {
+// ⑥d 注入源单一性（v2.5：手写 L0_SUMMARY 摘要已废——正文全文注入，单一权威）。
+//   mind-inject.js 必须引用 mind\L0\AGENTS.md 权威正文为注入源；不得再出现手写纪律副本
+//   （L0_SUMMARY 死灰复燃即 warn；未引用权威正文路径也 warn）。启发式，非全文语义校验。
+function injectSourceCheck() {
   const p = join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'mind-inject.js');
-  if (!existsSync(p)) return { ok: false, labels: [] };
+  if (!existsSync(p)) return { ok: false, issues: [] };
   const src = readFileSync(p, 'utf8');
-  const m = /const L0_SUMMARY = `([\s\S]*?)`;/.exec(src);
-  if (!m) return { ok: false, labels: [] };
-  const content = m[1].replace(/\r\n/g, '\n');
-  const labels = [];
-  for (const ln of content.split('\n')) {
-    const mm = /^([^\s：:【】]{2,16})[：:]/.exec(ln.trim());
-    if (mm) labels.push(mm[1]);
-  }
-  return { ok: true, labels };
+  const issues = [];
+  if (/const\s+L0_SUMMARY\s*=/.test(src))
+    issues.push({ sev: 'warn', file: 'packages/dshome/lib/host/mind-inject.js', msg: `手写 L0_SUMMARY 死灰复燃——v2.5 起注入源必须是 mind\\L0\\AGENTS.md 全文（正文即注入，禁止硬编码纪律副本）` });
+  if (!src.includes("'mind', 'L0', 'AGENTS.md'"))
+    issues.push({ sev: 'warn', file: 'packages/dshome/lib/host/mind-inject.js', msg: `mind-inject.js 未引用权威正文路径 mind/L0/AGENTS.md——注入源应为 AGENTS 全文（正文即注入源）` });
+  return { ok: true, issues };
 }
-const l0Body = ['SOUL.md', 'AGENTS.md', 'TOOL.md'].map((f) => existsSync(join(MIND, 'L0', f)) ? readFileSync(join(MIND, 'L0', f), 'utf8') : '').join('\n');
-const ls = l0SummaryLabels();
-if (ls.ok) {
-  const tok = (s) => (s.match(/[\u4e00-\u9fa5A-Za-z]{2,}/g) || []).filter((t) => t.length >= 2);
-  for (const label of ls.labels) {
-    const parts = tok(label);
-    if (parts.length && !parts.some((t) => l0Body.includes(t)))
-      issues.push({ sev: 'warn', file: 'mind/L0/AGENTS.md', msg: `L0 摘要纪律标签「${label}」在 SOUL/AGENTS/TOOL 中完全未出现——摘要副本可能漂移（摘要提到权威正文已无的纪律）` });
-  }
-}
+const isc = injectSourceCheck();
+if (isc.ok) issues.push(...isc.issues);
 
 // ⑦ (c) AGENTS 双版本同步：权威版 mind\L0\AGENTS.md 与打包快照 build-stage\payload\AGENTS.md 全文一致
 //    （根版 E:\DSHOME\AGENTS.md 已于 2026-09-04 退役删除，权威版唯一 = mind\L0\AGENTS.md。

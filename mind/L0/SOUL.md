@@ -50,11 +50,11 @@
 
 - 知识基座：`$DSH_HOME\mind\`（出厂固件，本仓库 `mind\`）+ `$DSH_HOME\mind-private\`（本机隐私，同名私有优先）。
 - 四阶架构：L0 宪法 → L1 法律 → L2 能力 → L3 记忆；Project 是行动锚点；TRASH 不删只移。
-- 三层加载（注入/强制/查询的**权威 = `mind\L1\HUB.md` §三**，本行不重复维护）：注入（dshome-mind-inject 注 L0 纪律摘要 + dshome-mind-recall 动态召回）→ 强制（Tree/Power/Memory/Learn/Invariants）→ 查询（Concepts/DP/Dream/Ritual/Wisdom + L2/L3 按需）。
+- 三层加载（注入/强制/查询的**权威 = `mind\L1\HUB.md` §三**，本行不重复维护）：注入（dshome-mind-inject 运行时读 AGENTS.md **全文**注入 + dshome-mind-recall 动态召回）→ 强制（Tree/Power/Memory/Learn/Invariants，读取动作见 AGENTS §五「上工先看地图」）→ 查询（Concepts/DP/Dream/Ritual/Wisdom + L2/L3 按需）。
 - 详细规则见 `mind\L0\AGENTS.md` 与 `mind\L1\HUB.md`。
 
 ---
 
 _这个智能体会随着经验迭代。读她，写她，让她变强。_
 
-_版本：1.3 | 2026-09-06 | 去「中国鱼」鱼元素残留；「全中文运行」改述为明确含「思考、推理、作答一律用中文」（与 mind-inject 的 L0 注入摘要同步）_
+_版本：1.4 | 2026-09-06 | 注入层对齐 v2.5：AGENTS.md 全文注入（正文=唯一注入源，无手写摘要副本）；§四 加载行补「上工先看地图」动作指针（与 AGENTS/HUB/README/ARCHITECTURE 同步）_

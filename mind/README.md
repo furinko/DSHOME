@@ -19,7 +19,7 @@
 > 完整加载策略（注入/强制/查询 每层含哪些文件）的**权威在 `mind\L1\HUB.md` §三**。此处仅速览：
 
 ```
-注入层：dshome-mind-inject 注 L0 纪律摘要 + dshome-mind-recall 动态召回 ｜ 强制层：Tree/Power/Memory/Learn/Invariants ｜ 查询层：其余 L1 参考 + L2/L3/Project 按需
+注入层：dshome-mind-inject 运行时读 `mind\L0\AGENTS.md` 全文注入（v2.5 起，正文=唯一注入源）+ dshome-mind-recall 动态召回 ｜ 强制层：Tree/Power/Memory/Learn/Invariants（读取动作见 AGENTS §五「上工先看地图」）｜ 查询层：其余 L1 参考 + L2/L3/Project 按需
 ```
 
 ## 三、怎么用私密区（本机，一句话）

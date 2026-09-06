@@ -94,9 +94,9 @@ function persona() {
   if (!existsSync(f)) return '';
   return readFileSync(f, 'utf8').trim();
 }
-// ── 注：L0 注入摘要（核心纪律）由宿主插件 dshome-mind-inject 唯一维护，mind-prime 不再重复生成 ──
-// （旧版曾在这里重复一份 INJECT_LAYER 关键词抽取，与 mind-inject 漂移；已删——依据唯一）
-// 本脚本只装配：project 进度/待办 + L3 相关记忆 + Learn 最近教训 + user-rules。
+// ── 注：L0 纪律全文由宿主插件 dshome-mind-inject 运行时读 mind\L0\AGENTS.md 注入（v2.5 起全文注入，
+//    正文=唯一注入源，无手写摘要副本）；mind-prime 不再重复生成任何 L0 内容（旧版关键词抽取已删——依据唯一）。
+// 本脚本只装配动态召回：project 进度/待办 + L3 相关记忆 + Learn 最近教训 + user-rules。
 
 // ── 撞名消歧（组件D）：query 命中 Concepts 歧义表 → 提示钉身份再动手 ──────
 function disambiguationFor(query) {
@@ -146,7 +146,8 @@ if (ambiguous.length) {
   out.push(`\n⚠️ 歧义词检测：「${query}」可能指——\n${ambiguous.map((a) => `- ${a.word}：${a.candidates}（判定：${a.clues}）`).join('\n')}\n请先钉身份（指哪个）再进入任务；若已明确可不理会本条。`);
 }
 if (p.progress) out.push(`\n■ project.md「进度状态」\n${p.progress}`);
-if (p.todos.length) out.push(`\n■ project.md「下一步」待办（未勾选 ${p.todos.filter((t) => !t.done).length}）\n${p.todos.filter((t) => !t.done).slice(0, 8).map((t) => `- [ ] ${t.text}`).join('\n')}`);
+const openTodos = p.todos.filter((t) => !t.done);
+if (openTodos.length) out.push(`\n■ project.md「下一步」待办（未勾选 ${openTodos.length}）\n${openTodos.slice(0, 8).map((t) => `- [ ] ${t.text}`).join('\n')}`);
 if (memories.length) out.push(`\n■ L3 相关记忆（top${memories.length}）\n${memories.map((m) => `- [${m.score}] ${m.file} :: ${m.section}\n  ${m.snippet}`).join('\n')}`);
 if (lrn.length) out.push(`\n■ Learn 最近教训\n${lrn.join('\n')}`);
 if (rules) out.push(`\n■ user-rules（用户偏好/铁律）\n${rules}`);

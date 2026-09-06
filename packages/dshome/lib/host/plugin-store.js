@@ -23,7 +23,7 @@ const DESC_CN = {
   'dshome-plugin-center': '插件管理中心（本面板）',
   'dshome-plugin-api': '插件管理控制面（/api/dshome/plugins）',
   'dshome-mind': '心智可视化面板（host+client）：/api/mind/* 双区读取 + 侧栏「心智」tab',
-  'dshome/mind-inject': '心智 L0 注入：每会话开头注入一次纪律摘要（AGENTS/SOUL/TOOL/HUB/Wisdom），非每轮，省 token',
+  'dshome/mind-inject': '心智 L0 注入：每会话开头注入一次 AGENTS.md 纪律全文（正文=注入源，v2.5），非每轮',
   'dshome/mind-guard': '心智护栏（执行面）：write/edit 真正写入前拦一道——隐私红线 + 自我修改门禁，只拦不注入',
   'dshome/mind-recall': '上工自动召回：每主会话第一步注入 project 待办 + L3 记忆 + Learn 教训 + user-rules，不靠 agent 记得跑',
   'dshome/mind-skill-loader': 'Skill 关键词触发加载：命中注入方法论摘要卡，同 Skill 同会话只提示一次，fails-open',

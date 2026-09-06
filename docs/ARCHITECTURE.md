@@ -1,6 +1,6 @@
 # DSHOME 架构说明（现状）
 
-> 版本：2.1 ～创建：2026-08-31 ～更新：2026-09-04（心智体系重构：dsh-evolve 退役 → mind/ 纯文件心智 + 可视化图谱；记忆流轮级缓冲路径修正）
+> 版本：2.2 ～创建：2026-08-31 ～更新：2026-09-06（心智体系重构：dsh-evolve 退役 → mind/ 纯文件心智 + 可视化图谱；记忆流轮级缓冲路径修正；§5.2 注入层对齐 v2.5——AGENTS.md 全文注入）
 > 定位：**现状架构 + 设计决策记录**（历史设计文档已归档移除，本文为唯一架构参考）
 > 目标读者：DSHOME 的维护者与接手者（包括未来的自己）
 
@@ -87,8 +87,8 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
 ### 5.2 加载模型与记忆流
 
 ```
-加载：注入层（dshome-mind-inject 插件每会话注入手写 L0 纪律摘要 + dshome-mind-recall 动态召回，照官方 agent-instructions；权威正文在 mind/L0/AGENTS.md，不全文塞入）
-      → 强制层（上工读 L1/Tree+Power+Memory+Dream+Learn）
+加载：注入层（dshome-mind-inject 插件每会话**运行时读 mind/L0/AGENTS.md 全文注入**——v2.5 起正文即注入源，无手写摘要副本 + dshome-mind-recall 动态召回，照官方 agent-instructions）
+      → 强制层（上工动作见 AGENTS §五「上工先看地图」：read L1/Tree+Power 头部 + 场景查 Memory/Dream/Invariants）
       → 查询层（L2 关键词触发 / L3 grep 按需）
 记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/：pending 待放行 / ideas.md 点子）
       → 收工闭环 7 步 → 蒸馏入 L3/通用层（Hermes soyawl 模式）
@@ -148,11 +148,11 @@ dsh-evolve（22 工具/JSON 存储/自动召回注入）→ 2026-09-02 退役：
 
 1. `dshome/core` 扩展点（commands/panels）**零消费者**——契约未经实战；
 2. settings.yaml 管理视图与 patch 加载真相可能漂移（已见实例：视图显示 disabled 但实际加载）；
-3. 纯文件心智**无自动召回/注入**（dsh-evolve 时代有）——靠 Tree 索引 + 上工强制加载 + grep；任务相关性检索依赖协议纪律，未来可加自研轻量索引（bigram 文件级，可选）；
+3. ~~纯文件心智无自动召回/注入~~ **已解决（2026-09-06）**：dshome-mind-inject 每会话注入 AGENTS.md 全文（v2.5 起，正文=注入源）+ dshome-mind-recall 自动召回 mind-prime 产物 + mind-skill-loader 关键词触发加载；检索走共享库 `mind-search-lib.cjs`（bigram 文件级，单一真源，与 /api/mind/search 一致）；强制层读取动作化（AGENTS §五「上工先看地图」）；
 4. 心智图谱**边稀疏**——frontmatter `related` 需随技能/记忆沉淀持续补充；`_index`/同 tags 关联暂未成边（可扩展 /api/mind/graph）；
 5. 面板（conversation.view）为会话作用域——无活跃会话时 view 不可用（官方 view 同约束，心智读文件本可独立，未来可考虑全局挂点）；
 6. 部署后出厂模板更新不传播（mind\ 与本地 mind-private 分叉——自进化优先，符合意图）。
 
 ---
 
-_版本：2.1 | 2026-09-04 | 心智体系重构：dsh-evolve 退役 → mind/ 双区 + dshome-mind 图谱；文档清理（archive/）；记忆流轮级缓冲路径修正（00_约定 → tasks/pending/ideas）_
+_版本：2.2 | 2026-09-06 | 注入层对齐 v2.5：mind-inject 改运行时读 mind/L0/AGENTS.md 全文注入（去手写 L0 摘要，正文=唯一注入源）；§9.3 债「无自动召回/注入」销账；收工闭环步数等遗留过时描述待后续轮次清理（见审计 Q4）_

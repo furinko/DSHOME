@@ -12,7 +12,7 @@
 //     触发词取 frontmatter contract.triggers 的精确词（非宽泛词）。
 //   - fails-open：解析/扫描失败只记日志，绝不阻塞会话。
 //
-// 与既有插件分工：mind-inject（L0 纪律摘要·首步）· mind-recall（记忆召回·首步）·
+// 与既有插件分工：mind-inject（L0 纪律全文·首步）· mind-recall（记忆召回·首步）·
 //                  mind-guard（护栏·write 前）· 本插件（Skill 卡片·每步检测）。
 //
 // 三步注册（dshome-plugin-dev §十）：① 本文件 ② package.json exports 补 ./mind-skill-loader
