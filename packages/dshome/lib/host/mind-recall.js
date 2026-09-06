@@ -14,6 +14,8 @@
 //   inject 管「L0 纪律摘要」（每会话都该遵守的核心纪律，静态）；
 //   recall 管「上工记忆召回」（当前项目/任务的进度+相关记忆，动态）。
 //   两者互补：纪律常驻、记忆按需——本插件只做召回，纪律归注入器。
+//   注：不再加「上工自动召回 · 会话记忆」包层头——mind-prime 首行「【上工自动召回 · <query>】」
+//       已自带块头，两层同义头是冗余（2026-09-06 A4 收敛）。
 //
 // 验证：marker 仅启动诊断；集成测试 scripts/mind-boot-recall-itest.mjs 与
 //      scripts/verify-boot-recall.mjs 对本插件做行为验收（改测本插件后重启 DSHOME 再跑）。
@@ -23,6 +25,7 @@ import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { sessionKey, insertAfterClaimed } from './mind-insert.js';
 
 /** Stable Cordis plugin name (cordis.patch.yml: name dshome/mind-recall). */
 export const name = 'dshome-mind-recall';
@@ -45,12 +48,6 @@ function writeMarker(content) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'mind-recall-marker.txt'), content, 'utf8');
   } catch (e) { /* 诊断标记失败不影响插件 */ }
-}
-
-/** 每会话只注入一次的守卫 key（与 mind-inject 同款，session 弃后新会话重新注入）。 */
-function sessionKey(agent) {
-  const id = agent?.session?.header?.id;
-  return id ? `session:${String(id)}` : null;
 }
 
 /** 消息文本抽取（content 可能是 string 或 blocks）。 */
@@ -100,18 +97,14 @@ export function apply(ctx) {
         // 空机降级：无 ■ 分节（无 project 进度/待办/L3/Learn/user-rules）→ 不注入空壳。
         if (!primeText.includes('■')) return decision;
 
-        const payload = `\n【上工自动召回 · 会话记忆】\n${primeText}`;
+        // 块头由 mind-prime 首行自带（【上工自动召回 · <query>】），不再包一层同义头（A4）。
+        const payload = `\n${primeText}`;
         const recallMessage = createUserMessage({
           content: [{ type: 'text', text: payload }],
           source: { kind: 'plugin', plugin: name, form: 'recall' },
         });
         // 插到 claimed 用户消息之后（指令类上下文不被稀释），无 claimed 则放最前。
-        const claimedSet = new Set(messages || []);
-        const lastClaimed = (decision.messages || []).findLastIndex((m) => claimedSet.has(m));
-        if (lastClaimed >= 0) {
-          return { ...decision, messages: decision.messages.toSpliced(lastClaimed + 1, 0, recallMessage) };
-        }
-        return { ...decision, messages: [recallMessage, ...(decision.messages || [])] };
+        return insertAfterClaimed(decision, messages, recallMessage);
       } catch (error) {
         // 注入失败只记日志，绝不阻断。
         ctx.logger?.('dshome').warn('dshome-mind-recall: 注入失败 %O', error);

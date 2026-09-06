@@ -27,7 +27,7 @@ async function main() {
   console.log('[verify-boot-recall] ✅ mind-recall 已注册（marker: ' + marker + '）');
   console.log('[verify-boot-recall] 行为验收（顶层注入/幂等/跳子代理/cron防双份/注入位置）请跑:');
   console.log('[verify-boot-recall]   node scripts/mind-boot-recall-itest.mjs');
-  console.log('[verify-boot-recall] 新会话首步将自动注入【上工自动召回 · 会话记忆】块（空机优雅降级不注）');
+  console.log('[verify-boot-recall] 新会话首步将自动注入【上工自动召回 · DSHOME 心智】块（空机优雅降级不注）');
   process.exit(0);
 }
 
