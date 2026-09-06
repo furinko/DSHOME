@@ -1044,11 +1044,107 @@ window.__ModuleLoader__.load({
       return react_jsx_runtime.jsx("div", { className: "dshome-mind-root", ref });
     }
 
-    // ── 插件体：conversation.view（对话/轨迹同级）───────────────────────────
+    // ── 接入心智开关（conversation.input.right）──────────────────────────────
+    // per-session：读 /api/mind/connect?session= 复现当前态；点按 POST 翻转。
+    // 开关 = 该会话是否「接入心智」：接入则注入 R0 宪法（SOUL+AGENTS）+ 上工召回；
+    // 关闭＝纯助手（不注入人格纪律，也不做记忆召回）。默认接入。
+    function MindConnectToggle(props) {
+      var sessionId = props && props.sessionId;
+      var [enabled, setEnabled] = React.useState(true);
+      var [loaded, setLoaded] = React.useState(false);
+      var [busy, setBusy] = React.useState(false);
+
+      React.useEffect(function () {
+        if (!sessionId) { setLoaded(true); return; }
+        var alive = true;
+        fetch('/api/mind/connect?session=' + encodeURIComponent(sessionId), { signal: AbortSignal.timeout(6000) })
+          .then(function (r) { return r.json(); })
+          .then(function (d) { if (alive && d && d.ok) setEnabled(!!d.enabled); })
+          .catch(function () {})
+          .finally(function () { if (alive) setLoaded(true); });
+        return function () { alive = false; };
+      }, [sessionId]);
+
+      function toggle() {
+        if (!sessionId || busy) return;
+        var next = !enabled;
+        setBusy(true);
+        fetch('/api/mind/connect', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ session: sessionId, enabled: next }),
+          signal: AbortSignal.timeout(6000),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) { if (d && d.ok) setEnabled(!!d.enabled); })
+          .catch(function () {})
+          .finally(function () { setBusy(false); });
+      }
+
+      var on = !!enabled;
+      var trackW = 34, trackH = 20, knob = 16, pad = 2;
+      var track = {
+        position: 'relative', boxSizing: 'border-box',
+        width: trackW, height: trackH, borderRadius: 999,
+        padding: 0, border: 'none',
+        background: on ? 'var(--dsw-alias-brand-primary, #4D6BFE)' : 'var(--dsw-alias-border-l2, rgba(127,127,127,.22))',
+        cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.55 : 1,
+        transition: 'background 150ms ease', flex: 'none',
+      };
+      var knobStyle = {
+        position: 'absolute', top: pad, left: on ? (trackW - knob - pad) : pad,
+        width: knob, height: knob, borderRadius: 999, boxSizing: 'border-box',
+        background: on ? '#fff' : 'var(--dsw-alias-label-secondary, #9aa0a6)',
+        boxShadow: '0 1px 2px rgba(0,0,0,.28)',
+        transition: 'left 150ms ease',
+      };
+      var wrap = {
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        height: 28, padding: '0 6px', borderRadius: 8, boxSizing: 'border-box',
+        cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1,
+        userSelect: 'none',
+      };
+      var h = React.createElement;
+      return h('div', {
+        className: 'dshome-mind-connect',
+        title: on
+          ? '已接入心智 · 点击关闭（本会话不再注入人格纪律/记忆，也不写记忆）'
+          : '未接入心智 · 点击开启（本会话注入心智人格纪律与记忆）',
+        style: wrap,
+        'data-mind-connect': on ? 'on' : 'off',
+      },
+        h('button', {
+          type: 'button',
+          role: 'switch',
+          'aria-checked': on,
+          'aria-label': '接入心智',
+          disabled: busy || !loaded,
+          onClick: toggle,
+          style: track,
+        }, h('span', { style: knobStyle })),
+        h('span', {
+          style: {
+            fontSize: 11, lineHeight: '20px', whiteSpace: 'nowrap', flex: 'none',
+            color: on ? 'var(--dsw-alias-label-primary, #e8eaed)' : 'var(--dsw-alias-label-tertiary, rgba(154,160,166,.7))',
+            transition: 'color 150ms ease',
+          },
+        }, '心智')
+      );
+    }
+
+    // ── 插件体：conversation.view（对话/轨迹同级）+ conversation.input.right（接入心智开关）─
     var inject = ["slots"];
     function apply(ctx) {
       try {
         ensureStyle();
+        ctx.slots.inject("conversation.input.right", function () {
+          return ctx.slots.register({
+            name: "conversation.input.right",
+            id: "mind-connect",
+            order: 100,
+            label: function () { return "心智"; },
+          }, MindConnectToggle);
+        });
         ctx.slots.inject("conversation.view", function () {
           return ctx.slots.register({
             name: "conversation.view",

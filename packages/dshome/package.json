@@ -14,6 +14,7 @@
     "./mind-inject": "./lib/host/mind-inject.js",
     "./mind-guard": "./lib/host/mind-guard.js",
     "./mind-recall": "./lib/host/mind-recall.js",
+    "./mind-connect": "./lib/host/mind-connect.js",
     "./plugin-manager": "./lib/host/plugin-manager.js",
     "./desktop": "./lib/host/desktop.js",
     "./package.json": "./package.json",

@@ -1,7 +1,7 @@
 ---
 name: dshome-crash-recovery
 description: DSHOME/DSH 崩溃排查+自愈——先分装配期/运行期/前端半区三层；启动失败（fail-loud boot 崩溃循环）用 marker 定位崩溃插件 → plugin-change-guard --recover / safe 模式逃生；前端「Failed to load plugins」用「__ModuleLoader__.load id == 包名」四证核对；host 半区崩=整宿主起不来、client 崩=仅 UI 缺失。触发：启动失败/起不来/崩溃循环/Failed to load plugins/半区加载失败/插件加载失败/ERR_PACKAGE_PATH_NOT_EXPORTED/重启后依旧崩。
-version: 1.0.3
+version: 1.0.4
 author: DSHOME
 license: internal
 metadata:
@@ -90,17 +90,20 @@ contract:
 
 ## 五、前端自救（守护横幅 + /self-heal 自救台）
 
-**形态**（v3，2026-09-06 修订）：**不劫持页面的横幅提示** + 一个**不加载任何插件**的纯静态自救页（host 直出 HTML）。v1 曾做"自动刷新→跳转"（误判即死循环、吞报错现场）——废弃；v2 改横幅但用全文文本轮询 → 命中**对话/历史消息里的同文本**（会话里讨论过 "Failed to load plugins" 就误弹）——废弃。
+**形态**（v4，2026-09-06 修订）：**不劫持页面的横幅提示** + 一个**不加载任何插件**的纯静态自救页（host 直出 HTML）。v1 曾做"自动刷新→跳转"（误判即死循环、吞报错现场）——废弃；v2 改横幅但用全文文本轮询 → 命中**对话/历史消息里的同文本**（会话里讨论过 "Failed to load plugins" 就误弹）——废弃；v3 只认 JS 错误事件零误触，但漏报「官方把注册失败渲染成页面文本（did not activate / waiting for service）」的情形。
 
 **两个部件**：
-1. **守护横幅**（`self-heal-guard.js`，注入主页面 `<head>`，早于任何插件 bundle）：**只监听 JS 错误事件**（window error / unhandledrejection），错误消息含 `loaded without registering` / `Failed to load plugins` 实锤句才弹**可关闭横幅**：⚠️ 检测到插件加载异常：<报错原文> → **[去自救台停用插件]**（新标签打开，主界面不丢）+ **[关闭]**。**不扫页面文本**（聊天/历史消息永不误触）、**永不跳转/刷新/劫持** → 无死循环、报错现场保留。
+1. **守护横幅**（`self-heal-guard.js`，注入主页面 `<head>`，早于任何插件 bundle）。**两个通道**：
+   - **通道 1 JS 错误**：监听 window error / unhandledrejection，错误消息含 `loaded without registering` / `Failed to load plugins` 实锤句 → 弹可关闭横幅。
+   - **通道 2 渲染式失败页**：扫 DOM 文本，命中 `Failed to load plugins` / `did not activate` / `waiting for service` / `does not appear to be registered` 才弹。**只在【非内容展示容器】命中才触发**，排除两类：① `[data-chat-flow]`（对话/历史，用户聊到这些词很正常）；② class 含 `dshome-mind`（DSHOME 心智/知识面板，渲染 `.md` 正文——如 `project.md` 就字面含 "Failed to load plugins" 这类**描述旧事故**的句子，非当前加载失败）。避免 v2 式误触。
+   - 横幅：⚠️ 检测到插件加载异常：<报错原文> → **[去自救台停用插件]**（新标签打开，主界面不丢）+ **[关闭]**。**永不跳转/刷新/劫持** → 无死循环、报错现场保留。
 2. **自救台**（`/self-heal`）：插件列表（中文说明/状态）+ 每行「停用/启用」（调 `/api/dshome/plugins/toggle`，受保护核心运行中不可停）+ 「返回主界面」。地址栏输 `http://127.0.0.1:3099/self-heal` 可手动直达。
 
 **分工边界**：前端崩（页面报错/打不开但后端 200）→ 用自救台停用坏插件；**连 /self-heal 都打不开 = 后端崩** → 跑 `--recover`（自救台页脚附命令文本）。
 
-**防误触/防劫持设计**（v3）：唯一通道 = JS 错误事件（对话文本不会成为 JS error message → 零误触）；实锤句只认官方报错原文；横幅可关、只提示不动作；`/self-heal` 不经 renderIndex → 不注入守护 → 无自跳死循环。已知局限：官方若把注册失败 catch 成 console.error（不产生 error 事件）则横幅不弹——此时官方「Failed to load plugins」弹窗本身仍可见，可手动去 /self-heal。
+**防误触/防劫持设计**（v4）：通道 1 只认 JS 错误事件（对话文本不会成为 JS error message → 零误触）；通道 2 只认实锤失败短语，并排除对话流 + DSHOME 知识面板（否则文档里的旧事故字眼会被当实锤——2026-09-06 实测踩坑）。实锤句只认官方报错原文；横幅可关、只提示不动作；`/self-heal` 不经 renderIndex → 不注入守护 → 无自跳死循环。已知局限：官方若把注册失败 catch 成 console.error（不产生 error 事件、也不渲染成 DOM）则横幅不弹——此时官方「Failed to load plugins」弹窗本身仍可见，可手动去 /self-heal。
 
-**实现位置**：`packages/dshome/lib/host/self-heal.html`（页面）+ `self-heal-guard.js`（守护 v3）+ `plugin-api.js`（`/self-heal` 路由 & `webserver/index-inject` head 注入）。改 host 源码 → **重启后端生效**。
+**实现位置**：`packages/dshome/lib/host/self-heal.html`（页面）+ `self-heal-guard.js`（守护 v4）+ `plugin-api.js`（`/self-heal` 路由 & `webserver/index-inject` head 注入）。改 host 源码 → **重启后端生效**。
 
 ## 六、预防 / 可选加固
 
@@ -117,4 +120,4 @@ contract:
 - `packages/dshome/lib/host/` 的 self-heal.html / self-heal-guard.js / plugin-api.js——前端自救界面实现
 
 ---
-_版本：1.0.3 | 2026-09-06 | §五 v3：守护只认 JS 错误事件、删全文文本轮询（v2 全文轮询命中会话文本误弹横幅：横幅内容暴露 body 文本开头，触发词在对话历史里）_
+_版本：1.0.4 | 2026-09-06 | §五 v4：守护加 DOM 渲染式失败通道（.dshome-mind 知识面板排除 + [data-chat-flow] 排除），同步自 v4 代码；v3 → v4 演进记录在案_

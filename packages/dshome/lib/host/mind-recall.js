@@ -26,6 +26,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { sessionKey, insertAfterClaimed } from './mind-insert.js';
+import { isMindConnected } from './mind-connect.js';
 
 /** Stable Cordis plugin name (cordis.patch.yml: name dshome/mind-recall). */
 export const name = 'dshome-mind-recall';
@@ -76,6 +77,12 @@ export function apply(ctx) {
         const key = sessionKey(agent);
         const isFirstStep = step === 1 && decision?.kind === 'enter';
         if (!key || injectedSessions.has(key) || !isFirstStep) return decision;
+        // 「接入心智」开关：该会话被关闭时跳过上工召回。
+        // 注意：此时【不进】去重集 injectedSessions——若中途被切回「开」，
+        // 下一回合首步会重新判断并补召回（否则会被去重永久挡住）。
+        if (!isMindConnected(agent?.session?.header?.id)) {
+          return decision;
+        }
         injectedSessions.add(key);
 
         // 只注入顶层会话（delegationDepth=0）：子代理父上下文已带召回，避免重复 exec/噪音。

@@ -4,19 +4,21 @@
 //       判一次。它只做拦，不做注入（注入归 dshome-mind-inject）——单一职责。
 //
 // 护栏（极窄内核，其余写入放行——不侵入生长空间）：
-//   ① 隐私红线（真硬拦）— 往出厂区 mind\ 写【私密数据】时拦截。私密数据只进 mind-private。
-//   ② 自我修改门禁（软闸）— 改"自我类"文件（AGENTS / mind 规则 / 技能 / 自身记忆）时仅记日志+提示，
+//   ① 未接入心智禁写（硬拦）— 「接入心智」已关的会话写心智区（mind\ 或 mind-private\）一律拦。
+//   ② 隐私红线（真硬拦）— 往出厂区 mind\ 写【私密数据】时拦截。私密数据只进 mind-private。
+//   ③ 自我修改门禁（软闸）— 改"自我类"文件（AGENTS / mind 规则 / 技能 / 自身记忆）时仅记日志+提示，
 //                           真实把关交给 node scripts/mind-validate.mjs（不重复硬拦，避免双闸矛盾）。
 //
 // 设计原则（fail-open，参照 core.js / mind-inject）：
 //   整个 apply 包 try/catch，任何失败只记日志、绝不 rethrow——护栏失效 ≠ host 崩溃。
 //   宁可"护栏没生效"，也不因护栏 bug 带崩运行中的 GUI。可回滚：插件卸载即解绑（guard 有 disposer）。
 //
-// ③ 等放行：不做硬拦——程序判不了"用户意图"，硬拦易误伤（违背"别把花朵压死"）。保留提示+记录。
+// ④ 等放行：不做硬拦——程序判不了"用户意图"，硬拦易误伤（违背"别把花朵压死"）。保留提示+记录。
 
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { isMindConnected } from './mind-connect.js';
 
 /** Stable Cordis plugin name (cordis.patch.yml: name dshome/mind-guard). */
 export const name = 'dshome-mind-guard';
@@ -37,7 +39,16 @@ function normalizePath(p) {
 }
 
 /**
- * 目标是否落在"出厂区 mind\"（可推送固件区）。
+ * 目标是否落在"心智区"（mind\ 出厂区 或 mind-private\ 私有区）。
+ * 用于「未接入心智会话禁写硬拦」——关状态的会话既不该读也不该写心智，写一律拦。
+ */
+function inMindZone(filePath) {
+  const p = normalizePath(filePath);
+  const candidates = [p, normalizePath(resolve(repoRoot(), p))];
+  return candidates.some((abs) => /\/(mind|mind-private)(\/|$)/.test(abs));
+}
+
+/** 目标是否落在"出厂区 mind\"（可推送固件区）。
  * 裸 mind\ 是固件模板（可维护），不是"私密"；只有【含私密数据】的写入才作为红线拦。
  */
 function inFactoryZone(filePath) {
@@ -171,9 +182,25 @@ function inHighRiskyZone(filePath) {
  * 护栏判定表。每个条目 check(filePath, content, ctx) 返回：
  *   非空 string  → 拦截（把该 string 作为 reason 抛给模型）
  *   undefined    → 放行
- * 顺序执行：先命中 privacy（真红线）才拦；self-modify 只拦【高危规则区】，且凭放行记录。
+ * 顺序执行：先命中 mind-disconnect-write（未接入会话禁写心智区）才拦；
+ * 再命中 privacy（真红线）才拦；self-modify 只拦【高危规则区】，且凭放行记录。
  */
 const GUARDS = [
+  {
+    id: 'mind-disconnect-write',
+    // ③ 未接入心智（「接入心智」开关已关）的会话：既不该读也不该写心智——
+    //    写心智区（mind\ 或 mind-private\）一律硬拦。这样"关"= 双向断开（不注入/不召回/不写记忆）。
+    //    没有 agent（agent-less 执行）→ 判不了会话，fail-open 放行（不误伤）。
+    check: (filePath, _content, ctx, exec) => {
+      const agent = exec?.agent;
+      if (agent === void 0) return undefined;
+      const sid = agent?.session?.header?.id;
+      if (isMindConnected(sid)) return undefined; // 接入态 → 交给后续 privacy / self-modify
+      if (!inMindZone(filePath)) return undefined; // 非心智区 → 放行（不波及普通文件）
+      return `[mind-guard] 该会话「接入心智」已关闭，禁止写入心智区 ${filePath}（mind\\ 与 mind-private\\）。` +
+        `如需把内容存入记忆，请先在输入框打开「接入心智」。`;
+    }
+  },
   {
     id: 'privacy',
     // ① 隐私红线（真硬拦）：往出厂区写【私密数据】。修正：不再按"出厂区任何写入"拦（会锁死固件维护）。
@@ -239,8 +266,8 @@ export function apply(ctx) {
 
       const content = contentOf(args);
       for (const g of GUARDS) {
-        const reason = g.check(filePath, content, ctx);
-        if (reason) return reason; // 命中隐私红线 → 拦截；self-modify 返回 undefined 即放行
+        const reason = g.check(filePath, content, ctx, exec);
+        if (reason) return reason; // 命中（未接入禁写/隐私红线/自我修改门禁）→ 拦截
       }
       return undefined; // 其余写入一律放行（不侵入生长空间）
     });
