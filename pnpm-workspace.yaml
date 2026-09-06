@@ -10,3 +10,4 @@ allowBuilds:
   node-pty: true
   protobufjs: true
   electron: true
+  dsh-context: true
