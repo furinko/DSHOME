@@ -1,40 +1,33 @@
-# TOOL.md — 工具操作指南
+# TOOL.md — 工具操作指南（L0 从属参考）
 
-> 版本：1.1 | 2026-09-04 | AGENTS 位置引用校准（权威版 `mind\L0\AGENTS.md`）；余同 1.0（工具总索引 + 使用纪律）
-> 渐进披露：阶段未解锁的工具不点名、不可调；tools_catalog/tools_help 可查。
+> 版本：1.2 | 2026-09-06 | 改原则版：去掉硬编码工具清单（工具随配置/阶段变，写死即过时）；本文件只讲**工具侧操作机制/效率**，行为纪律归 `mind\L0\AGENTS.md`（权威）。
+> 本文件为 L0 **从属参考**，非宪法级（不注入、改它不按行为宪法审批）。
+> **具体工具清单/参数以运行时 schema 为准**（渐进披露由配置决定，不写死）；不确定参数名先看工具自身的 schema 再调。
 
-## 一、工具总索引
+## 一、按用途的操作原则（跨工具集通用）
 
-| 用途 | 工具 | 要点 |
-|---|---|---|
-| 读文件 | `read` | UTF-8，带行号；大文件用 offset/limit 分批 |
-| 找文件 | `glob` | 路径模式（含隐藏/忽略文件）；目录不返回 |
-| 搜内容 | `grep` | ripgrep 正则，先搜后写 |
-| 写文件 | `write` | 创建/全量覆盖；覆盖前先 read |
-| 精准改 | `edit` | 替换唯一 old_string；多次出现用 replace_all 或加上下文 |
-| 高级编辑 | `str_replace_editor` | view/create/str_replace/insert |
-| 问用户 | `ask_user_question` | 需拍板/澄清时用，带稳定 id |
-| 网页搜索 | `web_search` | 1–4 个 query，引用来源 |
-| 任务清单 | `todo_write` | 完整列表每次全量提交 |
-| 阶段路由 | `phase_advance` / `dev_router_status` | 渐进解锁，按阶段推进 |
-| 工具白盒 | `tools_catalog` / `tools_help` | 查工具 schema，调用前先查参数名 |
-| 目标追踪 | `create_goal` / `get_goal` / `update_goal` | 长任务完成目标 |
-| 交付门禁 | `delivery_check` | 交付前自检（file/encoding/smoke/evidence） |
-| 验证工具 | `pwsh` / `read_image` / `jobs` | 验证阶段解锁：跑命令/看截图/后台任务 |
+| 你要做 | 原则 |
+|---|---|
+| 读内容 | 用只读工具；大文件分批（offset/limit）；能片段不整篇 |
+| 找 / 搜 | 先 grep/glob 精准定位，不整库翻找 |
+| 写 / 改 | 覆盖前先 read；改已有用唯一锚点；失败先读上下文再改 |
+| 验证 / 运行 | 跑命令 / 看截图 / 收后台任务；退出码 0 才算过 |
+| 问用户 | 需拍板 / 澄清才问，带稳定 id，一次问清 |
+| 长任务 | 定目标 → 跟踪进度 → 收结果 |
+| 交付 | 自检三问：改了啥 / 验证了啥 / 下一步 |
 
-## 二、使用纪律
+## 二、工具侧纪律（补充，不重复 AGENTS 行为规则）
 
-- 🔴 **先搜后写** — 改任何文件前，先用 grep/glob 搜索相关引用与现有实现；不凭推测写码。
-- 🟡 **省 token** — 能 grep 定位不 read 全文；能 read 片段不读整文件；大输出用 offset/limit。
-- 🟡 **write 前先 read** — 覆盖已有文件必须 read 过（fs-observation-policy）。
-- 🟡 **edit 用唯一锚点** — old_string 精确匹配；失败先 read 上下文再改。
-- 🟡 **改动前一句话说明** — 占用时间/产生可见动作的操作，先说明"做什么、为什么、预计多久"。
-- 🔴 **隐私** — 私密数据（凭据/隐私内容/敏感业务信息）一律不写入 mind\（出厂区）；只进 mind-private\ 且不推送。
-- 🔴 **等放行** — 方案确定 ≠ 获准实施；改文件/构建/提交等用户明确放行（"动手/开工/同意"）。
-- 🟡 **收工提醒** — 对话自然结束或完成一轮修改后，主动问一句「需要收工吗？」，触发收工闭环（见 L1/Ritual.md §一）。
+- 🔴 **先搜后写**：改任何文件前先 grep/glob 搜相关引用与现有实现；不凭推测写码。
+- 🟡 **省用量**：能定位不读全文；能 read 片段不读整文件；大输出分批。
+- 🟡 **write 前先 read**：覆盖已有文件必须先 read 过（fs-observation-policy）。
+- 🟡 **edit 用唯一锚点**：old_string 精确匹配；多次出现时加上下文或 replace_all。
+- 🟡 **改动前一句话说明**：占用时间 / 产生可见动作的操作，先说明"做什么、为什么、预计多久"。
+
+> 🔴 行为纪律（隐私双区 / 等放行 / 收工 / 汇报节奏）以 `mind\L0\AGENTS.md` 为权威，本文件不重复。
 
 ## 三、与心智系统的关系
 
-- 工具只是操作手段——"怎么用"的规则在 `mind\L0\AGENTS.md`；行为规程（收工/纪律）在 `mind\L1\Ritual.md`；能力沉淀见 `mind\L1\Power.md`。
-- 产物写入心智：正式结论 → mind-private 对应层；轮级缓冲 → mind-private\tasks\。
-- 导入其他设备/agent 产物：走导入协议（import-artifact），见 mind\README.md §五。
+- 工具只是操作手段；"怎么做事"的规则在 `mind\L0\AGENTS.md`（权威），本文件补工具侧操作细则（从属）。
+- 工具清单 / 参数以运行时 schema 为准；渐进披露（阶段解锁工具）由配置决定，不由本文件硬编码。
+- 产物落心智：正式结论 → mind-private 对应层；轮级缓冲 → `mind-private\tasks\`；导入另一设备/agent 产物走 `import-artifact`（`mind\README.md` §五）。

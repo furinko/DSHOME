@@ -12,14 +12,25 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 // L3 检索共享库（§十 权威排序单一实现——F3 修复：自动召回不再走纯相似度简化版）
 const require2 = createRequire(import.meta.url);
-const { searchL3 } = require2('./mind-search-lib.cjs');
+const { searchL3, fmValue } = require2('./mind-search-lib.cjs');
 
 const repoRoot = resolve(process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..'));
 const PRIV = join(repoRoot, 'mind-private');
 const args = process.argv.slice(2);
 const hasExplicitQuery = !!args[0] && !args[0].startsWith('--');
-const query = hasExplicitQuery ? args[0] : 'DSHOME 心智';
 const asJson = args.includes('--json');
+// ── 可选 --cwd <path>：当前工作区/项目绝对路径 → 项目记忆隔离（2026-09-06）──
+// 规则：候选记忆 = 通用（无 project 标记）或当前项目；其它项目专属记忆被排除 → 不串项目。
+let projectCwd = '';
+{
+  const idx = args.findIndex((a) => a === '--cwd' || a.startsWith('--cwd='));
+  if (idx >= 0) projectCwd = args[idx] === '--cwd' ? (args[idx + 1] || '') : args[idx].split('=')[1];
+}
+const taskProject = projectCwd ? basename(resolve(projectCwd)) : '';
+// 检索 query（召回主题/消歧用）：显式传入优先；否则当前项目名；否则默认主线（DSHOME 心智）。
+const query = hasExplicitQuery ? args[0] : (taskProject || 'DSHOME 心智');
+// 通用层检索独立用默认焦点（避免 mind 自用会话召回退化）；项目层用当前项目名。
+const generalQuery = hasExplicitQuery ? args[0] : 'DSHOME 心智';
 // --limit N：--limit 是独立 arg，值在它后面一个；支持 "--limit=5" 与 "--limit 5" 两种写法。
 let limit = 5;
 {
@@ -45,8 +56,34 @@ function walkMd(dir, out, rel = '') {
 }
 function search(limit2) {
   const files = walkMd(join(PRIV, 'L3', 'index'), [], 'L3/index');
-  // §十 权威排序（conf→scope→importance→score）——共享库单一实现，与 /api/mind/search 一致（F3 修复）
-  return searchL3(query, files, limit2);
+  // 项目管理（隔离）：通用（无 project）+ 当前项目（project == taskProject）；其它项目专属排除 → 不串。
+  const general = [], proj = [];
+  for (const f of files) {
+    let content = '';
+    try { content = readFileSync(f.full, 'utf8'); } catch { continue; }
+    const p = (fmValue(content, 'project') || '').trim();
+    if (!p) general.push(f);
+    else if (taskProject && p === taskProject) proj.push(f);
+  }
+  // 通用层：结果导向三级退——任务 query → 工作区(项目名) → 重要度兜底（不空转）。
+  let generalHits = searchL3(generalQuery, general, limit2);
+  if (generalHits.length === 0 && taskProject && taskProject !== generalQuery) {
+    generalHits = searchL3(taskProject, general, limit2);
+  }
+  if (generalHits.length === 0 && general.length) {
+    generalHits = searchL3('', general, limit2, { minScore: 0 });
+  }
+  // 项目层：当前项目专属记忆全部列入（项目专属即相关；不靠 query——中英不匹配会漏），minScore 0 保证在场。
+  const projHits = taskProject ? searchL3(taskProject, proj, limit2, { minScore: 0 }) : [];
+  // 合并：项目优先保留（当前项目上下文），通用知识补充；去重取前 limit。
+  const picked = [];
+  const seen = new Set();
+  for (const m of [...projHits, ...generalHits]) {
+    if (seen.has(m.file)) continue;
+    seen.add(m.file); picked.push(m);
+    if (picked.length >= limit2) break;
+  }
+  return picked;
 }
 
 // ── project.md（体系主线档）：进度状态 + 下一步（待办）─────────────────────

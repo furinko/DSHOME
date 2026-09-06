@@ -59,6 +59,19 @@ function contentText(m) {
   return '';
 }
 
+/** 提取当前任务作召回 query：取该会话消息流里最后一条用户消息文本（截断、去空）。 */
+function taskQuery(userMessages, decisionMessages) {
+  const all = [...(userMessages || []), ...(decisionMessages || [])];
+  let q = '';
+  for (const m of all) {
+    if (m && m.role === 'user') {
+      const t = contentText(m).trim();
+      if (t) q = t;
+    }
+  }
+  return q.slice(0, 120).trim();
+}
+
 /** 宿主插件主体。 */
 export function apply(ctx) {
   try {
@@ -94,9 +107,16 @@ export function apply(ctx) {
         if (joined.includes('【上工自动召回')) return decision;
 
         // 跑 mind-prime（15s 超时；失败静默跳过——fails-open，绝不阻塞会话）。
+        // ① 当前任务作召回 query（会话触发的用户消息）；② 项目记忆隔离：传 --cwd。
+        // 结果导向：query 命中/歧义/落空的处理在 mind-prime（搜索侧），这里只透传任务 + 工作区。
         let primeText = '';
         try {
-          primeText = execFileSync(process.execPath, [primeScript], { cwd: root, encoding: 'utf8', timeout: 15000 }).toString().trim();
+          const primeArgs = [primeScript];
+          const childCwd = agent?.session?.header?.cwd;
+          const task = taskQuery(messages, decision.messages);
+          if (task) primeArgs.push(task);
+          if (childCwd) primeArgs.push('--cwd', childCwd);
+          primeText = execFileSync(process.execPath, primeArgs, { cwd: root, encoding: 'utf8', timeout: 15000 }).toString().trim();
         } catch (e) {
           ctx.logger?.('dshome')?.warn?.('dshome-mind-recall: mind-prime failed, skip inject', e?.message ?? e);
           return decision;

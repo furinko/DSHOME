@@ -438,10 +438,18 @@ function dupCheck(topic, content) {
   return hits.slice(0, 5);
 }
 
-/** 记忆模糊检索：扫 mind-private/L3/index 全库，用共享 searchL3（单一真源——F3：index.cjs 不再内联重复循环）。 */
-function searchMind(query, limit = 6) {
+/** 记忆模糊检索：扫 mind-private/L3/index 全库，用共享 searchL3（单一真源——F3：index.cjs 不再内联重复循环）。
+ *  项目隔离（2026-09-06）：候选 = 通用（无 project 标记）或当前项目（project==project）；其它项目专属排除 → 不串项目。默认通用。 */
+function searchMind(query, limit = 6, project = '') {
   const files = listL3Files(path.join(mindPrivateDir(), 'L3', 'index'));
-  return searchL3(query, files, limit);
+  const allowed = files.filter((f) => {
+    let content = '';
+    try { content = fs.readFileSync(f.full, 'utf8'); } catch { return false; }
+    const proj = (fmValue(content, 'project') || '').trim();
+    if (!proj) return true;         // 通用（默认）
+    return proj === project;        // 当前项目专属
+  });
+  return searchL3(query, allowed, limit);
 }
 
 // ── 待办（project.md「下一步」区 `- [ ]` 行）───────────────────────────────
@@ -717,7 +725,8 @@ function makeMindRoutes() {
         try {
           const q = (new URL(req.url, 'http://localhost').searchParams.get('q') || '').trim();
           if (!q) return json(res, 400, { ok: false, error: 'q required' });
-          json(res, 200, { ok: true, hits: searchMind(q) });
+          const project = (new URL(req.url, 'http://localhost').searchParams.get('project') || '').trim();
+          json(res, 200, { ok: true, hits: searchMind(q, 6, project) });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },

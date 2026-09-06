@@ -159,7 +159,8 @@ function addApprovalPending(filePath, op, content) {
  * 高危规则/宪法/门禁区（只有这里才真拦，需面板放行）。
  * 判据 = 改这个文件是否【改变鱼鱼的行为逻辑】。
  * 高危名单（精确到文件/模式）：
- *   mind\L0\SOUL.md / AGENTS.md / TOOL.md        （人格/纪律/工具规则）
+ *   mind\L0\SOUL.md / AGENTS.md                      （人格/纪律——行为宪法级）
+ *   mind\L0\TOOL.md 不进高危（2026-09-06 降：只改工具操作细则，非行为逻辑；留自修改区正常放行）
  *   mind\L1\HUB.md / Wisdom.md / Memory.md / Power.md / Invariants.md / Design-Philosophy.md
  *   mind\L1\Ritual.md                             （行为规程·元进化·收工·自省——AGENTS 声明的行为唯一权威）
  *   mind\L1\Concepts.md                           （概念注册表·意图路由——确定性枢纽，非文档）
@@ -170,7 +171,7 @@ function inHighRiskyZone(filePath) {
   const p = normalizePath(filePath);
   const candidates = [p, normalizePath(resolve(repoRoot(), p))];
   const rules = [
-    '/mind/L0/SOUL.md', '/mind/L0/AGENTS.md', '/mind/L0/TOOL.md',
+    '/mind/L0/SOUL.md', '/mind/L0/AGENTS.md',
     '/mind/L1/HUB.md', '/mind/L1/Wisdom.md', '/mind/L1/Memory.md',
     '/mind/L1/Power.md', '/mind/L1/Invariants.md', '/mind/L1/Design-Philosophy.md',
     '/mind/L1/Ritual.md', '/mind/L1/Concepts.md',
