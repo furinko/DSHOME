@@ -1,0 +1,6 @@
+# 生图插件运行时状态（不入库）
+imagegen-lastredraw.json
+imagegen-store.json
+imagegen-userregions.json
+_imgcache/
+_redraw/
