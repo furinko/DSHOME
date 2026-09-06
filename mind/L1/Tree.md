@@ -1,6 +1,6 @@
 # Tree.md — 知识网络血管（全目录）
 
-> 版本：1.1 | 2026-09-04 | 索引收窄（私有区去具体资产名）+ AGENTS 指向 L0 权威版 + L2-Skill 补齐；版本日期校正（原错标 09-06）
+> 版本：1.2 | 2026-09-06 | Q2 数据层核实收窄：L3 本机为空（无迁移产物/无备份），去预置主题清单——运行时内容按实际落库自命名
 > 加载：R2/R3——上工由 R1 召回带层骨架速览；完整目录按需 read（查"X 在哪"→ 本文件定位 → grep/read 目标）
 > 定位：L1 循环系统——全知识网络目录，AI 友好表格化。"有什么"的一键查询。
 
@@ -53,23 +53,9 @@
 ## L3 — 记忆层（mind-private\L3\，隐私）
 
 ### index 主题目录（结晶知识）
-> 主题目录 = 私有区（`mind-private\L3\index\`）的分区；具体资产文件名/文件数为运行时内容，不在此罗列。
-| 主题目录 | 说明 |
-|---|---|
-| dsh-evolve | 记忆/技能系统历史（退役体系） |
-| dshome-build | 构建/打包/发布（Inno/ISCC/verify/smoke/毒树） |
-| dshome-core | 启动器/端口/环境/插件描述机制 |
-| dshome-plugin | 插件安装/补丁/加载契约 |
-| cathome | CatHome 2.x→4.0 版本差/自举门禁/骨架（参考引擎） |
-| seggi | 战姬 SEKKI 本地化 |
-| user-rules | 用户铁律/偏好/纠正（scope=user） |
-| lessons | 工具链/开发/界面/自我进化欠账教训 |
-
+> 主题目录 = 私有区（`mind-private\L3\index\`）的分区；**运行时内容——本机当前为空**（2026-09-06 Q2 核实：无迁移产物、无备份可恢复，记忆从未落库或被清；随收工蒸馏逐步积累，主题自命名 + `_index` 懒建，不预置清单）。
 ### history 归档
-> history 归档 = `mind-private\L3\history\`（时间胶囊，封存完结/被替代旧版）。
-| 归档 | 说明 |
-|---|---|
-| 2026-09-02_dsh-evolve-integration_归档.md | dsh-evolve 集成（迁移至 mind/ 双区时归档） |
+> history = `mind-private\L3\history\`（时间胶囊，只写不改）。当前为空；归档时 `YYYY-MM-DD_<标题>_归档.md` 命名并在此登记一行。
 
 ## Project — 行动锚点（mind-private\Project\）
 
