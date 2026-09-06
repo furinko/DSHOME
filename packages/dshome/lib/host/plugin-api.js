@@ -8,6 +8,19 @@ import { snapshot, writeToggle } from './plugin-store.js';
 export const PLUGIN_API_PREFIX = '/api/dshome/plugins';
 const BODY_LIMIT = 64 * 1024;
 
+// ── 自救台静态资源（免构建：启动时读文件缓存；读失败只禁对应功能，不阻断启动）────
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const HERE = dirname(fileURLToPath(import.meta.url));
+function tryRead(name) {
+  try { return readFileSync(join(HERE, name), 'utf8'); } catch { return null; }
+}
+/** /self-heal 自救页 HTML（纯静态，不加载任何插件 bundle → 插件崩了它也开得了）。 */
+export const SELF_HEAL_HTML = tryRead('self-heal.html');
+/** 主页面 <head> 注入的崩溃守护脚本（raw JS；<script> 包裹由 webserver renderRow 负责）。 */
+export const SELF_HEAL_GUARD_JS = tryRead('self-heal-guard.js');
+
 // ── loopback trust fence（移植自 dsh-evolve web-routes.js）──────────────────
 function isIPv4Loopback(v4) {
   const parts = v4.split('.');
@@ -64,6 +77,17 @@ export function makePluginRoutes(ctx) {
   return [
     {
       kind: 'exact',
+      path: '/self-heal',
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        if (!SELF_HEAL_HTML) return json(res, 500, { ok: false, error: 'self-heal.html missing' });
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        res.end(SELF_HEAL_HTML);
+      },
+    },
+    {
+      kind: 'exact',
       path: PLUGIN_API_PREFIX,
       handler: async (req, res) => {
         if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
@@ -102,6 +126,24 @@ export function setupPluginApi(ctx) {
   // 注意：cordis 子插件的 ctx 服务受限（仅 inject 声明的服务）。
   // loader 属于主 ctx —— 数据函数用主 ctx，子插件只负责 webServer.register。
   const hostCtx = ctx;
+
+  // ── 崩溃守护脚本注入：挂进主页面 <head>，早于任何插件 bundle 执行。
+  // index-inject 的 emit 发生在 webServer 服务 ctx（root 层）；DSHOME 的 ctx 是其
+  // 后代，故挂在 ctx.root 上保证收到。守护本身零依赖，插件全崩它也活着。────
+  try {
+    if (SELF_HEAL_GUARD_JS) {
+      const off = ctx.root?.on?.('webserver/index-inject', (table) => {
+        table.push({ kind: 'script', placement: 'head', text: SELF_HEAL_GUARD_JS });
+      });
+      if (typeof off === 'function') {
+        ctx.effect(() => () => { try { off(); } catch { /* ignore */ } });
+        ctx.logger?.('dshome').info('dshome self-heal guard injected into index head');
+      }
+    }
+  } catch (e) {
+    ctx.logger?.('dshome').warn(`dshome self-heal guard disabled: ${e?.message ?? e}`);
+  }
+
   const routesPlugin = {
     name: 'dshome-plugin-api',
     inject: ['webServer'],
