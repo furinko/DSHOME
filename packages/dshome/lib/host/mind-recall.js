@@ -11,7 +11,7 @@
 //   - token 可控：只注一次、空机不注（mind-prime 空输出无 ■ 分节 → 跳过）
 //
 // 与 dshome-mind-inject 的关系：
-//   inject 管「L0 纪律全文」（mind\L0\AGENTS.md 全文注入，静态，v2.5 起）；
+//   inject 管「R0 宪法」（mind\L0\SOUL.md 人格 + AGENTS.md 运行，双件全文注入，静态，v3.0 起）；
 //   recall 管「上工记忆召回」（当前项目/任务的进度+相关记忆，动态）。
 //   两者互补：纪律常驻、记忆按需——本插件只做召回，纪律归注入器。
 //   注：不再加「上工自动召回 · 会话记忆」包层头——mind-prime 首行「【上工自动召回 · <query>】」

@@ -9,7 +9,7 @@
 | 积木 (id) | 一句话 | 触发 | 输入 → 输出 | 依赖 | 版本 |
 |---|---|---|---|---|---|
 | `import-artifact` | 导入协议·其他设备/agent 产物即插即用 | 直接丢给你 / 导入 / 蒸馏包 | 路径/粘贴内容/压缩包 → 归类放置 + 索引更新 + 汇报 | L1 Tree/Memory · mind README | 1.0.0 |
-| `boot-recall` | 上工自动召回（project.md+L3+Learn+user-rules+人设卡 装配成注入上下文；L0 纪律全文由 mind-inject 注入 AGENTS.md，本脚本不重复生成） | 上工 / 你想不起来 / 有什么待办 | 项目/任务关键词 → 可注入上下文（`--json` 结构化） | scripts/mind-prime.mjs · mind L3/Project · mind-validate | 1.0.3 |
+| `boot-recall` | 上工自动召回（project.md+L3+Learn+user-rules+人设卡 装配成注入上下文；R0 宪法 SOUL+AGENTS 由 mind-inject 注入，本脚本不重复生成） | 上工 / 你想不起来 / 有什么待办 | 项目/任务关键词 → 可注入上下文（`--json` 结构化） | scripts/mind-prime.mjs · mind L3/Project · mind-validate | 1.0.3 |
 | `dshome-diagnostics` | DSHOME 后端诊断(崩/卡/闪断：先分真假+证据) | 后端重启/卡/exit1/闪断 | 现象→证据→结论 | shell log/进程/隔离复现 | 1.0.0 |
 | `dshome-crash-recovery` | DSHOME/DSH 崩溃排查+自愈：先分装配期/运行期/前端半区；启动失败用 marker 定位崩溃插件 + guard `--recover`/safe 逃生；前端「Failed to load plugins」用「__ModuleLoader__.load id==包名」四证核对 | 启动失败/起不来/崩溃循环/`Failed to load plugins`/半区加载失败/`ERR_PACKAGE_PATH_NOT_EXPORTED` | 崩溃现象→层定位+崩溃插件+根因+自愈动作 | dshome-diagnostics · dshome-plugin-dev · scripts/plugin-change-guard.mjs | 1.0.3 |
 | `dshome-plugin-dev` | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS `code.host`/`code.client`，生命周期/修复/回滚；自有 host 插件落地三步（exports 易漏） | 做/改插件 / cordis / slot / `is not declared` / `host.call` 失败 / 启动崩溃 | 目标能力 → 平台归属 + 已读真实接口 + 插件源码 + 修复判断 | cordis-plugin-development (upstream) · mind/L1/Power | 1.1.0 |

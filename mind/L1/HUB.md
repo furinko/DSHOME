@@ -1,6 +1,6 @@
 # HUB.md — 知识网络之心
 
-> 版本：1.4 | 2026-09-06 | 注入层对齐实际实现：注入层=「dshome-mind-inject 运行时读 AGENTS.md 全文注入（v2.5 起，正文=唯一注入源，无手写摘要）+ dshome-mind-recall 动态召回」，权威正文即注入内容（全文注入，非 L0 三文件+HUB 全文）
+> 版本：1.5 | 2026-09-06 | 注入层对齐 R0：注入层=「dshome-mind-inject 运行时读 SOUL.md + AGENTS.md 双件全文注入（R0 人格宪法+运行宪法，正文=注入源，无手写摘要）+ dshome-mind-recall 动态召回」；强制层读取动作化（AGENTS §八 知识地图）
 > 加载：注入层（会话首步由宿主插件注入）+ 强制层/查询层凭本文 §三
 > 定位：L1 中枢——心智基座的设计理念、加载规则、跨层红线
 
@@ -35,8 +35,8 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 
 ## 三、加载策略（三层）
 
-### 注入层（会话首步由宿主插件注入，随上下文携带）
-`dshome-mind-inject` 运行时读 `mind\L0\AGENTS.md` **全文**注入（v2.5 起，正文=唯一注入源）+ `dshome-mind-recall` 注动态召回；强制层读取动作见 AGENTS §五「上工先看地图」。
+### 注入层（R0 常驻，会话首步由宿主插件注入，随上下文携带）
+`dshome-mind-inject` 运行时读 `mind\L0\SOUL.md`（人格宪法）+ `mind\L0\AGENTS.md`（运行宪法）**双件全文**注入（正文=唯一注入源）+ `dshome-mind-recall` 注动态召回；R2 触发读取动作见 AGENTS §八 知识地图。
 
 ### 强制层（每次上工必须加载）
 `L1/Tree.md`（有什么）+ `L1/Power.md`（怎么用 Skill/Exp）+ `L1/Memory.md`（怎么存 L3）+ `L1/Learn.md`（教训）+ `L1/Invariants.md`（确定性内核）。

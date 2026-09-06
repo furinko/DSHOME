@@ -1,23 +1,24 @@
-// dshome-mind-inject — 心智 L0 注入 host 插件（v2.5：正文全文注入）。
+// dshome-mind-inject — 心智 R0 注入 host 插件（v3.0：运行宪法双件注入）。
 //
-// 职责：每个 agent 会话【开始（第一步）】时，往消息流塞一条「心智 L0 注入层」user 消息，
-//      注入源 = mind\L0\AGENTS.md **全文**（运行时 readFile——正文即注入源）。
+// 职责：每个 agent 会话【开始（第一步）】时，往消息流塞一条「心智 R0 运行宪法」user 消息，
+//      注入源 = mind\L0\SOUL.md + mind\L0\AGENTS.md **全文**（运行时 readFile 拼接——正文即注入源）。
+//      R0 分层：人格宪法（SOUL：为什么/身份/决策原则/动机）+ 运行宪法（AGENTS：做什么/协议/边界/地图）。
 //      仅注入一次（按 session 去重），不是每轮。
 //
-// v2.5（2026-09-06）取消手写 L0_SUMMARY 摘要：
-//      摘要副本制造「权威倒挂」——生效的是摘要、权威正文没人读、改正文不生效、
-//      mind-validate 也拦不住（⑥d 只是启发式 warn）。改为运行时读正文全文：
-//      单一权威、改正文即改注入、副本漂移机制性消失。实测 AGENTS 全文 ~2659 token /
-//      会话一次（相对 128k 窗口可接受；执行密度由 AGENTS「全文常驻约束」写作纪律保证）。
+// v2.5（2026-09-06）取消手写 L0_SUMMARY 摘要：摘要副本制造「权威倒挂」（生效的是摘要、正文没人读、
+//      改正文不生效）。改为运行时读正文全文，单一权威、改正文即改注入、副本漂移机制性消失。
+// v3.0（2026-09-06）注入面定为 R0 双件（SOUL+AGENTS）：人格与行为分开权威、一起注入——
+//      决策原则/身份归 SOUL，动作纪律/风格表/地图归 AGENTS，两件互斥不重复。
+//      保留各文件 H1 标题作为注入文本内的文档边界。实测双件 ~3.5-4k token / 会话一次。
 //
 // 机制（照官方 dsh-agent-instructions）：
 //     在 ctx.on('agent/pre-step') 里，构造一条 user 消息，插进 agent 的消息流，
-//     这样 L0 内容进入 agent 上下文（跟官方 AGENTS 注入同构，可靠）。
+//     这样 R0 内容进入 agent 上下文（跟官方 AGENTS 注入同构，可靠）。
 //
 // 与官方 agent-instructions 的关系：
-//     官方已每轮注入（本会话该 preset 已置 disabled）；本插件负责注入 AGENTS 全文。
+//     官方已每轮注入（本会话该 preset 已置 disabled）；本插件负责注入 R0 双件。
 //
-// 验证标准：以"agent 在会话开始时不用翻文件就能用上 L0 核心纪律"为准；marker 仅作启动诊断。
+// 验证标准：以"agent 在会话开始时不用翻文件就能用上人格+纪律"为准；marker 仅作启动诊断。
 
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -38,16 +39,19 @@ function repoRoot() {
   return join(here, '..', '..', '..', '..');
 }
 
-/** 注入源 = L0 宪法权威正文全文（mind\L0\AGENTS.md，唯一权威 = 唯一注入源；读不到则空，不注入）。
- *  注入时剥掉文件首行 H1 标题（# AGENTS.md —…）：包装头「【心智系统 · L0 注入层】」已标识来源，避免双标题叠放；
- *  打包快照 payload 仍是含标题全文（validate (c) 按文件全文比对，不受注入剥行影响）。 */
+/** R0 注入件 = 人格宪法 + 运行宪法（mind\L0\SOUL.md + AGENTS.md；正文即注入源，无手写拷贝）。
+ *  保留各自 H1 标题作文档边界；任一缺失则注另一件；全缺返回空不注入。 */
 export function composeMindL0Text(root) {
   try {
-    const f = join(root, 'mind', 'L0', 'AGENTS.md');
-    if (!existsSync(f)) return '';
-    const lines = readFileSync(f, 'utf8').split('\n');
-    if (lines.length && /^#\s/.test(lines[0])) lines.shift(); // 剥 H1（# AGENTS.md —…）
-    return lines.join('\n').replace(/^\n+/, ''); // 去剥行后前导空行，注入从正文起
+    const dir = join(root, 'mind', 'L0');
+    const parts = [];
+    for (const name of ['SOUL.md', 'AGENTS.md']) {
+      const f = join(dir, name);
+      if (!existsSync(f)) continue;
+      const text = readFileSync(f, 'utf8').trim();
+      if (text) parts.push(text);
+    }
+    return parts.join('\n\n');
   } catch {
     return '';
   }
@@ -69,12 +73,12 @@ export function apply(ctx) {
     const root = repoRoot();
     const text = composeMindL0Text(root);
     if (!text) {
-      writeMarker(`apply: text empty (AGENTS.md missing?) @ ${new Date().toISOString()}`);
+      writeMarker(`apply: text empty (R0 files missing?) @ ${new Date().toISOString()}`);
       return;
     }
     // 每会话只注入一次（首次 agent/pre-step 触发）。
     const injectedSessions = new Set();
-    const payload = `\n【心智系统 · L0 注入层】\n${text}`;
+    const payload = `\n【心智系统 · R0 运行宪法（SOUL + AGENTS 全文）】\n${text}`;
     writeMarker(`apply: registered hook (len=${payload.length}) @ ${new Date().toISOString()}`);
 
     ctx.on('agent/pre-step', async ({ agent, messages, step, signal }, next) => {
@@ -96,7 +100,7 @@ export function apply(ctx) {
       }
       return decision;
     });
-    ctx.logger?.('dshome').info('dshome-mind-inject: 全文注入钩子已挂载 (len=%d)', payload.length);
+    ctx.logger?.('dshome').info('dshome-mind-inject: R0 双件注入钩子已挂载 (len=%d)', payload.length);
   } catch (error) {
     ctx.logger?.('dshome').warn('dshome-mind-inject: 初始化失败 %O', error);
   }

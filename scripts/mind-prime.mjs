@@ -89,14 +89,22 @@ function userRules() {
   return readFileSync(f, 'utf8').split('\n').filter((l) => /^##\s+\[/.test(l)).join('\n');
 }
 // ── 人设卡（本机私密，演绎唯一权威源）——上工召回自动装配，让鱼鱼开机即带人设 ──
+// Q1（2026-09-06）：优先读约定名「人设卡.md」；不存在则回退扫 L0 下任一含"人设/persona"的 md
+//   （历史文件曾命名为「蓝色大肥鱼人设.md」→ 约定名与物理名漂移导致装配静默为空；回退兜底）。
 function persona() {
-  const f = join(PRIV, 'L0', '人设卡.md');
-  if (!existsSync(f)) return '';
-  return readFileSync(f, 'utf8').trim();
+  const dir = join(PRIV, 'L0');
+  if (!existsSync(dir)) return '';
+  const f = join(dir, '人设卡.md');
+  if (existsSync(f)) return readFileSync(f, 'utf8').trim();
+  try {
+    const hit = readdirSync(dir).find((n) => /人设|persona/i.test(n) && n.endsWith('.md'));
+    if (hit) return readFileSync(join(dir, hit), 'utf8').trim();
+  } catch { /* 忽略 */ }
+  return '';
 }
-// ── 注：L0 纪律全文由宿主插件 dshome-mind-inject 运行时读 mind\L0\AGENTS.md 注入（v2.5 起全文注入，
-//    正文=唯一注入源，无手写摘要副本）；mind-prime 不再重复生成任何 L0 内容（旧版关键词抽取已删——依据唯一）。
-// 本脚本只装配动态召回：project 进度/待办 + L3 相关记忆 + Learn 最近教训 + user-rules。
+// ── 注：R0 宪法（mind\L0\SOUL.md 人格 + AGENTS.md 运行）由宿主插件 dshome-mind-inject 运行时读双件全文注入
+//    （正文=注入源，无手写摘要副本）；mind-prime 不再重复生成任何 R0 内容（旧版关键词抽取已删——依据唯一）。
+// 本脚本只装配动态召回：project 进度/待办 + L3 相关记忆 + Learn 最近教训 + user-rules + 人设。
 
 // ── 撞名消歧（组件D）：query 命中 Concepts 歧义表 → 提示钉身份再动手 ──────
 function disambiguationFor(query) {

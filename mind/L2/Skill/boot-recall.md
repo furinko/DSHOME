@@ -22,7 +22,7 @@ contract:
 **主会话已机器自动**：宿主插件 `dshome-mind-recall` 会在每主会话首步自动注入 mind-prime 产物（顶层会话、幂等、cron/子代理跳过、空机降级）——**无需手动跑**。本 skill 用于：机器未注入时的兜底、换项目/刷新召回、诊断召回问题。
 
 1. 确定当前项目/任务关键词（默认 `DSHOME 心智`；换项目则传对应词）。
-2. 手动兜底召回：`node scripts/mind-prime.mjs "<项目/任务>"` —— 输出可注入上下文（project.md 进度+下一步、相关 L3 记忆 top-N、最近教训、用户偏好、**人设卡**）。**L0 纪律全文由宿主插件 `dshome-mind-inject` 运行时读 `mind\L0\AGENTS.md` 注入（v2.5 起，正文=注入源，本脚本不重复生成）；主会话自动召回由 `dshome-mind-recall` 插件注入（依据唯一）。**
+2. 手动兜底召回：`node scripts/mind-prime.mjs "<项目/任务>"` —— 输出可注入上下文（project.md 进度+下一步、相关 L3 记忆 top-N、最近教训、用户偏好、**人设卡**）。**R0 宪法（`mind\L0\SOUL.md` 人格 + `AGENTS.md` 运行）由宿主插件 `dshome-mind-inject` 运行时读双件全文注入（正文=注入源，本脚本不重复生成）；主会话自动召回由 `dshome-mind-recall` 插件注入（依据唯一）。**
 3. 把这段上下文**纳入思考**（作为初始上下文），再进入用户问题。
 4. 需要刷新时重跑（`--json` 可结构化，供 build 后注入）。
 

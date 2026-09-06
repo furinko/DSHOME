@@ -295,18 +295,18 @@ if (bRoutes.ok) {
   }
 }
 
-// ⑥d 注入源单一性（v2.5：手写 L0_SUMMARY 摘要已废——正文全文注入，单一权威）。
-//   mind-inject.js 必须引用 mind\L0\AGENTS.md 权威正文为注入源；不得再出现手写纪律副本
-//   （L0_SUMMARY 死灰复燃即 warn；未引用权威正文路径也 warn）。启发式，非全文语义校验。
+// ⑥d 注入源检查（v3.0：R0 双件注入——mind-inject.js 须读 mind\L0\SOUL.md + AGENTS.md 为注入源；
+//   手写 L0_SUMMARY 摘要已废，死灰复燃即 warn；R0 双件路径任一缺失也 warn）。启发式。
 function injectSourceCheck() {
   const p = join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'mind-inject.js');
   if (!existsSync(p)) return { ok: false, issues: [] };
   const src = readFileSync(p, 'utf8');
   const issues = [];
   if (/const\s+L0_SUMMARY\s*=/.test(src))
-    issues.push({ sev: 'warn', file: 'packages/dshome/lib/host/mind-inject.js', msg: `手写 L0_SUMMARY 死灰复燃——v2.5 起注入源必须是 mind\\L0\\AGENTS.md 全文（正文即注入，禁止硬编码纪律副本）` });
-  if (!src.includes("'mind', 'L0', 'AGENTS.md'"))
-    issues.push({ sev: 'warn', file: 'packages/dshome/lib/host/mind-inject.js', msg: `mind-inject.js 未引用权威正文路径 mind/L0/AGENTS.md——注入源应为 AGENTS 全文（正文即注入源）` });
+    issues.push({ sev: 'warn', file: 'packages/dshome/lib/host/mind-inject.js', msg: `手写 L0_SUMMARY 死灰复燃——v3.0 起注入源必须是 mind\\L0\\SOUL.md + AGENTS.md 全文（正文即注入，禁止硬编码纪律副本）` });
+  const hasR0 = src.includes("'mind', 'L0'") && src.includes("'SOUL.md'") && src.includes("'AGENTS.md'");
+  if (!hasR0)
+    issues.push({ sev: 'warn', file: 'packages/dshome/lib/host/mind-inject.js', msg: `mind-inject.js 未引用 R0 双件路径（mind\\L0\\SOUL.md + AGENTS.md）——注入源应为两件宪法全文（正文即注入源）` });
   return { ok: true, issues };
 }
 const isc = injectSourceCheck();
