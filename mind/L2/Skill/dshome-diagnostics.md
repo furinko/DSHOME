@@ -6,7 +6,7 @@ author: DSHOME
 license: internal
 metadata:
   tags: [dshome, 诊断, 崩溃, 卡顿, 重启, errTail]
-  related: [packages/dshome/shell-app/main.cjs, mind/L1/Invariants.md, mind/L1/Concepts.md]
+  related: [packages/dshome/shell-app/main.cjs, mind/L1/Invariants.md, mind/L1/Concepts.md, mind/L2/Skill/dshome-crash-recovery.md]
 contract:
   id: dshome-diagnostics
   triggers: [后端重启, 后端卡, exit1, offline闪断, 频繁重启]
