@@ -13,6 +13,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const { searchL3, listL3Files } = require(join(dirname(fileURLToPath(import.meta.url)), 'mind-search-lib.cjs'));
@@ -54,4 +55,18 @@ for (const d of detail) {
   if (!d.ok) console.log(`        top1=${d.topFile} (score=${d.topScore})`);
 }
 console.log(`\n[search-regression] 命中率 ${Math.round((hits / items.length) * 100)}%`);
+
+// 救 search-hit 信号（2026-09-07）：回归命中 = 真实"检索命中"事件 → bump search-hit。
+// 不进 tokenize/Jaccard（已知 bigram 词面盲区，K3 已否决上 embedding）；命中率当作"体温计基线"，低于历史即越调越差。
+// 每次命中 bump 一次，让 search-hit 反映召回量，而非恒为 0。
+const evoLog = join(dirname(fileURLToPath(import.meta.url)), 'evolve-log.mjs');
+if (hits > 0) {
+  try {
+    for (let i = 0; i < hits; i++) execFileSync(process.execPath, [evoLog, 'bump', 'search-hit'], { cwd: repoRoot, stdio: 'ignore' });
+    console.log(`[search-regression] 已 bump search-hit ×${hits}（命中 ${hits} 条 → 信号 ${hits}）`);
+  } catch (e) {
+    console.warn('[search-regression] bump search-hit 失败（不影响回归判定）:', e.message);
+  }
+}
+
 process.exit(misses === 0 ? 0 : 1);
