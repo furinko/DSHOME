@@ -8,7 +8,7 @@
 //   - 用户运行时数据：sessions / storages / attachments / .agent-snapshot / .dsh-market / .credentials.yaml /
 //     settings.yaml / .anonymous-user-id / .dshw-*.json  —— 一律不外发
 //   - junction 跳过（profiles\node_modules 自愈目录等）
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync, cpSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -90,6 +90,53 @@ function rootFiles() {
 // 预检由上方 EXCLUDE_* 排除逻辑保证；不做全树冗余扫描。
 
 rootFiles();
+
+// 同步 node_modules 缺失的 profile bundle（此前 EXCLUDE_DIR_SEG 排除 node_modules，导致新加入
+// profile 的社区插件 / workspace 主包没进 payload → 后端启动崩。只增缺失、不动已 build 的原生模块，
+// 符号链接解引用）。以 profiles/dshome/package.json 的 dependencies + profile.bundles 为同步目标。
+function syncNodeModulesBundles() {
+  const profilePkgPath = join(src, 'profiles', 'dshome', 'package.json');
+  if (!existsSync(profilePkgPath)) return 0;
+  const pp = JSON.parse(readFileSync(profilePkgPath, 'utf8'));
+  const targets = new Set();
+  for (const key of Object.keys(pp.dependencies || {})) targets.add(key);
+  for (const b of pp.dsh?.profile?.bundles || []) targets.add(b);
+  const srcNM = join(src, 'node_modules');
+  const dstNM = join(dst, 'node_modules');
+  let synced = 0;
+  for (const name of targets) {
+    const s = join(srcNM, name);
+    const d = join(dstNM, name);
+    if (existsSync(d)) continue;      // payload 已有 → 跳过（不动已 build 原生模块）
+    if (!existsSync(s)) continue;     // 源也没有 → 跳过
+    const st = lstatSync(s);
+    if (st.isSymbolicLink()) {
+      // workspace 主包（源是软链）→ payload 建 junction 指向 payload 的 packages/<name>
+      const px = join(dst, 'packages', name);
+      if (existsSync(px)) {
+        try {
+          symlinkSync(px, d, 'junction');
+          synced += 1;
+          changed.push('LINK ' + normPath(join('node_modules', name)));
+        } catch (e) {
+          console.error('[stage] link fail ' + name + ': ' + e.message);
+        }
+        continue;
+      }
+    }
+    // 实体包 → 解引用复制整目录（依赖已 hoist 在 payload 顶层，无需递归拷贝节点）
+    try {
+      cpSync(s, d, { recursive: true });
+      synced += 1;
+      changed.push('COPY ' + normPath(join('node_modules', name)));
+    } catch (e) {
+      console.error('[stage] copy fail ' + name + ': ' + e.message);
+    }
+  }
+  return synced;
+}
+const syncedBundles = syncNodeModulesBundles();
+console.log(`[stage] 同步 node_modules 缺失 bundle：${syncedBundles} 个`);
 
 // AGENTS.md：源根已无 AGENTS.md（权威版 mind\L0\AGENTS.md），payload 需保留并镜像权威版
 const authAgents = join(src, 'mind', 'L0', 'AGENTS.md');
