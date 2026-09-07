@@ -8,8 +8,8 @@
 //   - 用户运行时数据：sessions / storages / attachments / .agent-snapshot / .dsh-market / .credentials.yaml /
 //     settings.yaml / .anonymous-user-id / .dshw-*.json  —— 一律不外发
 //   - junction 跳过（profiles\node_modules 自愈目录等）
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync, cpSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync, cpSync, lstatSync, readlinkSync, symlinkSync, rmSync } from 'node:fs';
+import { dirname, join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -137,6 +137,48 @@ function syncNodeModulesBundles() {
 }
 const syncedBundles = syncNodeModulesBundles();
 console.log(`[stage] 同步 node_modules 缺失 bundle：${syncedBundles} 个`);
+
+// 同步 profile 内 node_modules 的 workspace 包（dshome / dsh-imagegen 等在 profiles/dshome/node_modules 下是
+// junction → packages/<name>；payload 里可能是旧实体（dshome exports 缺 mind-*）或缺（dsh-imagegen）。
+// 统一重建为 junction 指向 payload packages/<name>，保证完整 exports / 包体（符号链接解引用进安装树）。
+function syncProfileNodeModules() {
+  const srcProfileNM = join(src, 'profiles', 'dshome', 'node_modules');
+  const dstProfileNM = join(dst, 'profiles', 'dshome', 'node_modules');
+  if (!existsSync(srcProfileNM)) return 0;
+  let synced = 0;
+  for (const e of readdirSync(srcProfileNM, { withFileTypes: true })) {
+    const name = e.name;
+    const s = join(srcProfileNM, name);
+    let st;
+    try { st = lstatSync(s); } catch { continue; }
+    if (!st.isSymbolicLink()) continue;      // 只处理 workspace 链接
+    const srcTarget = readlinkSync(s);       // 源 junction 目标（如 ...\packages\imagegen-plugin）
+    const px = join(dst, 'packages', basename(srcTarget));  // payload 对应 packages/<真实目录名>
+    if (!existsSync(px)) continue;           // payload 无对应 → 跳过
+    const d = join(dstProfileNM, name);
+    let need = true;
+    if (existsSync(d)) {
+      try {
+        const dlt = lstatSync(d);
+        if (dlt.isSymbolicLink() && resolve(readlinkSync(d)) === resolve(px)) need = false;
+        else rmSync(d, { recursive: true, force: true });   // 旧实体/错链接 → 覆盖重建
+      } catch { rmSync(d, { recursive: true, force: true }); }
+    }
+    if (need) {
+      mkdirSync(dirname(d), { recursive: true });
+      try {
+        symlinkSync(px, d, 'junction');
+        synced += 1;
+        changed.push('LINK-profile ' + normPath(join('profiles', 'dshome', 'node_modules', name)));
+      } catch (e) {
+        console.error('[stage] profile link fail ' + name + ': ' + e.message);
+      }
+    }
+  }
+  return synced;
+}
+const syncedProfile = syncProfileNodeModules();
+console.log(`[stage] 同步 profile 内工作区链接：${syncedProfile} 个`);
 
 // AGENTS.md：源根已无 AGENTS.md（权威版 mind\L0\AGENTS.md），payload 需保留并镜像权威版
 const authAgents = join(src, 'mind', 'L0', 'AGENTS.md');

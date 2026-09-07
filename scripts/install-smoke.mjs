@@ -1,8 +1,8 @@
 // DSHOME 安装包静默安装冒烟（打包流程步骤⑥）
 // 教训：Inno /VERYSILENT 时 setup.exe 复制自身为 .tmp 副本继续解压，pwsh & exe 在原始进程退出后即返回
 // → 必须先轮询 DSHOME-setup* 进程全部退出，再检查安装树；首启自愈 junction 需等后端起来。
-import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdtempSync, rmSync, readdirSync } from 'node:fs';
+import { spawnSync, spawn } from 'node:child_process';
+import { existsSync, lstatSync, mkdtempSync, rmSync, readdirSync, openSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -50,10 +50,18 @@ const dshBin = join(INSTALL_DIR, 'node_modules', '@deepseek-ai', 'dsh', 'lib', '
 const runtime = join(INSTALL_DIR, 'runtime', 'node.exe');
 const nodeExe = existsSync(runtime) ? runtime : 'node';
 console.log(`[step2] 用自带 node 启动后端（${nodeExe}）`);
-const child = spawnSync(nodeExe, [dshBin, '--profile', 'dshome', '--no-open', '--port', String(PORT)], {
+// 教训（2026-09-07 实测）：spawnSync 捕获 stdout 会被 dsh 派生的 worker 子进程继承输出句柄拖死
+// （45s 超时只杀主进程、孙进程仍握管道 → 等 EOF 永等，实等 1h+）→ 改异步 spawn + 输出重定向到
+// 日志文件（不阻塞、保留可诊断日志）；后端是否起来由 step3 的 HTTP 轮询判定。
+const backendLog = join(INSTALL_DIR, 'backend-smoke.log');
+const logFd = openSync(backendLog, 'w');
+const child = spawn(nodeExe, [dshBin, '--profile', 'dshome', '--no-open', '--port', String(PORT)], {
   env: { ...process.env, DSH_HOME: INSTALL_DIR },
-  timeout: 45000, windowsHide: true, encoding: 'utf8',
+  stdio: ['ignore', logFd, logFd],
+  windowsHide: true,
 });
+let childExited = false;
+child.on('exit', () => { childExited = true; });
 
 // 3) HTTP 200
 let http200 = false;
@@ -61,6 +69,7 @@ try {
   await new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('HTTP 超时')), 40000);
     const poll = () => {
+      if (childExited) { clearTimeout(t); reject(new Error('后端已提前退出')); return; }
       const req = get({ host: '127.0.0.1', port: PORT, path: '/', timeout: 3000 }, (res) => {
         if (res.statusCode === 200) { clearTimeout(t); http200 = true; resolve(); }
         else { res.resume(); setTimeout(poll, 1500); }
@@ -70,8 +79,8 @@ try {
     };
     poll();
   });
-} catch { /* timeout */ }
-http200 ? ok(`HTTP 200 @127.0.0.1:${PORT}`) : bad(`HTTP 未达 200（后端输出尾部：${String(child.stdout || '').split('\n').slice(-6).join(' | ')}）`);
+} catch { /* timeout or child exit */ }
+http200 ? ok(`HTTP 200 @127.0.0.1:${PORT}`) : bad(`HTTP 未达 200（后端日志尾部：${readFileSync(backendLog, 'utf8').split('\n').filter(Boolean).slice(-6).join(' | ')}）`);
 
 // 4) profiles\node_modules junction 断言（含原失败点）
 const pnm = join(INSTALL_DIR, 'profiles', 'node_modules');
