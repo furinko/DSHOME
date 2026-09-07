@@ -41,7 +41,7 @@
 | boot-recall.md | 1.0.3 | 上工自动召回：project.md+L3+Learn+user-rules+人设卡 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
 | dshome-diagnostics.md | 1.0.0 | DSHOME 后端诊断（崩/卡/闪断：先分真假+证据） | 后端重启、卡、exit1、闪断 |
 | dshome-crash-recovery.md | 1.0.4 | DSHOME/DSH 崩溃排查+自愈：三层定位（装配期/运行期/前端半区）+ marker 定位崩溃插件 + guard --recover/safe 逃生 + Failed to load plugins 四证核对 | 启动失败、起不来、崩溃循环、Failed to load plugins、半区加载失败、ERR_PACKAGE_PATH_NOT_EXPORTED |
-| dshome-plugin-dev.md | 1.1.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚；自有 host 插件落地三步（exports 易漏） | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败、启动崩溃 |
+| dshome-plugin-dev.md | 1.2.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚；自有 host 插件落地三步（exports 易漏）；打包缺 bundle 排查 | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败、启动崩溃 |
 | landing-audit.md | 1.0.0 | 落地审计三查法：查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」（定义/接线/数据逐层查） | 审计、落地、三查、落到实处吗、纸面定义、空壳、接线 |
 | scar-inference.md | 1.1.0 | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古、蒸、版本差、反推坑、咬痕、伤疤、为什么在、作者画像、同源盲区 |
 

@@ -1,7 +1,7 @@
 ---
 name: dshome-plugin-dev
 description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地三步（exports 注册易漏）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
-version: 1.1.0
+version: 1.2.0
 author: DSHOME
 license: internal
 metadata:
@@ -118,6 +118,10 @@ Host `harness.handle('method', handler)`，Client `await host.call('method', arg
 | UI 加载但页面报错 | 看 `client-render` 诊断与 stack；对应用 `cordis_define` 新 Package 修复 |
 | `host.call` 失败 | handler 名、当前 `pluginRunId`、JSON 参数、handler 内 Service 依赖 |
 | 更新失败 | 保持 current/next 语义；修 next 后 update，或 run current 回滚 |
+| 启动报 `cannot resolve profile bundle "X"` | 读启动 stderr（`Error: dsh: cannot resolve profile bundle "X"`）→ 查 `payload\node_modules\X` 是否缺失（对照 `profiles/dshome/package.json` 的 `dsh.profile.bundles`）；缺 = payload 依赖陈旧，打包前需 `stage-payload` 同步 node_modules（`syncNodeModulesBundles` 已固化） |
+| 后端崩 / HTTP 达不到（安装包 bundle 缺失） | 静默装到临时目录 → 起后端读 stderr 定位缺失 bundle → `stage-payload` 补齐 → 重新 ISCC；**source 环境 `smoke` PASS ≠ 安装包可用**，必须真装一装（静默装+起后端+HTTP200+junction）才算过 |
+
+**打包缺 bundle 排查要点（2026-09-07 实测）**：安装包缺 profile bundle 时后端不是"起不来"而是**立即崩**（stderr 报 `cannot resolve profile bundle`），HTTP 达不到。定位链：静默装临时目录 → 起后端读 stderr → 得缺失 bundle 名 → 对照 `profiles/dshome/package.json` 的 `dsh.profile.bundles` → 确认 `payload\node_modules\X` 缺失 → `stage-payload` 的 `syncNodeModulesBundles` 补齐 → 重新 ISCC。**判据**：`smoke`（source）/`verify-payload`（payload 静态）PASS 只证明源码/静态树 OK，不证明安装包可用；唯一可靠终点是"真装一装 + 起后端 + HTTP200 + junction"。
 
 ## 十、DSHOME 自有 host 插件落地（三步 checklist + 安全模式）
 
@@ -152,4 +156,4 @@ safeOverlay 已改为**从 cordis.patch.yml 动态解析**自有插件 id（dsho
 - 组件渲染/纯逻辑可先单测（本地 node + 匹配 react），但**不要**把从外部源码反推的接口当真实契约。
 
 ---
-_版本：1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
+_版本：1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
