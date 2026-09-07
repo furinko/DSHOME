@@ -854,7 +854,7 @@ window.__ModuleLoader__.load({
 
       // header
       var header = el("div", "dshome-mind-header");
-      header.appendChild(el("div", "dshome-mind-title", "🐟 心智图谱"));
+      header.appendChild(el("div", "dshome-mind-title", "🐳 心智图谱"));
       var stat = el("div", "dshome-mind-stat", "加载中…");
       header.appendChild(stat);
       host.appendChild(header);
