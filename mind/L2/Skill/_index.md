@@ -12,7 +12,7 @@
 | `boot-recall` | 上工自动召回（project.md+L3+Learn+user-rules+人设卡 装配成注入上下文；R0 宪法 SOUL+AGENTS 由 mind-inject 注入，本脚本不重复生成） | 上工 / 你想不起来 / 有什么待办 | 项目/任务关键词 → 可注入上下文（`--json` 结构化） | scripts/mind-prime.mjs · mind L3/Project · mind-validate | 1.0.3 |
 | `dshome-diagnostics` | DSHOME 后端诊断(崩/卡/闪断：先分真假+证据) | 后端重启/卡/exit1/闪断 | 现象→证据→结论 | shell log/进程/隔离复现 | 1.0.0 |
 | `dshome-crash-recovery` | DSHOME/DSH 崩溃排查+自愈：先分装配期/运行期/前端半区；启动失败用 marker 定位崩溃插件 + guard `--recover`/safe 逃生；前端「Failed to load plugins」用「__ModuleLoader__.load id==包名」四证核对 | 启动失败/起不来/崩溃循环/`Failed to load plugins`/半区加载失败/`ERR_PACKAGE_PATH_NOT_EXPORTED` | 崩溃现象→层定位+崩溃插件+根因+自愈动作 | dshome-diagnostics · dshome-plugin-dev · scripts/plugin-change-guard.mjs | 1.0.4 |
-| `dshome-plugin-dev` | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS `code.host`/`code.client`，生命周期/修复/回滚；自有 host 插件落地三步（exports 易漏） | 做/改插件 / cordis / slot / `is not declared` / `host.call` 失败 / 启动崩溃 | 目标能力 → 平台归属 + 已读真实接口 + 插件源码 + 修复判断 | cordis-plugin-development (upstream) · mind/L1/Power | 1.2.0 |
+| `dshome-plugin-dev` | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS `code.host`/`code.client`，生命周期/修复/回滚；自有 host 插件落地三步（exports 易漏） | 做/改插件 / cordis / slot / `is not declared` / `host.call` 失败 / 启动崩溃 | 目标能力 → 平台归属 + 已读真实接口 + 插件源码 + 修复判断 | cordis-plugin-development (upstream) · mind/L1/Power | 1.3.0 |
 | `landing-audit` | 落地审计三查法：查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」（定义/接线/数据逐层查） | 审计 / 落地 / 三查 / 落到实处吗 / 纸面定义 / 空壳 / 接线 | 被质疑概念/机制 → 三查证据链 + 每层 verdict(有/无/半) + 病灶定位 | mind/L1/Design-Philosophy · mind/L1/Memory · mind/L1/Power | 1.0.0 |
 | `scar-inference` | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古 / 蒸 / 版本差 / 反推坑 / 咬痕 / 伤疤 / 为什么在 / 作者画像 / 同源盲区 | 新旧产物 → 咬痕分布图(伤疤→约束) + 同作者不变量 + 跨版本镜像，每证标 A/B/C | mind/L1/Memory · mind/L1/Power | 1.1.0 |
 
