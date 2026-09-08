@@ -148,6 +148,14 @@ function relatedList(content) {
     return tail.replace(/\.md$/i, '').toLowerCase();
   }).filter(Boolean);
 }
+function fmTags(content) {
+  // frontmatter 顶层 tags: [a, b]（YAML 内联数组）——图谱自动成边的数据源
+  const m = /^---\n([\s\S]*?)\n---/.exec(content || '');
+  if (!m) return [];
+  const r = /(?:^|\n)\s*tags:\s*\[([^\]]*)\]/.exec(m[1]);
+  if (!r) return [];
+  return r[1].split(',').map((s) => String(s).trim().replace(/^['"]|['"]$/g, '').toLowerCase()).filter(Boolean);
+}
 function buildGraph() {
   const files = [];
   walkContentMd(mindFactoryDir(), 'factory', '', files);
@@ -188,6 +196,36 @@ function buildGraph() {
       seen.add(key);
       edges.push({ source: srcId, target: tgt.id, type: 'related' });
     }
+  }
+  // 自动成边（救孤点，2026-09-08）：共享 ≥2 个 frontmatter tags 的节点对自动连线（type:'tags'）。
+  // 显式 related 优先（已连的不重复加）；阈值 2 防"通用 tag 全连"；tag 语义分类越细越不易误连。
+  const tagIndex = new Map();
+  for (const f of files) {
+    // 跳过进化快照（归档副本会拷贝源 frontmatter tags → 与源文件伪连；非活内容）
+    if (f.rel.startsWith('tasks/evolution/snapshots/')) continue;
+    const tags = fmTags(readText(f.full));
+    if (!tags.length) continue;
+    const srcId = `${f.zone}:${f.rel}`;
+    for (const t of tags) {
+      if (!tagIndex.has(t)) tagIndex.set(t, new Set());
+      tagIndex.get(t).add(srcId);
+    }
+  }
+  const pairShare = new Map();
+  for (const group of tagIndex.values()) {
+    const arr = [...group];
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        const key = [arr[i], arr[j]].sort().join('|');
+        pairShare.set(key, (pairShare.get(key) || 0) + 1);
+      }
+    }
+  }
+  for (const [key, share] of pairShare) {
+    if (share < 2 || seen.has(key)) continue;
+    seen.add(key);
+    const split = key.indexOf('|');
+    edges.push({ source: key.slice(0, split), target: key.slice(split + 1), type: 'tags' });
   }
   return { ok: true, nodes, edges };
 }

@@ -101,7 +101,7 @@
 
 > **两条纪律（防抖动）**：① **事件驱动，不做定时重评**——不搞「每周给所有记忆重打分」，那是温度计的变体（繁冗罪）；② **调整后进冷静期**——同一条调完分，无新强信号不短期反复改（防「今天 5 明天 2」手抖）。调整本身 = 内容变更，按 §二 覆写规则走（增量覆写 + git/快照留痕），不另设日志字段。
 
-- **有源可溯 → 直接落库**：记忆带 `source`（外部可查证依据：文件/事件/用户明示/实测，非 agent 自发推理）→ 写 `L3\index\<topic>\`（frontmatter：kind/importance/scope/topic/tags/source/proposedBy/proposedAt），即时生效，信任靠溯源。
+- **有源可溯 → 直接落库**：记忆带 `source`（外部可查证依据：文件/事件/用户明示/实测，非 agent 自发推理）→ 写 `L3\index\<topic>\`（frontmatter：kind/importance/scope/topic/tags/**related**/source/proposedBy/proposedAt），即时生效，信任靠溯源。**顺手补 `related`**（关联记忆/技能/文档的**文件名**，图谱连线用——显式 related 比同 tags 自动成边更精准，落库时花 5 秒想想"谁和它相关"）。
 - **无源 / 自推理 → 标 `unverified`**：写 `L3\index\<topic>\` 但 frontmatter 加 `verified: false`，**不参与权威裁决**（降权，可被有源记忆覆盖）。
 - **存量迁移**：旧记忆（无 frontmatter / 用 `> date:` 引用式头）迁移时补 frontmatter；内容有出处 → 提为 `source`；确无外部依据 → 标 `verified: false`。校验不过即阻塞提交，不接受"先记着"绕过。
 - **用户明示 / 敏感 / 拿不准**：才建议走 `mind-private\tasks\pending\<日期>_<名>.md` 等用户在图谱面板「⏳ 待放行」裁决（✓ 入库 / ✗ 入 TRASH）；**非强制门**，仅作可选审阅。
