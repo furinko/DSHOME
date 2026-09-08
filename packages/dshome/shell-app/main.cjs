@@ -21,6 +21,8 @@ const POLL_MS = 3000;
 const BOOT_GRACE_MS = 15000;          // 后端启动宽限期：撑过 = 启动成功，重置失败计数
 const RESTART_DELAYS = [1000, 3000, 10000, 30000]; // 指数退避序列（ms）
 const MAX_CONSECUTIVE_FAILS = 3;      // 连续启动失败次数 → 弹窗建议安全模式
+const HEALTHCHECK_TIMEOUT_MS = 4000;  // 探活超时（ms）：放宽到 4s，避免忙时一次打盹就误判离线
+const OFFLINE_REQUIRED = 3;           // 连续探活失败多少次才切离线页（防抖：单次瞬态假失败不翻页）
 const OFFLINE_FILE = path.join(__dirname, 'offline.html');
 const STATE_FILE = path.join(app.getPath('userData'), 'dshome-shell-state.json');
 const LOG_FILE = path.join(app.getPath('userData'), 'dshome-shell.log');
@@ -82,6 +84,7 @@ function logLine(entry) {
 let window = null;
 let tray = null;
 let isOnline = false;
+let offlineStreak = 0; // 连续探活失败计数（防抖：够 OFFLINE_REQUIRED 次才认定离线）
 let pollTimer = null;
 let quitting = false;
 
@@ -371,7 +374,7 @@ ipcMain.handle('shell:retry-backend', async () => {
 // ---- 壳与 UI ----
 async function isBackendUp() {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2000);
+  const timer = setTimeout(() => controller.abort(), HEALTHCHECK_TIMEOUT_MS);
   try {
     const r = await fetch(targetUrl(), { method: 'GET', signal: controller.signal });
     clearTimeout(timer);
@@ -383,6 +386,7 @@ async function isBackendUp() {
 }
 
 async function applyBackendState(nowUp) {
+  if (nowUp) offlineStreak = 0; // 探到后端在线：清零失败计数，防抖通道恢复正常
   if (nowUp === isOnline) return; // nothing changed
   isOnline = nowUp;
   logLine({ state: isOnline ? 'online' : 'offline', url: targetUrl() });
@@ -409,7 +413,18 @@ async function applyBackendState(nowUp) {
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
-    try { await applyBackendState(await isBackendUp()); } catch (e) { logLine({ pollError: String(e?.message ?? e) }); }
+    try {
+      const up = await isBackendUp();
+      if (up) {
+        offlineStreak = 0;
+        await applyBackendState(true);
+      } else {
+        // 防抖：单次/个别瞬态假失败不回离线页；连续 OFFLINE_REQUIRED 次才真正切离线。
+        offlineStreak += 1;
+        if (offlineStreak < OFFLINE_REQUIRED) return;
+        await applyBackendState(false);
+      }
+    } catch (e) { logLine({ pollError: String(e?.message ?? e) }); }
   }, POLL_MS);
 }
 
