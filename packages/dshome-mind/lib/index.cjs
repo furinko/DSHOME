@@ -8,7 +8,10 @@ const fs = require('fs');
 const path = require('path');
 const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cron.cjs');
 // L3 检索共享库（§十 权威排序单一实现——F3：index.cjs 与 mind-prime 共用 tokenize/jaccard/fmValue/confidenceRank）
-const { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files } = require('../../../scripts/mind-search-lib.cjs');
+// 用 repoRoot()（DSH_HOME 优先）定位而非相对 __dirname：发布后 dshome-mind 被实体化到
+// profiles\dshome\node_modules\dshome-mind\lib，`../../../scripts` 会指向 profiles\dshome\scripts
+// （不存在）→ MODULE_NOT_FOUND 后端崩。repoRoot() 在 dev=仓库根、安装=DSH_HOME（含 scripts）。
+const { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files } = require(path.join(repoRoot(), 'scripts', 'mind-search-lib.cjs'));
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;

@@ -1,6 +1,6 @@
 {
   "name": "dshome-shell",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "DSHOME Electron shell window app: tray, single instance, offline page + auto-reconnect, native notifications.",
   "main": "main.cjs"
