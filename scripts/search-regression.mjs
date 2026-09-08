@@ -60,10 +60,24 @@ console.log(`\n[search-regression] 命中率 ${Math.round((hits / items.length) 
 // 不进 tokenize/Jaccard（已知 bigram 词面盲区，K3 已否决上 embedding）；命中率当作"体温计基线"，低于历史即越调越差。
 // 每次命中 bump 一次，让 search-hit 反映召回量，而非恒为 0。
 const evoLog = join(dirname(fileURLToPath(import.meta.url)), 'evolve-log.mjs');
+const METRICS_FILE = join(repoRoot, 'mind-private', 'tasks', 'evolution', 'metrics.json');
 if (hits > 0) {
   try {
+    // 基线时机修复（2026-09-08）：log 先于 bump——只在 search-hit 首次从 0 起步时自动写 log（基线=跑前 0），
+    // 避免"先 bump 后手动 log"把基线记成改后值 → effect auto 假阴性（0→N 真实增益不可见，曾误判"无效"）。
+    // 后续运行仅 bump 累积（before>0 不 log，不刷 changelog）。
+    let before = 0;
+    try {
+      const m = JSON.parse(readFileSync(METRICS_FILE, 'utf8'));
+      before = (m.metrics && m.metrics['search-hit']) || 0;
+    } catch {}
+    if (before === 0) {
+      execFileSync(process.execPath, [evoLog, 'log',
+        `search-hit|检索回归体温计|救 search-hit:回归命中首次驱动信号(0→${hits}),让指标有真实来源;log 先于 bump 记基线|search-regression 跑完按命中数 bump`],
+        { cwd: repoRoot, stdio: 'ignore' });
+    }
     for (let i = 0; i < hits; i++) execFileSync(process.execPath, [evoLog, 'bump', 'search-hit'], { cwd: repoRoot, stdio: 'ignore' });
-    console.log(`[search-regression] 已 bump search-hit ×${hits}（命中 ${hits} 条 → 信号 ${hits}）`);
+    console.log(`[search-regression] 已 bump search-hit ×${hits}（命中 ${hits} 条 → 信号 +${hits}）`);
   } catch (e) {
     console.warn('[search-regression] bump search-hit 失败（不影响回归判定）:', e.message);
   }
