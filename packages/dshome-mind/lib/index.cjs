@@ -156,10 +156,20 @@ function fmTags(content) {
   if (!r) return [];
   return r[1].split(',').map((s) => String(s).trim().replace(/^['"]|['"]$/g, '').toLowerCase()).filter(Boolean);
 }
+function fmTopic(content) {
+  // frontmatter 顶层 topic: <主题名>（= L3 记忆所属主题目录）——图谱「同主题成边」的数据源
+  const m = /^---\n([\s\S]*?)\n---/.exec(content || '');
+  if (!m) return '';
+  const r = /(?:^|\n)\s*topic:\s*([^\n]+)/.exec(m[1]);
+  return r ? String(r[1]).trim().replace(/^['"]|['"]$/g, '').toLowerCase() : '';
+}
 function buildGraph() {
-  const files = [];
-  walkContentMd(mindFactoryDir(), 'factory', '', files);
-  walkContentMd(mindPrivateDir(), 'private', '', files);
+  const all = [];
+  walkContentMd(mindFactoryDir(), 'factory', '', all);
+  walkContentMd(mindPrivateDir(), 'private', '', all);
+  // 进化快照（tasks/evolution/snapshots/）= 归档副本、非活内容 → 不进图谱
+  // （否则节点里混入 90+ 个历史副本、连线上出现「副本↔活文件」的假边）
+  const files = all.filter((f) => !f.rel.startsWith('tasks/evolution/snapshots/'));
   const nodes = [];
   const byLabel = new Map();
   const readText = (full) => { try { return fs.readFileSync(full, 'utf8'); } catch { return ''; } };
@@ -201,8 +211,6 @@ function buildGraph() {
   // 显式 related 优先（已连的不重复加）；阈值 2 防"通用 tag 全连"；tag 语义分类越细越不易误连。
   const tagIndex = new Map();
   for (const f of files) {
-    // 跳过进化快照（归档副本会拷贝源 frontmatter tags → 与源文件伪连；非活内容）
-    if (f.rel.startsWith('tasks/evolution/snapshots/')) continue;
     const tags = fmTags(readText(f.full));
     if (!tags.length) continue;
     const srcId = `${f.zone}:${f.rel}`;
@@ -226,6 +234,29 @@ function buildGraph() {
     seen.add(key);
     const split = key.indexOf('|');
     edges.push({ source: key.slice(0, split), target: key.slice(split + 1), type: 'tags' });
+  }
+  // 同主题成边（2026-09-08）：L3 记忆按 frontmatter topic（= 所属主题目录）两两成边（type:'topic'）。
+  // 依据：topic 是分类维度（同一主题天然相关、重复率高），比 tags（每条各写各的描述词）可靠得多。
+  const topicIndex = new Map();
+  for (const f of files) {
+    if (f.zone !== 'private' || !f.rel.startsWith('L3/index/')) continue;
+    const topic = fmTopic(readText(f.full));
+    if (!topic) continue;
+    const srcId = `${f.zone}:${f.rel}`;
+    if (!topicIndex.has(topic)) topicIndex.set(topic, new Set());
+    topicIndex.get(topic).add(srcId);
+  }
+  for (const group of topicIndex.values()) {
+    const arr = [...group];
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        const key = [arr[i], arr[j]].sort().join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const split = key.indexOf('|');
+        edges.push({ source: key.slice(0, split), target: key.slice(split + 1), type: 'topic' });
+      }
+    }
   }
   return { ok: true, nodes, edges };
 }
