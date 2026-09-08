@@ -1,6 +1,6 @@
 # Power.md — 能力手册（Skill/Exp）
 
-> 版本：1.8 | 2026-09-05 | 通用筛补专项/通用判据 + DSHOME 自身技能直接出厂例外；余同 1.7（四筛法）
+> 版本：1.10 | 2026-09-08 | §二 触发机制补全：加载器扫**四区**（Skill 双区 + Exp 双区），Exp 条目自动触发；余同 1.9
 > 加载：R2 触发——用 Skill/蒸馏沉淀前 read；入口要点由 R1 召回速览带（不常驻）
 > 定位：L1 能力手册——如何使用 L2 Skill/Exp，沉淀路径，L2 格式规范。
 > 本文件只管**能力域**（Skill/Exp 是什么、怎么沉淀、什么格式）。行为/流程/纪律类内容在 `mind\L1\Ritual.md`（收工/洗澡/元进化/纪律/自省判据）——不要在本文件追加行为类规则。
@@ -23,9 +23,10 @@
 
 **触发登记权威 = `mind\L2\Skill\_index.md`（能力积木总索引）+ Skill/Exp 文件自身的 frontmatter `contract.triggers`**——不在此另列表格（曾有空壳表重复定义，已废弃）。盘点/查询能力积木去 `_index.md`。
 
-> **实现状态（2026-09-05 更新）**：
-> - **触发加载已有机器实现**：host 插件 `dshome-mind-skill-loader` 每步检测对话触发词，命中注入方法论卡片（frontmatter description + outputs 摘要，约 150 词元，防全文灌上下文）。检测触发词唯一来源 = frontmatter `contract.triggers`（改触发词即改检测行为）。_index.md 仍是人类盘点索引；机器加载不依赖它（插件直接扫 Skill 目录 frontmatter）。
-> - **Skill 双区（V1）**：加载器读**双区**——出厂 `mind\L2\Skill\`（可推送）+ 私有暂存 `mind-private\L2\Skill\`（gitignore 永不推送，同名私有优先覆盖出厂）。**私有 skill 落法**：未成熟/含隐私/未去敏 → 写 `mind-private\L2\Skill\<id>.md`（同样 frontmatter 含 contract.triggers），加载器自动纳入检测，卡片标注"私有区不推送"；成熟去敏后 → 移入出厂 `mind\L2\Skill\` + 更新 `_index.md` + `Tree.md`（提升流程）。私有 skill **不**进出厂 _index/Tree（避免推送泄漏）。
+> **实现状态（2026-09-08 更新）**：
+> - **触发加载已有机器实现**：host 插件 `dshome-mind-skill-loader` 每步检测对话触发词，命中注入能力卡片（frontmatter description + outputs 摘要，约 150 词元，防全文灌上下文）。检测触发词唯一来源 = frontmatter `contract.triggers`（改触发词即改检测行为）。_index.md 仍是人类盘点索引；机器加载不依赖它（插件直接扫**四区** frontmatter）。
+> - **能力积木双区（V1）**：加载器读**双区**——出厂 `mind\L2\Skill\`（可推送）+ 私有暂存 `mind-private\L2\Skill\`（gitignore 永不推送，同名私有优先覆盖出厂）。**私有 skill 落法**：未成熟/含隐私/未去敏 → 写 `mind-private\L2\Skill\<id>.md`（同样 frontmatter 含 contract.triggers），加载器自动纳入检测，卡片标注"私有区不推送"；成熟去敏后 → 移入出厂 `mind\L2\Skill\` + 更新 `_index.md` + `Tree.md`（提升流程）。私有 skill **不**进出厂 _index/Tree（避免推送泄漏）。
+> - **Exp 落点与触发（2026-09-08）**：出厂 `mind\L2\Exp\` 仅存可推送的工具手册（当前空）；**收录默认私有区 `mind-private\L2\Exp\`**（见 §三 自主收录授权）。**加载器扫四区**（Skill 双区 + Exp 双区）——Exp 条目同样按 `contract.triggers` **自动触发**（此前只扫 Skill、与本 § 首句"Skill/Exp"不一致，2026-09-08 补机制：`mind-skill-loader.js` 的 `l2Dirs()`）。
 
 > **私有 vs 出厂判定（四筛法，2026-09-05）**——蒸馏出新方法论时按序问：
 > 1. **隐私筛**（任一"是"→ **必私有**，不讨论）：推上公开 GitHub 会暴露——本机私人路径/用户名/邮箱（`C:\Users\<名>\`、私人系统目录如 Hermes）？公司/个人项目内幕？凭据/密钥/令牌（含示例）？
@@ -52,14 +53,48 @@
 ① 跨项目可复用？ ② 有验证过的逻辑/事实？ ③ 以后还会遇到？
 **索引同步**：Skill→`_index`+`Tree`；记忆→对应 `_index`；改"自我类"→进化档案 `log`（见 `mind\L1\Ritual.md` §四）。
 
+### 自主收录授权（L2 生长区免放行，2026-09-08）
+
+**触发时机**：造完可复用工具/脚本/流程，或引入新外部工具时——**当场判**，不等收工。
+
+**判定**：蒸馏三问 ≥2 条即收录（判据同上）。
+
+**落点（默认私有区）**：
+
+| 产出性质 | 落点 | 附加动作 |
+|---|---|---|
+| 脚本 / 工具手册 | `mind-private\L2\Exp\<id>.md` | 更新该目录 `README.md` 表 |
+| 方法论 / 流程 | `mind-private\L2\Skill\<id>.md`（frontmatter 含 contract） | 加载器自动纳入检测（私有不进出厂 _index/Tree） |
+| **项目专属工具** | **不收录**——记进 `mind-private\Project\<项目>\project.md` | — |
+| 要变成模型可直接调用 | 运行时插件注册 | **仍等放行** |
+
+**实体与收录分离**：工具实体（脚本）放 `mind-private\tools\`；收录条目只**引用**它——`contract.deps` 写相对路径（**不写盘符**），条目内附**自检命令**（一条命令验证实体在不在）；实体缺失时条目显式标「待重建」，**不静默失效**（静默失效才是真空指针）。
+
+**授权**：L2 生长区**免放行**（护栏对本区本就是"提示不拦"）；落完汇报「收录了什么 + 改了哪些索引」。
+
+**刹车**：`mind\L0/L1` 规则、护栏/插件代码、运行时注册、git 提交**仍等放行**。
+
+**不照抄记忆契约**（L2 是"事实"，L3 是"声称"）：不设 `source`/`verified`（**能否跑通即证明**）、不设 `importance`（触发靠 triggers，不靠排序）、不新增 `related`（`contract.deps` 已够）。只保留三条：**dup-check 查重**、**`project` 字段隔离**（通用工具不标）、**增量覆写 + TRASH 不删只移**。
+
+**跨设备（对齐 `mind\L1\Concepts.md` V4 立场）**：私有区**有意本机私有、不跨设备同步**（设计预期，非 bug）；换设备靠本节的**落点结构照规则重建**，产物搬运走 `import-artifact`。**不引入同步/合并机制。**
+
 ### 新增 Skill
 ```
 1. 草稿（轮级缓冲或临时文件）
-2. 用户确认
+2. 自主收录判定（见上，L2 免放行）
 3. 写入 mind\L2\Skill\<Name>.md（frontmatter 含 contract）
 4. 更新 mind\L1\Tree.md「L2-Skill 清单」
 5. 更新能力积木 _index.md 加一行
 6. 建 L3/index 对应子目录（如需要）
+```
+
+### 新增 Exp
+```
+1. 实体落地：脚本放 mind-private\tools\（无硬编码盘符）
+2. 跑通验证：自检命令必须通过（未验证的用法不写进条目）
+3. dup-check 查重：同工具/同功能不重复收录
+4. 写入 mind-private\L2\Exp\<Name>.md（frontmatter 含 contract；deps 指实体相对路径）
+5. 更新该目录 README.md 表（私有区不进出厂 Tree）
 ```
 
 ### 更新 Skill/Exp
@@ -111,4 +146,4 @@ metadata:
 
 ---
 
-_版本：1.8 | 2026-09-05 | v1.7（四筛法）→ 通用筛补专项/通用判据 + DSHOME 自身技能直接出厂例外_
+_版本：1.10 | 2026-09-08 | §二 触发机制补全：加载器扫四区（Skill 双区 + Exp 双区），Exp 条目按 contract.triggers 自动触发；§二 实现状态三条文案对齐（扫四区 / 能力积木双区 / Exp 落点与触发）| 1.9 | 2026-09-08 | §三 增「自主收录授权（L2 生长区免放行）」：触发时机/落点表/实体与收录分离/刹车/不照抄记忆契约/跨设备对齐 V4 + 补「新增 Exp」流程 + 新增 Skill step2 改「自主收录判定」；§二 补 Exp 落点 | 1.8 | 2026-09-05 | 通用筛补专项/通用判据 + DSHOME 自身技能直接出厂例外；余同 1.7（四筛法）_

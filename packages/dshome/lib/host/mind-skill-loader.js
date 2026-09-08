@@ -78,19 +78,25 @@ function fmArray(content, key) {
   return [];
 }
 
-/** 加载全部 Skill 的触发索引（读双区：出厂 mind\L2\Skill\ + 私有暂存 mind-private\L2\Skill\，同名私有优先）。
- *  返回 [{ id, full, description, triggers, outputs, zone }]；读不了 frontmatter 的跳过。 */
+/** L2 能力积木扫描目录：Skill 双区 + Exp 双区（Exp = 工具手册，同机制触发）。
+ *  顺序 = 出厂 → 私有；同名后扫者胜（私有覆盖出厂）。 */
+function l2Dirs() {
+  const root = repoRoot();
+  return [
+    [join(root, 'mind', 'L2', 'Skill'), 'factory', 'mind/L2/Skill', 'skill'],
+    [join(root, 'mind-private', 'L2', 'Skill'), 'private', 'mind-private/L2/Skill', 'skill'],
+    [join(root, 'mind', 'L2', 'Exp'), 'factory', 'mind/L2/Exp', 'exp'],
+    [join(root, 'mind-private', 'L2', 'Exp'), 'private', 'mind-private/L2/Exp', 'exp'],
+  ];
+}
+
+/** 加载全部 Skill/Exp 的触发索引（读四区：Skill 双区 + Exp 双区，同名私有优先）。
+ *  返回 [{ id, full, description, triggers, outputs, zone, kind }]；读不了 frontmatter 的跳过。 */
 function loadSkillIndex() {
-  const factoryDir = join(repoRoot(), 'mind', 'L2', 'Skill');
-  const privateDir = join(repoRoot(), 'mind-private', 'L2', 'Skill');
   const skills = [];
   const byId = new Map(); // 同名去重用（私有覆盖出厂）
 
-  // 先扫出厂，再扫私有（私有同名覆盖）
-  for (const [dir, zone, relPrefix] of [
-    [factoryDir, 'factory', 'mind/L2/Skill'],
-    [privateDir, 'private', 'mind-private/L2/Skill'],
-  ]) {
+  for (const [dir, zone, relPrefix, kind] of l2Dirs()) {
     if (!existsSync(dir)) continue;
     for (const name of readdirSync(dir)) {
       if (!name.endsWith('.md') || name === 'README.md' || name === '_index.md') continue;
@@ -102,7 +108,7 @@ function loadSkillIndex() {
       const triggers = fmArray(content, 'triggers');
       const outputs = fmArray(content, 'outputs');
       if (id && triggers.length) {
-        const entry = { id, full: relPrefix + '/' + name, description, triggers, outputs, zone };
+        const entry = { id, full: relPrefix + '/' + name, description, triggers, outputs, zone, kind };
         byId.set(id, entry); // 私有同名覆盖出厂（后扫的 private 胜）
       }
     }
@@ -130,8 +136,7 @@ export function apply(ctx) {
         .sort().map((n) => n + ':' + statSync(join(dir, n)).mtimeMs).join('|');
     }
     function getSkills() {
-      const fp = dirFingerprint(join(repoRoot(), 'mind', 'L2', 'Skill')) + '#' +
-                 dirFingerprint(join(repoRoot(), 'mind-private', 'L2', 'Skill'));
+      const fp = l2Dirs().map(([dir]) => dirFingerprint(dir)).join('#');
       if (cached && cached.fingerprint === fp) return cached.skills;
       const skills = loadSkillIndex();
       cached = { skills, fingerprint: fp };
@@ -174,7 +179,7 @@ export function apply(ctx) {
             : '';
           const card = [
             '',
-            `🧩 命中方法论「${skill.id}」：${skill.description || ''}`,
+            `🧩 命中${skill.kind === 'exp' ? '工具手册' : '方法论'}「${skill.id}」：${skill.description || ''}`,
             outLine,
             `全文 \`${skill.full}\`（命中提示——需要时 read 全文即生效${skill.zone === 'private' ? '；私有区不推送' : ''}）`,
             '',
