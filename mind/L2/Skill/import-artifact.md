@@ -24,8 +24,8 @@ contract:
 ```
 ① 识别    这是什么？SKILL.md？蒸馏目录包？记忆导出？裸文档？压缩包？
 ② 校验    frontmatter 完整？版本？死链？内容含本机私密信息？（有则提示确认）
-③ 归类    SKILL → mind\L2\Skill\；Exp → mind\L2\Exp\；记忆 → mind-private\L3\index\<主题>\
-          ；项目 → mind-private\Project\；规则/模板 → mind\（需用户确认）；裸文档 → 给 2-3 个归类选项
+③ 归类    SKILL → mind\L2\Skill\；Exp → mind\L2\Exp\；通用记忆 → mind-private\L3\common\<主题>\
+          ；项目记忆/结晶 → mind-private\L3\projects\<项目>\（档案根 or 知识\<主题>）；规则/模板 → mind\（需用户确认）；裸文档 → 给 2-3 个归类选项
 ④ 放置    默认写 mind-private\（隐私区）；用户明确说"公开/进仓库"才写 mind\
 ⑤ 建索引  更新对应主题 _index.md + mind\L1\Tree.md 清单 + 关联索引
 ⑥ 回滚点  导入前 git checkpoint（mind-private 独立 git）；冲突旧版进 TRASH 不覆盖
@@ -59,8 +59,8 @@ contract:
 
 **L1：** `mind\L1\Memory.md`（归档规则）· `mind\L1\Tree.md`（索引）
 **L2 Exp：** `mind\L2\Exp\`（工具手册）
-**L3 Index：** 主题目录 `mind-private\L3\index\<主题>\` + 各目录 `_index.md`（Memory §四 格式）；主题总览见 `mind\L1\Tree.md` L3 区
-**L3 Project：** `mind-private\Project\`（项目档案）
+**L3 common：** 通用结晶主题目录 `mind-private\L3\common\<主题>\` + `_index.md`；主题总览见 `mind\L1\Tree.md` L3 区
+**L3 projects：** `mind-private\L3\projects\<项目>\`（项目记忆：project.md + 档案 + 知识\）
 
 ---
 _版本：1.0.0 | 2026-09-02 | 初版（导入协议固化）_

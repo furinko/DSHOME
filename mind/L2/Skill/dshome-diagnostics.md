@@ -59,7 +59,7 @@ contract:
 
 **日志：** `%APPDATA%\dshome-shell\dshome-shell.log`
 **代码：** `packages\dshome\shell-app\main.cjs`（errTail）
-**待办：** `mind-private\Project\`（当前项目档「下一步」区，后端重启排查项）
+**待办：** `mind-private\L3\projects\DSHOME\project.md`（体系主线档「下一步」区，后端重启排查项）
 
 ---
 _版本：1.0.0 | 2026-09-02 | 后端诊断固化_

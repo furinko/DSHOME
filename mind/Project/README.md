@@ -1,5 +1,5 @@
-# Project — 行动锚点（出厂说明）
+# Project — 项目记忆区（已并入 L3，2026-09-09 退役）
 
-> 定位：当前正在做的项目档案（目的/进度/下一步），不属于知识网络，与 L0-L3 平级。
-> **实际项目档案在 `$DSH_HOME\mind-private\Project\`（仓库同级 `mind-private\Project\`，隐私）**——本目录只放模板与公开示例。
-> project.md 格式与上工/收工规则见 `mind\L1\Memory.md` §四。
+> **本目录退役**：记忆层重构后，项目记忆并入 `mind\L3\` 的 projects 子区——实际内容在 `$DSH_HOME\mind-private\L3\projects\<项目>\`（隐私）。
+> 结构：每项目一个目录 = 导航 `project.md` + 记忆档案（如管线记忆.md）+ `知识\` 结晶。
+> 规则见 `mind\L1\Memory.md` §四（projects 规则）。本出厂目录保留为空壳说明，不再放模板。

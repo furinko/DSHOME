@@ -43,7 +43,7 @@ Step 1→N 线性操作指南（遇到 X → 做 Y → 验证 Z）
 **L1：** 引用的 L1 文件
 **L2 Skill：** 引用的 Skill
 **L2 Exp：** 引用的 Exp
-**L3 Index：** 对应的 L3/index 主题文件
+**L3 common/projects：** 关联的记忆区文件（`L3\common\` 或 `L3\projects\<项目>\知识\`）
 
 ---
 _版本：1.0.0 | 2026-09-02 | 变更摘要_

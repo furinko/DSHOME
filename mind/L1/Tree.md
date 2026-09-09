@@ -1,6 +1,6 @@
 # Tree.md — 知识网络血管（全目录）
 
-> 版本：1.5 | 2026-09-08 | 隐私修复：Project 段改结构描述 + 更新规则禁私有条目（51df701 回归补漏——2387d50 误加 SEKKI 已移除）
+> 版本：1.6 | 2026-09-09 | 记忆层重构：L3 段改三区结构（common/projects/history），Project 独立段并入 L3\projects（51df701 隐私卫生延续：出厂不枚举运行时条目）| 1.5 | 2026-09-08 | 隐私修复：Project 段改结构描述 + 更新规则禁私有条目（51df701 回归补漏——2387d50 误加 SEKKI 已移除）
 > 加载：R2/R3——上工由 R1 召回带层骨架速览；完整目录按需 read（查"X 在哪"→ 本文件定位 → grep/read 目标）
 > 定位：L1 循环系统——全知识网络目录，AI 友好表格化。"有什么"的一键查询。
 
@@ -52,15 +52,15 @@
 
 ## L3 — 记忆层（mind-private\L3\，隐私）
 
-### index 主题目录（结晶知识）
-> 主题目录 = 私有区（`mind-private\L3\index\`）的分区；运行时内容，随收工蒸馏逐步积累（主题自命名 + `_index` 懒建，不预置清单）。**当前已有主题：dshome-mind（2026-09-06，现 4 条）、dshome-plugin-dev（2026-09-06，1 条），见各自 `_index`**。
+> 记忆层重构（2026-09-09）：三区 = `common\`（通用结晶）+ `projects\`（项目记忆）+ `history\`（归档）。检索隔离 = 物理目录（common 恒含 + projects\<当前>）。结构与规则详见 `mind\L1\Memory.md`。
+
+### common — 通用结晶（跨项目可调取）
+> 主题目录 = `mind-private\L3\common\<主题>\`（当前：user-rules / lessons）；索引 = 各主题 `_index.md` + `common\_index.md`。
+### projects — 项目记忆（每项目一目录，上工加载）
+> `mind-private\L3\projects\<项目>\`：导航 project.md + 记忆档案（如管线记忆.md）+ `知识\<主题>\` 项目结晶。
+> 🔴 **出厂不登记任何项目条目**（51df701 隐私卫生：出厂只给结构、不枚举本机运行时条目——含本仓库 DSHOME 自身，它也只是私有区里的一个项目档案）。
 ### history 归档
 > history = `mind-private\L3\history\`（时间胶囊，只写不改）。当前为空；归档时 `YYYY-MM-DD_<标题>_归档.md` 命名并在此登记一行。
-
-## Project — 行动锚点（mind-private\Project\）
-
-> 项目档案一律在 `mind-private\Project\<项目>\project.md`（私有，不进库）。
-> 🔴 **出厂不登记任何项目条目**（51df701 隐私卫生：出厂只给结构、不枚举本机运行时条目——含本仓库 DSHOME 自身，它也只是私有区里的一个项目档案）。
 
 ## TRASH — 回收站（不删只移）
 
@@ -70,6 +70,6 @@
 
 ## 更新规则
 - 出厂 L2 Skill/Exp 变更 → 同步更新本文件对应清单。
-- 🔴 私有 L3 记忆 / Project 档案 → **不进本文件**（本文件随 git 推公开仓库；运行时条目一律归 mind-private，51df701）。
+- 🔴 私有 L3 记忆（common/projects/history 运行时条目）→ **不进本文件**（本文件随 git 推公开仓库；运行时条目一律归 mind-private，51df701）。
 - 版本号/关联变化 → 同步。
 - 每轮收工（Ritual.md §一 9 步）第 4 步强制检查本文件同步。
