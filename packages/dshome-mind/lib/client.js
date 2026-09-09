@@ -590,8 +590,8 @@ window.__ModuleLoader__.load({
       { id: "L2S", label: "L2 技能", color: "#10b981" },
       { id: "L2E", label: "L2 经验", color: "#14b8a6" },
       { id: "L3I", label: "L3 记忆", color: "#f97316" },
+      { id: "L3P", label: "项目记忆", color: "#ef4444" },
       { id: "L3H", label: "L3 历史", color: "#f59e0b" },
-      { id: "PJ", label: "Project", color: "#ef4444" },
       { id: "TR", label: "TRASH", color: "#64748b" },
       { id: "TK", label: "任务缓冲", color: "#ec4899" },
     ];

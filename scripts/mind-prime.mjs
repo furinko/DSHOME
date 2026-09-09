@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 // L3 检索共享库（§十 权威排序单一实现——F3 修复：自动召回不再走纯相似度简化版）
 const require2 = createRequire(import.meta.url);
-const { searchL3, fmValue } = require2('./mind-search-lib.cjs');
+const { searchL3, fmValue, listMemoryCandidates } = require2('./mind-search-lib.cjs');
 
 const repoRoot = resolve(process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..'));
 const PRIV = join(repoRoot, 'mind-private');
@@ -55,15 +55,13 @@ function walkMd(dir, out, rel = '') {
   return out;
 }
 function search(limit2) {
-  const files = walkMd(join(PRIV, 'L3', 'index'), [], 'L3/index');
-  // 项目管理（隔离）：通用（无 project）+ 当前项目（project == taskProject）；其它项目专属排除 → 不串。
+  // 记忆层重构（2026-09-09）：候选 = listMemoryCandidates(L3, taskProject)
+  //   = common（通用，恒含）+ projects/<taskProject>（当前项目专属，物理隔离）
+  const files = listMemoryCandidates(join(PRIV, 'L3'), taskProject);
   const general = [], proj = [];
   for (const f of files) {
-    let content = '';
-    try { content = readFileSync(f.full, 'utf8'); } catch { continue; }
-    const p = (fmValue(content, 'project') || '').trim();
-    if (!p) general.push(f);
-    else if (taskProject && p === taskProject) proj.push(f);
+    if (f.rel.startsWith('common/')) general.push(f);
+    else if (f.rel.startsWith(`projects/${taskProject}/`)) proj.push(f);
   }
   // 通用层：结果导向三级退——任务 query → 工作区(项目名) → 重要度兜底（不空转）。
   let generalHits = searchL3(generalQuery, general, limit2);
@@ -74,7 +72,7 @@ function search(limit2) {
     generalHits = searchL3('', general, limit2, { minScore: 0 });
   }
   // 项目层：当前项目专属记忆全部列入（项目专属即相关；不靠 query——中英不匹配会漏），minScore 0 保证在场。
-  const projHits = taskProject ? searchL3(taskProject, proj, limit2, { minScore: 0 }) : [];
+  const projHits = taskProject && proj.length ? searchL3(taskProject, proj, limit2, { minScore: 0 }) : [];
   // 合并：项目优先保留（当前项目上下文），通用知识补充；去重取前 limit。
   const picked = [];
   const seen = new Set();
@@ -90,7 +88,7 @@ function search(limit2) {
 // 标题匹配容忍序号前缀与括号后缀（如「## 二、进度状态」「## 下一步（待办）」），
 // 跨设备/不同写法都能装配；todo/progress 权威源语义见 mind/L1/Concepts.md。
 function project() {
-  const f = join(PRIV, 'Project', 'DSHOME', 'project.md');
+  const f = join(PRIV, 'L3', 'projects', 'DSHOME', 'project.md');
   if (!existsSync(f)) return { progress: '', todos: [] };
   const body = readFileSync(f, 'utf8');
   let progress = '';
@@ -121,7 +119,7 @@ function learn() {
   return lines.slice(-4); // 最近 4 条教训
 }
 function userRules() {
-  const f = join(PRIV, 'L3', 'index', 'user-rules', 'rules.md');
+  const f = join(PRIV, 'L3', 'common', 'user-rules', 'rules.md');
   if (!existsSync(f)) return '';
   return readFileSync(f, 'utf8').split('\n').filter((l) => /^##\s+\[/.test(l)).join('\n');
 }

@@ -96,7 +96,7 @@ function searchL3(query, files, limit = 6, opts = {}) {
 }
 
 /**
- * 遍历 L3/index 下的记忆 .md 文件（同 index.cjs walkContentMd 的过滤：仅 .md、排除 README/_index/.gitkeep）。
+ * 遍历 L3 记忆区 .md 文件（同 index.cjs walkContentMd 的过滤：仅 .md、排除 README/_index/.gitkeep）。
  * @param {string} rootDir 如 <root>/mind-private/L3/index
  * @returns {Array<{full:string, rel:string}>} rel 相对 rootDir（无前缀），供 searchL3 使用。
  */
@@ -119,4 +119,49 @@ function listL3Files(rootDir) {
   return out;
 }
 
-module.exports = { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files };
+/**
+ * 记忆候选集（记忆层重构 2026-09-09）：候选 = common（通用，恒含）+ projects/<当前项目>（专属）。
+ * 物理目录隔离——不再依赖 frontmatter project 字段过滤（旧 L3/index 单库方案）。
+ * @param {string} L3Root 如 <root>/mind-private/L3
+ * @param {string} project 当前项目 key（= 项目目录名，如 DSHOME/战姬；空 = 只取通用）
+ * @returns {Array<{full:string, rel:string}>} rel 相对 L3Root，带 common/ 或 projects/<key>/ 前缀
+ */
+function listMemoryCandidates(L3Root, project) {
+  const out = [];
+  const commonDir = path.join(L3Root, 'common');
+  if (fs.existsSync(commonDir)) {
+    for (const f of listL3Files(commonDir)) out.push({ full: f.full, rel: `common/${f.rel}` });
+  }
+  const projKey = String(project || '').trim();
+  if (projKey && !/[/\\]/.test(projKey)) {
+    const projDir = path.join(L3Root, 'projects', projKey);
+    if (fs.existsSync(projDir)) {
+      for (const f of listL3Files(projDir)) out.push({ full: f.full, rel: `projects/${projKey}/${f.rel}` });
+    }
+  }
+  return out;
+}
+
+/**
+ * 全库记忆候选（common + 全部项目）——回归集/全库场景用（等价旧 listL3Files(L3/index) 行为）。
+ * @param {string} L3Root 如 <root>/mind-private/L3
+ */
+function listAllMemories(L3Root) {
+  const out = [];
+  const commonDir = path.join(L3Root, 'common');
+  if (fs.existsSync(commonDir)) {
+    for (const f of listL3Files(commonDir)) out.push({ full: f.full, rel: `common/${f.rel}` });
+  }
+  const projsDir = path.join(L3Root, 'projects');
+  if (fs.existsSync(projsDir)) {
+    let es; try { es = fs.readdirSync(projsDir, { withFileTypes: true }); } catch { return out; }
+    for (const e of es) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue;
+      const pdir = path.join(projsDir, e.name);
+      for (const f of listL3Files(pdir)) out.push({ full: f.full, rel: `projects/${e.name}/${f.rel}` });
+    }
+  }
+  return out;
+}
+
+module.exports = { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files, listMemoryCandidates, listAllMemories };

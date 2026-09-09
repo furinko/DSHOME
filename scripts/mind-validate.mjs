@@ -103,8 +103,24 @@ for (const s of skills) {
 }
 
 // ② L3 记忆条目完整性（单记忆文件 = 文件名带 YYYY-MM-DD_ 前缀）
-const memories = walk(join(PRIV, 'L3', 'index'), [], 'L3/index')
-  .filter((f) => !/README|_index/.test(basename(f.rel)) && /^\d{4}-\d{2}-\d{2}_/.test(basename(f.rel)));
+//    记忆区（记忆层重构 2026-09-09）= L3/common + L3/projects/<各项目>/知识（结晶）；导航卡/档案不在此列
+function memoryRoots() {
+  const roots = [];
+  const common = join(PRIV, 'L3', 'common');
+  if (existsSync(common)) roots.push({ dir: common, rel: 'L3/common' });
+  const projs = join(PRIV, 'L3', 'projects');
+  if (existsSync(projs)) {
+    for (const e of readdirSync(projs)) {
+      const know = join(projs, e, '知识');
+      if (existsSync(know)) roots.push({ dir: know, rel: `L3/projects/${e}/知识` });
+    }
+  }
+  return roots;
+}
+const memories = [];
+for (const r of memoryRoots()) {
+  memories.push(...walk(r.dir, [], r.rel).filter((f) => !/README|_index/.test(basename(f.rel)) && /^\d{4}-\d{2}-\d{2}_/.test(basename(f.rel))));
+}
 for (const m of memories) {
   const kv = readFm(readFileSync(m.full, 'utf8'));
   const miss = hasKeys(kv, ['kind', 'importance', 'scope', 'topic', 'tags']);
@@ -148,9 +164,9 @@ for (const f of walk(MIND, [], 'mind').concat(walk(PRIV, [], 'priv', ))) {
   }
 }
 
-// ④ _index.md 引用的文件必须真实存在（同目录）
+// ④ _index.md 引用的文件必须真实存在（同目录）——记忆层重构后 _index 分布：L3/common/<主题>/、L3/projects/<项目>/知识/<主题>/、L3/history/
 function checkIndexes() {
-  const idxFiles = walk(join(PRIV, 'L3', 'index'), [], 'L3/index').filter((f) => basename(f.rel) === '_index.md');
+  const idxFiles = walk(join(PRIV, 'L3'), [], 'L3').filter((f) => basename(f.rel) === '_index.md');
   for (const idx of idxFiles) {
     const dir = dirname(idx.full);
     for (const line of readFileSync(idx.full, 'utf8').split('\n')) {

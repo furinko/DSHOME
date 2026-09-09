@@ -10,7 +10,7 @@
 //   node scripts/mind-audit.mjs --sessions <dir># 指定会话根（默认 repoRoot/sessions）
 //
 // 判据（启发式，宁缺毋滥）：
-//   a. 主题词表 = mind-private/L3/index 主题目录名 + 记忆文件名（去 YYYY-MM-DD_ 前缀）+ _index 摘要词；
+//   a. 主题词表 = 记忆区主题目录名（L3/common/<主题> + L3/projects/<项目>/知识/<主题>）+ 记忆文件名（去 YYYY-MM-DD_ 前缀）+ _index 摘要词；
 //   b. 用户回合文本命中 ≥1 主题词 → 该回合「该查」；
 //   c. 查证证据 = 同一回合（下一用户消息前）出现检索类行为：mind-prime 调用、
 //      /api/mind/search、grep/read 命中 mind-private/L3、读 project.md、读 L3 主题文件；
@@ -96,14 +96,30 @@ function walkFiles(dir, out = [], rel = '') {
   return out;
 }
 
-// ── 主题词表（L3 index：主题目录名 + frontmatter tags + _index 摘要列）─────
+// ── 主题词表（记忆层重构 2026-09-09：主题目录 = L3/common/<主题> + L3/projects/<项目>/知识/<主题>）──
+function topicDirs() {
+  const out = [];
+  const collect = (dir) => {
+    if (!existsSync(dir)) return;
+    for (const t of readdirSync(dir)) {
+      const tdir = join(dir, t);
+      if (!statSync(tdir).isDirectory()) continue;
+      out.push(tdir);
+    }
+  };
+  collect(join(PRIV, 'L3', 'common'));
+  const projs = join(PRIV, 'L3', 'projects');
+  if (existsSync(projs)) {
+    for (const p of readdirSync(projs)) {
+      collect(join(projs, p, '知识'));
+    }
+  }
+  return out;
+}
 function topicTerms() {
   const terms = new Set();
-  const idxRoot = join(PRIV, 'L3', 'index');
-  if (!existsSync(idxRoot)) return terms;
-  for (const topic of readdirSync(idxRoot)) {
-    const tdir = join(idxRoot, topic);
-    if (!statSync(tdir).isDirectory()) continue;
+  for (const tdir of topicDirs()) {
+    const topic = basename(tdir);
     terms.add(topic.toLowerCase());
     for (const f of readdirSync(tdir)) {
       if (!f.endsWith('.md')) continue;

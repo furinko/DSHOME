@@ -11,7 +11,7 @@ const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cr
 // 用 repoRoot()（DSH_HOME 优先）定位而非相对 __dirname：发布后 dshome-mind 被实体化到
 // profiles\dshome\node_modules\dshome-mind\lib，`../../../scripts` 会指向 profiles\dshome\scripts
 // （不存在）→ MODULE_NOT_FOUND 后端崩。repoRoot() 在 dev=仓库根、安装=DSH_HOME（含 scripts）。
-const { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files } = require(path.join(repoRoot(), 'scripts', 'mind-search-lib.cjs'));
+const { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files, listMemoryCandidates } = require(path.join(repoRoot(), 'scripts', 'mind-search-lib.cjs'));
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
@@ -100,8 +100,8 @@ const LAYER_MAP = [
   [/^L2\/Skill\//, { id: 'L2S', label: 'L2 技能', color: '#10b981' }],
   [/^L2\/Exp\//, { id: 'L2E', label: 'L2 经验', color: '#14b8a6' }],
   [/^L3\/history\//, { id: 'L3H', label: 'L3 历史', color: '#f59e0b' }],
+  [/^L3\/projects\//, { id: 'L3P', label: '项目记忆', color: '#ef4444' }],
   [/^L3\//, { id: 'L3I', label: 'L3 记忆', color: '#f97316' }],
-  [/^Project\//, { id: 'PJ', label: 'Project', color: '#ef4444' }],
   [/^TRASH\//, { id: 'TR', label: 'TRASH', color: '#64748b' }],
   [/^tasks\//, { id: 'TK', label: '任务缓冲', color: '#ec4899' }],
 ];
@@ -177,7 +177,15 @@ function buildGraph() {
     const content = readText(f.full);
     const seg = f.rel.split('/');
     let label = fmName(content);
-    if (!label && seg[0] === 'L3' && seg[1] === 'index' && seg[2]) label = seg[2]; // 记忆主题短名（dshome-build…）
+    // 记忆主题短名（记忆层重构 2026-09-09）：L3/common/<主题>/… → seg[2]；L3/projects/<项目>/知识/<主题>/… → 主题段
+    if (!label && seg[0] === 'L3') {
+      if (seg[1] === 'common' && seg[2]) label = seg[2];
+      else if (seg[1] === 'projects') {
+        const kIdx = seg.indexOf('知识');
+        if (kIdx >= 0 && seg[kIdx + 1]) label = seg[kIdx + 1];
+        else if (seg[2]) label = seg[2]; // 项目根下散档 → 项目短名
+      }
+    }
     if (!label) label = firstTitle(content);
     if (!label) label = path.basename(f.rel).replace(/\.md$/, '');
     const lay = layerOf(f.rel);
@@ -239,7 +247,8 @@ function buildGraph() {
   // 依据：topic 是分类维度（同一主题天然相关、重复率高），比 tags（每条各写各的描述词）可靠得多。
   const topicIndex = new Map();
   for (const f of files) {
-    if (f.zone !== 'private' || !f.rel.startsWith('L3/index/')) continue;
+    // 记忆区 = L3/common + L3/projects（记忆层重构 2026-09-09；L3/index 已不存在）
+    if (f.zone !== 'private' || !(f.rel.startsWith('L3/common/') || f.rel.startsWith('L3/projects/'))) continue;
     const topic = fmTopic(readText(f.full));
     if (!topic) continue;
     const srcId = `${f.zone}:${f.rel}`;
@@ -304,18 +313,21 @@ function listPending() {
   return items;
 }
 
-/** 放行：pending/<file> → L3/index/<topic>/<日期>_<file>。 */
+/** 放行：pending/<file> → 记忆区（有 project 字段→projects/<p>/知识/<topic>；否则 common/<topic>）。记忆层重构 2026-09-09。 */
 function approvePending(file) {
   const safe = path.basename(String(file || ''));
   const src = path.join(pendingDir(), safe);
   if (!/\.md$/.test(safe) || !fs.existsSync(src)) return { ok: false, error: 'not-found' };
   const content = fs.readFileSync(src, 'utf8');
   const topic = fmValue(content, 'topic') || 'general';
-  const targetDir = path.join(mindPrivateDir(), 'L3', 'index', topic);
+  const proj = (fmValue(content, 'project') || '').trim();
+  const targetDir = proj && !/[/\\]/.test(proj)
+    ? path.join(mindPrivateDir(), 'L3', 'projects', proj, '知识', topic)
+    : path.join(mindPrivateDir(), 'L3', 'common', topic);
   fs.mkdirSync(targetDir, { recursive: true });
   const target = path.join(targetDir, stampedName(safe));
   fs.renameSync(src, target);
-  return { ok: true, movedTo: `L3/index/${topic}/${path.basename(target)}` };
+  return { ok: true, movedTo: targetDir.replace(path.join(mindPrivateDir(), 'L3') + path.sep, '') + '/' + path.basename(target) };
 }
 
 /** 拒绝：pending/<file> → mind-private/TRASH/。 */
@@ -392,7 +404,7 @@ function revokeApproval(id) {
   return { ok: true, removed: id };
 }
 
-/** 整理候选扫描（L3/index 全部内容文件）。 */
+/** 整理候选扫描（记忆层重构 2026-09-09）：结晶区 = common + 各项目知识子目录（排除导航卡/档案）。 */
 const CURATE_OVERSIZED = 20 * 1024;   // >20KB：建议蒸馏/拆分
 const CURATE_THIN = 400;              // <400B：合集文件过薄提示（单记忆文件除外）
 const curateKeptFile = () => path.join(mindPrivateDir(), '.curate-kept.json');
@@ -400,9 +412,24 @@ function readKept() {
   try { return JSON.parse(fs.readFileSync(curateKeptFile(), 'utf8')).files || []; }
   catch { return []; }
 }
+/** 记忆根内结晶区目录（rel 前缀 + 绝对路径）；导航卡 project.md / 项目根档案不在结晶区。 */
+function crystalDirs() {
+  const out = [];
+  const L3 = path.join(mindPrivateDir(), 'L3');
+  const common = path.join(L3, 'common');
+  if (fs.existsSync(common)) out.push({ dir: common, prefix: 'common' });
+  const projs = path.join(L3, 'projects');
+  let es = []; try { es = fs.readdirSync(projs, { withFileTypes: true }); } catch { /* 无项目区 */ }
+  for (const e of es) {
+    if (!e.isDirectory() || e.name.startsWith('.')) continue;
+    const know = path.join(projs, e.name, '知识');
+    if (fs.existsSync(know)) out.push({ dir: know, prefix: `projects/${e.name}/知识` });
+  }
+  return out;
+}
 function keepCurate(relPath) {
   const safe = String(relPath || '').replace(/^\/+/, '');
-  const src = path.join(mindPrivateDir(), 'L3', 'index', safe);
+  const src = path.join(mindPrivateDir(), 'L3', safe);
   if (!fs.existsSync(src) || !fs.statSync(src).isFile()) return { ok: false, error: 'not-found' };
   const kept = readKept();
   if (!kept.includes(safe)) kept.push(safe);
@@ -418,7 +445,7 @@ function readJobs() {
 }
 function assignCurate(relPath) {
   const safe = String(relPath || '').replace(/^\/+/, '');
-  const src = path.join(mindPrivateDir(), 'L3', 'index', safe);
+  const src = path.join(mindPrivateDir(), 'L3', safe);
   if (!fs.existsSync(src) || !fs.statSync(src).isFile()) return { ok: false, error: 'not-found' };
   const jobs = readJobs();
   if (!jobs.some((j) => j.file === safe)) jobs.push({ file: safe, at: new Date().toISOString(), status: 'assigned' });
@@ -428,7 +455,7 @@ function assignCurate(relPath) {
 }
 function listCurate() {
   const files = [];
-  walkContentMd(path.join(mindPrivateDir(), 'L3', 'index'), 'L3/index', '', files);
+  for (const c of crystalDirs()) walkContentMd(c.dir, 'private', c.prefix, files);
   const kept = new Set(readKept());
   const jobs = new Map(readJobs().map((j) => [j.file, j]));
   const items = [];
@@ -438,7 +465,7 @@ function listCurate() {
     try { content = fs.readFileSync(f.full, 'utf8'); } catch { continue; }
     const size = Buffer.byteLength(content, 'utf8');
     const name = path.basename(f.rel).replace(/\.md$/, '');
-    const rel = f.rel.replace(/^L3\/index\//, '');
+    const rel = f.rel;
     const reasons = [];
     // 单记忆文件（YYYY-MM-DD_ 前缀，pending 放行产物）短是正常的，不判 thin
     const isSingle = /^\d{4}-\d{2}-\d{2}_/.test(name);
@@ -460,10 +487,10 @@ function listCurate() {
   return items;
 }
 
-/** 归档整理候选：L3/index/<path> → L3/history/<日期>_<名>_归档.md。 */
+/** 归档整理候选：记忆区结晶 <path> → L3/history/<日期>_<名>_归档.md。 */
 function archiveCurate(relPath) {
   const safe = String(relPath || '').replace(/^\/+/, '');
-  const src = path.join(mindPrivateDir(), 'L3', 'index', safe);
+  const src = path.join(mindPrivateDir(), 'L3', safe);
   if (!fs.existsSync(src) || !fs.statSync(src).isFile()) return { ok: false, error: 'not-found' };
   fs.mkdirSync(historyDir(), { recursive: true });
   const base = path.basename(safe).replace(/\.md$/, '');
@@ -473,12 +500,13 @@ function archiveCurate(relPath) {
 }
 
 // ── 近重复检测（bigram-Jaccard，照 dsh-evolve search 思路，防"同事实存两份"）──
-/** 扫 topic 目录（+ user-rules 兜底），目标文件按 ## 条目切块逐块比对（防长文件稀释）。 */
+/** 扫 topic 目录（+ user-rules 兜底），目标文件按 ## 条目切块逐块比对（防长文件稀释）。记忆层重构：topic 在 common/<topic> 与项目知识区。 */
 function dupCheck(topic, content) {
   const hits = [];
   const dirs = [];
-  if (topic) dirs.push(path.join(mindPrivateDir(), 'L3', 'index', topic));
-  const ur = path.join(mindPrivateDir(), 'L3', 'index', 'user-rules');
+  const L3 = path.join(mindPrivateDir(), 'L3');
+  if (topic) dirs.push(path.join(L3, 'common', topic));
+  const ur = path.join(L3, 'common', 'user-rules');
   if (topic !== 'user-rules' && fs.existsSync(ur)) dirs.push(ur);
   const q = tokenize(content);
   for (const dir of dirs) {
@@ -510,22 +538,15 @@ function dupCheck(topic, content) {
   return hits.slice(0, 5);
 }
 
-/** 记忆模糊检索：扫 mind-private/L3/index 全库，用共享 searchL3（单一真源——F3：index.cjs 不再内联重复循环）。
- *  项目隔离（2026-09-06）：候选 = 通用（无 project 标记）或当前项目（project==project）；其它项目专属排除 → 不串项目。默认通用。 */
+/** 记忆模糊检索：候选 = common（通用，恒含）+ projects/<当前项目>（专属），物理目录隔离（记忆层重构 2026-09-09）。
+ *  不再依赖 frontmatter project 字段过滤——common 全部可调，其它项目目录不扫 → 结构上不串。 */
 function searchMind(query, limit = 6, project = '') {
-  const files = listL3Files(path.join(mindPrivateDir(), 'L3', 'index'));
-  const allowed = files.filter((f) => {
-    let content = '';
-    try { content = fs.readFileSync(f.full, 'utf8'); } catch { return false; }
-    const proj = (fmValue(content, 'project') || '').trim();
-    if (!proj) return true;         // 通用（默认）
-    return proj === project;        // 当前项目专属
-  });
-  return searchL3(query, allowed, limit);
+  const files = listMemoryCandidates(path.join(mindPrivateDir(), 'L3'), project);
+  return searchL3(query, files, limit);
 }
 
 // ── 待办（project.md「下一步」区 `- [ ]` 行）───────────────────────────────
-function todoFile() { return path.join(mindPrivateDir(), 'Project', 'DSHOME', 'project.md'); }
+function todoFile() { return path.join(mindPrivateDir(), 'L3', 'projects', 'DSHOME', 'project.md'); }
 // 首装自建：project.md 缺失时先建目录 + 种最小文件（含「## 下一步」区），
 // 否则「面板加第一条待办」会因文件不存在抛 ENOENT（干净安装无 mind-private 的场景）。
 function ensureTodoFile() {
