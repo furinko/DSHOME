@@ -58,13 +58,22 @@ export function composeMindL0Text(root) {
   }
 }
 
-/** 诊断 marker（仅启动确认，不以它作为"注入成功"的标准）。 */
+/** 诊断 marker（**追加式**，2026-09-11 改）。
+ *  原为**单槽覆盖**：每次后端启动 apply() 都用 `apply: registered hook` 把它盖掉 →
+ *  "某个会话真的注入过（`inject: len=… ver=…`）"这条现场证据会被下一次启动抹掉。
+ *  第四轮盲评 · C2 实测正是如此（marker 里只剩 apply 行，而会话文件里的 R0 全文都在：
+ *  **注入是好的，只是物证被覆盖机制毁了**；且全仓无任何脚本读它 → 连"被读"的机会都没有）。
+ *  现在保留最近 20 行，"挂载"与"注入"两类事件都留痕、可回溯。 */
 function writeMarker(content) {
   try {
     const root = repoRoot();
     const dir = join(root, 'profiles', 'dshome', '.dsh-market');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'mind-inject-marker.txt'), content, 'utf8');
+    const file = join(dir, 'mind-inject-marker.txt');
+    let prev = '';
+    try { prev = readFileSync(file, 'utf8'); } catch { /* 首次写 */ }
+    const lines = [...prev.split('\n').filter(Boolean), content].slice(-20);
+    writeFileSync(file, lines.join('\n') + '\n', 'utf8');
   } catch (e) { /* 诊断标记失败不影响插件 */ }
 }
 

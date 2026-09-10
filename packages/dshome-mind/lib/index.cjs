@@ -578,9 +578,25 @@ function searchMind(query, limit = 6, project = '') {
 // ── 待办（project.md「下一步」区 `- [ ]` 行）───────────────────────────────
 // 面板项目分区 2026-09-09：每个项目自己的 project.md（projects/<项目>/project.md）。
 // project 未指定/非法 → 默认 DSHOME（系统自身，历史行为）。
+/** 干净设备**首次**用待办时自建的项目 key（DSHOME ＝ 心智体系自身的主线项目）。
+ *  仅在「projects 下还没有任何项目」时兜底；正常路径靠 显式指定 或 唯一项目 推导。
+ *  2026-09-11 修（第四轮盲评 · C1 指摘）：原来未指定时**无条件硬编码回退 `'DSHOME'`**——
+ *  与 `mind-prime.mjs` 注释里「不硬编码项目名、保持出厂可移植」自相矛盾，且换设备（主线项目
+ *  不叫 DSHOME）会写错目录。现在改为**显式常量 + 明确语义**（只作新设备兜底），并与 mind-prime 同口径：
+ *  显式指定且目录存在 → 用它；否则**唯一项目** → 用它；再无项目 → 本常量兜底。
+ *  ⚠️ 与 `scripts/mind-prime.mjs` 的 projectKey 是一对，改一处要同步另一处。 */
+const DEFAULT_PROJECT_KEY = 'DSHOME';
 function todoProject(project) {
+  const projs = path.join(mindPrivateDir(), 'L3', 'projects');
   const p = String(project || '').trim();
-  return (p && !/[/\\]/.test(p)) ? p : 'DSHOME';
+  if (p && !/[/\\]/.test(p) && fs.existsSync(path.join(projs, p))) return p;
+  try {
+    const all = fs.readdirSync(projs, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+      .map((e) => e.name).sort();
+    if (all.length === 1) return all[0];
+  } catch { /* projects 目录不存在 → 走兜底 */ }
+  return DEFAULT_PROJECT_KEY;
 }
 function todoFile(project) { return path.join(mindPrivateDir(), 'L3', 'projects', todoProject(project), 'project.md'); }
 // 首装自建：project.md 缺失时先建目录 + 种最小文件（含「## 下一步」区），

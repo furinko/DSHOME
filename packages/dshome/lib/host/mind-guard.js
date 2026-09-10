@@ -67,14 +67,17 @@ function inMindZone(filePath) {
 function inFactoryZone(filePath) {
   const p = normalizePath(filePath);
   const candidates = pathCandidates(p);
+  // 2026-09-11 扩面（第四轮盲评 · C1）：原来只认 mind/{L0,L1,L2,README.md}，而 `mind/L3/README.md`、
+  // `mind/Project/README.md` **也在 git 跟踪内（会被推送）** 却恒 factoryZone=false →
+  // 往这两处写凭据不受隐私红线管。补上 L3/Project/TRASH（出厂模板层，均为可推送内容）。
   return candidates.some((abs) =>
-    /\/(mind)\/(L0|L1|L2|README\.md)/i.test(abs) || /\/(mind)\/README\.md$/i.test(abs)
+    /\/(mind)\/(L0|L1|L2|L3|Project|TRASH|README\.md)/i.test(abs)
   );
 }
 
 /**
  * 目标是否落在"自我修改门禁区"（规则/宪法/门禁/技能/自我记忆）。
- * 拦这类写的是【改"怎么做事"的规则】——放行 mind-private\L3 与 Project（生长区，拦会压死生长）。
+ * 拦这类写的是【改"怎么做事"的规则】——放行 mind-private\L3（生长区，拦会压死生长）。
  */
 function inSelfModifyZone(filePath) {
   const p = normalizePath(filePath);
@@ -85,7 +88,13 @@ function inSelfModifyZone(filePath) {
     // 人设卡（2026-09-11 补漏）：mind-private\L0\人设卡.md 是 SOUL 指定的「人格演绎唯一权威源」，
     // 属身份维度——此前不在任何 zone → 改它零门禁（盲评实测）。与 SOUL 同级保护，否则
     // "改人设 = 改我是谁"可绕过全部自我修改流程。
-    '/mind-private/L0/'
+    '/mind-private/L0/',
+    // 放行真源（2026-09-11 补 · 第四轮 C1）：`approvals.json` 是**放行判定的唯一真源**，却不在任何
+    // zone → agent 用 write/edit 直接写一条 `{status:'approved',decidedBy:'user'}` 即可自批
+    //（"被管方不得自批"在机器上原本毫无阻碍）。⚠️ 必须**同时**加进 inHighRiskyZone 的 rules——
+    // 只加 zones 会落到"提示不拦"分支、静默放行（这正是 2026-09-11 人设卡那次的错法）。
+    // 面板放行走 API（不经 guard），不受影响。
+    '/mind-private/tasks/approvals.json',
   ];
   // 大小写归一（2026-09-11 **补修**）：候选与规则**两侧**都必须小写。首版只让 `pathCandidates`
   // 带小写候选，而规则字面量含大写（如 '/mind-private/L0/'），`includes` 大小写敏感 →
@@ -104,8 +113,13 @@ function inSelfModifyZone(filePath) {
 function contentHasSecrets(content) {
   if (!content) return false;
   const s = String(content);
-  const ASSIGN = /(?:api[\s_-]?key|secret|token|passwd|password|private[\s_-]?key|access[\s_-]?key|client[\s_-]?secret)[\s"']*[:=][\s"']*\S{6,}/i;
-  return ASSIGN.test(s) || /-----BEGIN[ A-Z]*PRIVATE KEY|\.pem\b/i.test(s);
+  // 2026-09-11 二次修（第四轮盲评 · C1 实测）：
+  //   ① 原版只认 `KEY[:=]值` → 中文自然语言赋值漏网（实测「我的密码是 hunter2xyz」**放行**）→ 补键名与赋值符的中文形态；
+  //   ② 原版 `\.pem\b` 会把"提到 .pem 文件"也判成凭据，而 privacy **无解除通道**（排在 self-modify 之前 return）
+  //      → 误报代价过高，改为只认 **PEM 内容块**本身。
+  const KEY = '(?:api[\\s_-]?key|secret|token|passwd|password|private[\\s_-]?key|access[\\s_-]?key|client[\\s_-]?secret|密码|口令|密钥|私钥|令牌)';
+  const ASSIGN = new RegExp(KEY + '[\\s"\']*(?:[:=]|是|为)[\\s"\']*\\S{6,}', 'i');
+  return ASSIGN.test(s) || /-----BEGIN[ A-Z]*PRIVATE KEY/.test(s);
 }
 
 /** 从工具参数中取出将要写入的内容（write→content；edit→new_string；str_replace_editor→content）。 */
@@ -214,6 +228,10 @@ function inHighRiskyZone(filePath) {
     // "进区之后硬拦还是静默放行"**——盲评实测：只加 zones 的人设卡仍是零门禁（check() 先判本名单，
     // 不中则落到提示分支，而该分支只认 /L2/ 与 /mind-private/L1/，两条都不中 → return undefined）。
     '/mind-private/L0/',
+    // 放行真源（2026-09-11 补 · 第四轮 C1）：与 inSelfModifyZone 的 zones 成对——只加 zones 会落到
+    // "提示不拦"分支静默放行，**必须同时进本名单**才真拦。堵住「agent 直写一条 approved 记录即自批」
+    // 这条机器通道。注意：面板放行走 API（不经 guard），因此正常放行流程不受影响。
+    '/mind-private/tasks/approvals.json',
   ];
   // 两侧小写（同 inSelfModifyZone 的补修理由）：规则字面量含大写 L0/SOUL… 而 includes 大小写敏感。
   return candidates.some((abs) => rules.some((r) => abs.includes(r.toLowerCase())));
@@ -297,12 +315,18 @@ const GUARDS = [
  *    last-deny: <时刻> [护栏 id] <工具> <目标路径>
  *  只作诊断，失败不影响护栏。 */
 let mountInfo = '';
-function writeMarker(denyLine) {
+/** 诊断 marker（**追加式**，2026-09-11 改）：原来是「mounted 行 + 覆盖式 deny 行」→
+ *  **拒绝历史只留最后一次**，且每次启动把上一条 deny 冲掉（C1 指摘：拒绝历史不可审计）。
+ *  现在按时间累积、保留最近 20 行；挂载行也进同一流（它标识"这一轮进程"）。 */
+function writeMarker(line) {
   try {
     const dir = join(repoRoot(), 'profiles', 'dshome', '.dsh-market');
     mkdirSync(dir, { recursive: true });
-    const lines = [mountInfo, denyLine].filter(Boolean);
-    writeFileSync(join(dir, 'mind-guard-marker.txt'), lines.join('\n'), 'utf8');
+    const file = join(dir, 'mind-guard-marker.txt');
+    let prev = '';
+    try { prev = readFileSync(file, 'utf8'); } catch { /* 首次写 */ }
+    const lines = [...prev.split('\n').filter(Boolean), line].slice(-20);
+    writeFileSync(file, lines.join('\n') + '\n', 'utf8');
   } catch { /* 诊断标记失败不影响护栏 */ }
 }
 
@@ -335,7 +359,7 @@ export function apply(ctx) {
     // 记录挂载成功 + 暴露 disposer 供卸载。
     mountInfo = `mounted: ${new Date().toISOString()} | autoApprove=${readAutoApprove() ? 'ON' : 'off'}`
       + ` | mutatingTools=${[...MUTATING_TOOLS].join('/')} | root=${root}`;
-    writeMarker('');
+    writeMarker(mountInfo);
     ctx.logger?.('dshome').info(
       'dshome-mind-guard: 护栏已挂载（隐私红线 + 自我修改门禁）@ root=%s',
       root

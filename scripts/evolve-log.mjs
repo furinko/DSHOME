@@ -72,20 +72,31 @@ function writeMetrics(m) {
 const metricNow = (name) => readMetrics()[name] || 0;
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-mkdirSync(SNAP, { recursive: true });
-if (!existsSync(LOG)) {
-  writeFileSync(LOG, [
-    '# 鱼鱼进化档案',
-    '',
-    '> 帧号式自我记忆：每次改「自我类」文件（AGENTS / mind 规则 / 技能 / 心智门禁）前，先快照旧版 + 记一条「为什么改 / 想解决什么」，改完观察效果，好则沉淀、坏则回滚。',
-    '',
-    '| 时间 | 对象 | 为什么改 | 改了啥 | 快照 |',
-    '|---|---|---|---|---|',
-    '',
-  ].join('\n'));
-}
-
 const [cmd, ...rest] = process.argv.slice(2);
+
+// 2026-09-11 修（第四轮盲评 · C2 的诚实指摘）：下面两步原来是**模块顶层无条件执行** —— 连
+// `health` / `metrics` / `pending-invalid` / `rollback --list` 这些"只读子命令"也会 mkdirSync(SNAP)
+// 并在 changelog 缺失时**新建**它，所谓"只读"并不成立。改为**按需**：只在真正要写盘的子命令上准备存储。
+function ensureStore() {
+  mkdirSync(SNAP, { recursive: true });
+  if (!existsSync(LOG)) {
+    writeFileSync(LOG, [
+      '# 鱼鱼进化档案',
+      '',
+      '> 帧号式自我记忆：每次改「自我类」文件（AGENTS / mind 规则 / 技能 / 心智门禁）前，先快照旧版 + 记一条「为什么改 / 想解决什么」，改完观察效果，好则沉淀、坏则回滚。',
+      '',
+      '| 时间 | 对象 | 为什么改 | 改了啥 | 快照 |',
+      '|---|---|---|---|---|',
+      '',
+    ].join('\n'));
+  }
+}
+/** 只读子命令白名单（不建库、不写盘）。无参数 = 打印用法，同样不该建库。 */
+const READ_ONLY_CMDS = new Set(['health', 'metrics', 'pending-invalid']);
+const isReadOnlyRun = READ_ONLY_CMDS.has(cmd)
+  || (cmd === 'rollback' && (rest[0] === '--list' || rest[0] === '-l'))
+  || cmd === undefined;
+if (!isReadOnlyRun) ensureStore();
 
 // 解析 changelog 行 → { date, obj, signal, baseline }（对象格支持「name[signal=N]」绑定主信号+基线）
 function parseRow(line) {
