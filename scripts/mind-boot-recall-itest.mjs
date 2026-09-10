@@ -2,9 +2,14 @@
 // （上工自动召回：顶层注入/幂等/跳子代理/cron防双份/注入位置/空机降级）
 // 用法：node scripts/mind-boot-recall-itest.mjs（插件源码改动后跑，验证 host 行为）
 import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
-const { Context } = require('E:/DSHOME/profiles/node_modules/@deepseek-ai/cordis/lib/index.js');
-const recallMod = require('E:/DSHOME/packages/dshome/lib/host/mind-recall.js');
+// 2026-09-11 修（第四轮盲评 · C1）：原来硬编码 `E:/DSHOME/...`（**正斜杠写法**，且已入 git 会被推送）——
+// 换盘符 / 换布局（安装版 payload）即 MODULE_NOT_FOUND。改成与其它脚本同款：DSH_HOME 优先，否则上溯仓库根。
+const repoRoot = process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..');
+const { Context } = require(join(repoRoot, 'profiles', 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js'));
+const recallMod = require(join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'mind-recall.js'));
 
 // 构造顶层 agent 伪对象（delegationDepth=0），模拟官方 agentEvents 注入的 agent 载荷
 function fakeAgent(id, depth = 0) {

@@ -1,9 +1,14 @@
 // 集成测试：真实 cordis ctx 加载 dshome-mind-skill-loader host 插件，验证 pre-step 触发注入
 // 用法：node scripts/mind-skill-loader-itest.mjs
 import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 const require = createRequire(import.meta.url);
-const { Context } = require('E:/DSHOME/profiles/node_modules/@deepseek-ai/cordis/lib/index.js');
-const mod = await import('file:///E:/DSHOME/packages/dshome/lib/host/mind-skill-loader.js');
+// 2026-09-11 修（第四轮盲评 · C1）：去硬编码 `E:/DSHOME`（**正斜杠 + file:/// URL 两种写法都硬编码**，
+// 且已入 git 会被推送）—— 换盘符/换布局即 MODULE_NOT_FOUND。改成 DSH_HOME 优先、否则上溯仓库根。
+const repoRoot = process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..');
+const { Context } = require(join(repoRoot, 'profiles', 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js'));
+const mod = await import(pathToFileURL(join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'mind-skill-loader.js')).href);
 
 function fakeAgent(id) {
   return { id, session: { id: 'session-' + id, header: { id: 'session-' + id, delegationDepth: 0 } } };

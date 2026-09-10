@@ -209,14 +209,23 @@ function relExists(target) {
   }
   return false;
 }
+let relatedSeen = 0;
 for (const f of walk(MIND, [], 'mind').concat(walk(PRIV, [], 'priv', ))) {
   const kv = readFm(readFileSync(f.full, 'utf8'));
   // related 支持两种写法：逗号分隔字符串 或 YAML 数组 [a, b]（剥外层方括号再拆）
   const relRaw = (kv && kv.related) || '';
   const rel = String(relRaw).trim().replace(/^\[|\]$/g, '');
   for (const t of rel.split(',').map((s) => s.trim()).filter(Boolean)) {
+    relatedSeen++;
     if (!relExists(t)) issues.push({ sev: 'critical', file: f.rel, msg: `related 死链: ${t}` });
   }
+}
+// 2026-09-11（第四轮盲评 · C2）：本检查此前是「critical 级 + **零输入** + 100% 恒真」——
+// 全仓 109 个 .md 里 `related:` 出现 **0 次**，而 README/Skill 里却宣传它"会拦死链"。
+// 处理：保留检查（将来有人用 related 时仍能抓死链），但把"当前零输入"变成**可见的 info**，
+// 而不升温成 critical/warn —— 后者会造一盏恒亮灯（A′/C2 都批评过恒亮灯）。
+if (relatedSeen === 0) {
+  issues.push({ sev: 'info', file: 'mind/**（全仓 frontmatter）', msg: 'related 死链检查当前**零输入**：没有任何文件带 `related` 字段 → 该 critical 级检查实际从未执行过。要用它就补 related；不用它，请从 README/Skill 的宣传里去掉这半句。' });
 }
 
 // ④ _index.md 引用的文件必须真实存在（同目录）——记忆层重构后 _index 分布：L3/common/<主题>/、L3/projects/<项目>/知识/<主题>/、L3/history/
@@ -268,12 +277,19 @@ function skillSetFromIndex() {
   return { ok: true, set };
 }
 
+// 2026-09-11（第四轮盲评 · C2 首推）：**输入缺失 ⇒ critical，不再静默跳过**。
+// 病灶：全文件原有 8 处 `if (xxx.ok)` / `if (existsSync(...))` 结构，输入缺失时无声跳过 →
+//   「门禁的『存在性』本身无人守」：改个标题、删个索引、挪个目录，门禁就消失得无声无息，输出仍全绿。
+//   `(c)` 就是这样死了几个月（基准条件恒假）——同款句式当时还剩 7 处。
+// 原则：**判据消失比判据判错更危险**（判错至少会响）。本批起，任何"解析不到输入"一律响亮失败。
 const treeSet = skillSetFromTree();
 if (treeSet.ok) {
   const missInTree = [...actualSkills].filter((x) => !treeSet.set.has(x));
   const extraInTree = [...treeSet.set].filter((x) => !actualSkills.has(x));
   if (missInTree.length || extraInTree.length)
     issues.push({ sev: 'critical', file: 'mind/L1/Tree.md', msg: `(a) Tree 与 Skill 实际不一致——Tree 缺: ${missInTree.join(',') || '无'}；Tree 多: ${extraInTree.join(',') || '无'}` });
+} else {
+  issues.push({ sev: 'critical', file: 'mind/L1/Tree.md', msg: '(a) 门禁输入缺失：Tree.md 的 Skill 清单解析不到（文件缺失或表格格式变了）→ 本检查实际未执行，不能据此认为「Tree 与实际一致」' });
 }
 const idxSet = skillSetFromIndex();
 if (idxSet.ok) {
@@ -281,6 +297,8 @@ if (idxSet.ok) {
   const extraInIdx = [...idxSet.set].filter((x) => !actualSkills.has(x));
   if (missInIdx.length || extraInIdx.length)
     issues.push({ sev: 'critical', file: 'mind/L2/Skill/_index.md', msg: `(a) _index 与 Skill 实际不一致——_index 缺: ${missInIdx.join(',') || '无'}；_index 多: ${extraInIdx.join(',') || '无'}` });
+} else {
+  issues.push({ sev: 'critical', file: 'mind/L2/Skill/_index.md', msg: '(a) 门禁输入缺失：_index.md 的 Skill 清单解析不到（文件缺失或表格格式变了）→ 本检查实际未执行' });
 }
 
 // ⑥ (b) 权威源单一性（Concepts.md 契约）：每个概念只声明一个唯一权威源（自洽）；
@@ -339,6 +357,8 @@ if (reg.ok) {
     if (!declared.has(c))
       issues.push({ sev: 'critical', file: 'mind/L1/Concepts.md', msg: `(b) 意图路由表指向未在注册表声明的概念「${c}」` });
   }
+} else {
+  issues.push({ sev: 'critical', file: 'mind/L1/Concepts.md', msg: '(b) 门禁输入缺失：「## 概念注册表」解析不到（文件缺失或标题被改）→ 权威源单一性检查实际未执行' });
 }
 
 // ⑥c Concepts 接口 ↔ 后端路由 对应（K3 ② 补半：改表不改后端=纸面漂移；后端删接口未同步表=实现漂移）
@@ -367,6 +387,8 @@ if (bRoutes.ok) {
     if (!bRoutes.set.has(iface))
       issues.push({ sev: 'warn', file: 'mind/L1/Concepts.md', msg: `(c) Concepts 接口「${iface}」在后端 index.cjs 路由中未找到——改表没改后端 / 后端接口已删未同步（路由表↔后端符号缺失）` });
   }
+} else {
+  issues.push({ sev: 'critical', file: 'packages/dshome-mind/lib/index.cjs', msg: '(c) 门禁输入缺失：后端 index.cjs 读不到（文件缺失或路径变了）→ 「Concepts 接口 ↔ 后端路由」对应检查实际未执行' });
 }
 
 // ⑥d 注入源检查（v3.0：R0 双件注入——mind-inject.js 须读 mind\L0\SOUL.md + AGENTS.md 为注入源；
@@ -385,6 +407,7 @@ function injectSourceCheck() {
 }
 const isc = injectSourceCheck();
 if (isc.ok) issues.push(...isc.issues);
+else issues.push({ sev: 'critical', file: 'packages/dshome/lib/host/mind-inject.js', msg: '(d) 门禁输入缺失：mind-inject.js 读不到（文件缺失或路径变了）→ 「注入源是否为 R0 双件」检查实际未执行' });
 
 // ⑦ (c) AGENTS 双版本同步：权威版 mind\L0\AGENTS.md 与打包快照 build-stage\payload\AGENTS.md 全文一致
 //    （根版 $DSH_HOME\AGENTS.md 已于 2026-09-04 退役删除，权威版唯一 = mind\L0\AGENTS.md。

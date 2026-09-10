@@ -22,3 +22,6 @@ set -e
 cd "$(git rev-parse --show-toplevel)"
 node scripts/mind-validate.mjs --strict
 node scripts/verify-host-plugins.mjs
+# 门禁判定真值表（2026-09-11 加）：autoApprove 开着时自动降级为「只跑 privacy 类用例」并明确标注，
+# 不阻塞提交（那是环境状态、不是缺陷）；关着时跑全 17 例。
+node scripts/verify-guard-decisions.mjs --allow-partial

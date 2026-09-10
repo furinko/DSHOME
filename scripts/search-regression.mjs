@@ -44,7 +44,11 @@ let hits = 0, misses = 0;
 const detail = [];
 for (const it of items) {
   const hs = searchL3(it.q, files, limit);
-  const matched = hs.some((h) => h.file && (h.file.includes(it.expect) || it.expect.includes(h.file)));
+  // 2026-09-11 修（第四轮盲评 · C2）：原来是**双向子串** `h.file.includes(expect) || expect.includes(h.file)`
+  // → 期望串是短词时，任何"名字里含该串"的错文件也算命中（**假命中**，命中率虚高）。
+  // 改为**单向**：期望串必须是命中文件路径的一部分（路径分隔符归一后再比）。
+  const normRel = (s) => String(s).replace(/\\/g, '/');
+  const matched = hs.some((h) => h.file && normRel(h.file).includes(normRel(it.expect)));
   if (matched) hits++; else misses++;
   const top = hs[0];
   detail.push({ id: it.id, q: it.q, expect: it.expect, ok: matched, topFile: top ? top.file : '(空)', topScore: top ? top.score : null });

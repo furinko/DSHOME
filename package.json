@@ -7,7 +7,8 @@
     "smoke": "node scripts/smoke.mjs",
     "mind-check": "node scripts/mind-validate.mjs --strict",
     "host-check": "node scripts/verify-host-plugins.mjs",
-    "verify": "pnpm build && pnpm smoke && node scripts/mind-validate.mjs --strict && node scripts/verify-host-plugins.mjs",
+    "guard-check": "node scripts/verify-guard-decisions.mjs",
+    "verify": "pnpm build && pnpm smoke && node scripts/mind-validate.mjs --strict && node scripts/verify-host-plugins.mjs && node scripts/verify-guard-decisions.mjs --allow-partial",
     "sync-version": "node scripts/sync-version.mjs",
     "publish": "pnpm -r publish",
     "setup": "node scripts/install-electron.mjs"
