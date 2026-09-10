@@ -116,11 +116,27 @@ function topicDirs() {
   }
   return out;
 }
+/** 术语表**停用词**（2026-09-11 第四轮盲评 · C2 实测后补）。
+ *  病灶：原实现把 `_index.md` 的**表格表头**（`| 日期 | 文件 | 类型 | 摘要 |` → 「日期」「文件」「类型」「摘要」）
+ *  和一批**通用词**当成了主题词 → C2 实测 38 个"主题词"里混着 `dshome`/`重启`/`放行`/`guard`/`preset`/`plugin`，
+ *  漏查榜首成了 `重启×51`、`dshome×25`，并据此给出"意图含「重启」→ 先 /api/mind/search"这类无意义建议。
+ *  判据：**一个词当主题词会不会误命中大量无关问题**？会 → 它是通用词，不是主题，停用。
+ *  未做：子代理的委派 prompt 仍未过滤（需按会话 header 的 delegationDepth 判会话主体，待补）。 */
+const STOP_TERMS = new Set([
+  // 表格表头/结构词
+  '日期', '文件', '类型', '摘要', '版本', '说明', '备注', '状态', '主题', '序号',
+  // 本仓自身名（会话里到处都是）
+  'dshome', 'dsh', '心智',
+  // 超通用动作/技术词
+  '重启', '放行', '安装', 'guard', 'preset', 'plugin', 'plugins', 'skill', 'skills',
+]);
+
 function topicTerms() {
   const terms = new Set();
+  const add = (t) => { const k = String(t).trim().toLowerCase(); if (k && !STOP_TERMS.has(k)) terms.add(k); };
   for (const tdir of topicDirs()) {
     const topic = basename(tdir);
-    terms.add(topic.toLowerCase());
+    add(topic);
     for (const f of readdirSync(tdir)) {
       if (!f.endsWith('.md')) continue;
       // frontmatter tags 是最准的主题词（数值/平衡/T值/幸存者Like…）
@@ -133,7 +149,7 @@ function topicTerms() {
             for (const tg of tagsRaw[1].split(',')) {
               const t = tg.trim().replace(/['"\[\]]/g, '');
               if (!t) continue;
-              if (/[\u4e00-\u9fff]/.test(t) ? t.length >= 2 : t.length >= 5) terms.add(t.toLowerCase());
+              if (/[\u4e00-\u9fff]/.test(t) ? t.length >= 2 : t.length >= 5) add(t);
             }
           }
         }
@@ -143,7 +159,7 @@ function topicTerms() {
           const body = readFileSync(join(tdir, f), 'utf8');
           for (const m of body.matchAll(/\|([^|]{2,24})\|/g)) {
             const cell = m[1].trim().replace(/[`|]/g, '');
-            if (/[\u4e00-\u9fff]/.test(cell) && cell.length <= 20) terms.add(cell.toLowerCase());
+            if (/[\u4e00-\u9fff]/.test(cell) && cell.length <= 20) add(cell);
           }
         } catch { /* ignore */ }
       }

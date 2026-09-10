@@ -237,6 +237,26 @@ function inHighRiskyZone(filePath) {
   return candidates.some((abs) => rules.some((r) => abs.includes(r.toLowerCase())));
 }
 
+/** shell 类工具（工具层拿不到"目标文件"，只能对**脚本文本**做启发式判断）。
+ *  2026-09-11 加（第四轮盲评 · C1 指出的"覆盖率洞"）：guard 只挂在 `write/edit/str_replace_editor`
+ *  三个工具上 → **shell（pwsh/node/…）写入零门禁**（我当晚就亲手用 `node -e` 绕过一次）。
+ *  ⚠️ 为什么这里**只告警不拦**：`pwsh` 的参数是一整段脚本，解析不出"到底要写哪个文件"——
+ *  粗粒度拦截会误伤大量正常诊断命令（我每天都在用 pwsh 读文件、跑脚本）。
+ *  所以本步做的是**可发现性**：脚本里同时出现「心智区路径」+「写入类动作」→ 记 marker 告警 + 放行。
+ *  这是 C1「门禁应收敛到文件系统层」的**降级实现**：先让 shell 通道可被审计，再谈能不能真拦。
+ *  真正的文件系统层收口需要上游支持（只读挂载/ACL/写入钩子），超出本插件能力。 */
+const SHELL_TOOLS = new Set(['pwsh', 'bash', 'shell', 'exec', 'run_command']);
+
+/** 脚本里是否同时出现「心智区路径」与「写入类动作」→ 命中则返回路径片段（否则空串）。启发式，宁可漏报不误拦。 */
+function shellWriteHint(script) {
+  const s = String(script || '');
+  if (!s) return '';
+  const inMind = /\b(?:mind|mind-private)[\\/][\w\\/.-]*/i.exec(s);
+  if (!inMind) return '';
+  const WRITEISH = /(Set-Content|Out-File|Add-Content|writeFileSync|appendFileSync|Remove-Item|New-Item|Copy-Item|Move-Item|Rename-Item|\bcp\b|\bmv\b|\brm\b|\bdel\b|>\s*[^=|])/i;
+  return WRITEISH.test(s) ? inMind[0] : '';
+}
+
 /** 
  * 护栏判定表。每个条目 check(filePath, content, ctx) 返回：
  *   非空 string  → 拦截（把该 string 作为 reason 抛给模型）
@@ -339,9 +359,25 @@ export function apply(ctx) {
 
     const disposer = ctx.tools.guard((exec) => {
       const tool = exec?.name;
+      const args = exec?.arguments;
+
+      // ① shell 通道：**只告警不拦**（见 SHELL_TOOLS / shellWriteHint 注释）——
+      //    工具层拦不住 shell，但至少能让"绕道写心智区"留下痕迹（marker + 日志）。
+      if (SHELL_TOOLS.has(tool)) {
+        const script = String(args?.command ?? args?.script ?? args?.cmd ?? '');
+        const hint = shellWriteHint(script);
+        if (hint) {
+          writeMarker(`shell-write-hint: [${tool}] 「${hint}」 @ ${new Date().toISOString()}`);
+          ctx.logger?.('dshome')?.warn?.(
+            `[mind-guard] shell 通道疑似写入心智区（**仅告警，已放行**）：${tool} 脚本里出现「${hint}」+ 写入类动作。` +
+            `工具层护栏拦不住 shell —— 请自行确认这次改动走了 §四 硬流程（放行 / 快照 / validate）。`
+          );
+        }
+        return undefined; // 只告警
+      }
+
       if (!MUTATING_TOOLS.has(tool)) return undefined; // 非写改工具 → 放行
 
-      const args = exec?.arguments;
       const filePath = args?.file_path ?? args?.path ?? '';
       if (!filePath) return undefined; // 无路径 → 放行（保守）
 

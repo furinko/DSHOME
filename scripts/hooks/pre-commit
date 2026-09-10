@@ -20,7 +20,12 @@
 # 装法：cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 set -e
 cd "$(git rev-parse --show-toplevel)"
+# ① 语法检查（= `pnpm build` 的实质内容；直接调脚本，避免依赖 pnpm 在 PATH 上）
+#    C2 指摘：原 hook 不跑 build/smoke/verify-payload → 非 host 插件的语法错误在提交时无门。
+node scripts/syntax-check.mjs
+# ② 心智校验（记忆层布局 / 出厂卫生 / 版本四元 / 概念路由…；有 critical 即拒）
 node scripts/mind-validate.mjs --strict
+# ③ host 插件挂载面（真加载 + 调 apply + handler 真跑 + 行为断言）
 node scripts/verify-host-plugins.mjs
 # 门禁判定真值表（2026-09-11 加）：autoApprove 开着时自动降级为「只跑 privacy 类用例」并明确标注，
 # 不阻塞提交（那是环境状态、不是缺陷）；关着时跑全 17 例。

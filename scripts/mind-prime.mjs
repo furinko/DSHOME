@@ -54,17 +54,32 @@ function walkMd(dir, out, rel = '') {
   }
   return out;
 }
-// ── 项目 key 解析（2026-09-11 修回归）──────────────────────────────────────
-// Memory §十 定义「项目 key = 会话 cwd 目录名」，但本机会话 cwd（如本机插件开发工作区）与项目记忆
-// 目录（`projects\<项目>\`）**并不总是同名** → 硬用 cwd 名会让**导航卡与项目层记忆双双失联**
-// （重启后实测：进度/待办恒空、项目层 4 条记忆召不回；此前硬编码 'DSHOME' 反而没这个问题）。
-// fallback 链：cwd 项目目录存在 → 用它；否则 projects 下**只有一个项目**时用它（无歧义）；否则空
-// （只扫 common 层）。**不硬编码项目名**，保持出厂可移植。
+// ── 项目 key 解析（2026-09-11 修回归 → 同日二次修：加**显式映射表**）──────────
+// Memory §十 定义「项目 key = 会话 cwd 目录名」，但本机会话 cwd（如插件开发工作区）与项目记忆目录
+// **并不总是同名** → 硬用 cwd 名会让导航卡与项目层记忆双双失联（重启后实测：进度/待办恒空、项目层 4 条记忆召不回）。
+// 首版改为「cwd 名 → 唯一项目回退」，但第四轮盲评 C1 实测指出：**那只是"库里只有 1 个项目"的侥幸** ——
+// 多项目后，cwd 不匹配的会话会读到**别的项目**的记忆（跨项目串味）。
+// 现在改为**显式优先**（声明 > 猜测）：
+//   ① `mind-private/tasks/project-cwd-map.json`（cwd 目录名 → 项目 key）—— 显式声明，优先采用；
+//   ② cwd 目录名恰好就是项目目录名 → 用它；
+//   ③ projects 下**只有一个项目** → 用它（无歧义，且仅在无映射时）；
+//   ④ 否则空（**只扫 common 层**）—— 宁可少召回，也不跨项目串味。
 const L3_ROOT = join(PRIV, 'L3');
 const projectKey = (() => {
   const projs = join(L3_ROOT, 'projects');
   const cand = String(taskProject || '').trim();
-  if (cand && !/[/\\]/.test(cand) && existsSync(join(projs, cand))) return cand;
+  const okKey = (k) => !!k && !/[/\\]/.test(k) && existsSync(join(projs, k));
+  // ① 显式映射表
+  if (cand) {
+    try {
+      const map = JSON.parse(readFileSync(join(PRIV, 'tasks', 'project-cwd-map.json'), 'utf8'));
+      const mapped = String(map[cand] || '').trim();
+      if (okKey(mapped)) return mapped;
+    } catch { /* 无表/坏表 → 走后续 */ }
+  }
+  // ② cwd 名 == 项目目录名
+  if (okKey(cand)) return cand;
+  // ③ 唯一项目（无歧义）
   try {
     const all = readdirSync(projs, { withFileTypes: true })
       .filter((e) => e.isDirectory() && !e.name.startsWith('.'))

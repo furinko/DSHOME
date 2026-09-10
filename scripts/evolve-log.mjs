@@ -312,7 +312,15 @@ if (cmd === 'snapshot') {
   const src = existsSync(LOG) ? readFileSync(LOG, 'utf8') : '';
   const decided = decidedObjects(src);
   const rows = parseBackfills(src).filter((r) => (r.verdict === '无效' || r.verdict === '恶化') && !decided.has(r.obj));
-  if (!rows.length) console.log('[evolve-log] pending-invalid: 无（无未裁决的机器判「无效/恶化」）');
+  if (!rows.length) {
+    // 2026-09-11 修（第四轮盲评 · C2 的实测指摘）：原来无条件打印「无（无未裁决…）」——
+    // 而实测 `health` 报「已回填 **0** 条」，即**判效从来没产出过任何裁决**。两者都显示"无"，
+    // 看着像"全清"，实际是"机制没跑起来"。现在把这两种状态分开说。
+    const verdictCount = parseBackfills(src).length;
+    console.log(verdictCount === 0
+      ? '[evolve-log] pending-invalid: ⚠️ **从未有过机器判效**（回测行 0 条）—— 这不是"没有待裁决"，而是"判效机制没跑起来"：先 `effect auto` 判一批，或给进化补绑主信号'
+      : '[evolve-log] pending-invalid: 无（无未裁决的机器判「无效/恶化」）');
+  }
   else {
     console.log('[evolve-log] pending-invalid（未裁决 → 收工第9步人拍：留观/回滚/改进化）:');
     for (const r of rows) console.log(`  📌 ${r.obj} | 信号${r.signal} 基线${r.baseline}→现${r.now} | ${r.verdict}(机器判)`);
@@ -374,6 +382,10 @@ if (cmd === 'snapshot') {
   if (pending >= 2) { console.log(`  ⚠️ 未裁决 无效/恶化 ≥2（现 ${pending} 条）→ 元进化：人拍留观/回滚/改进化`); hit = true; }
   if (logRows >= 8 && (m['repeat-mistakes'] || 0) >= 2) { console.log('  ⚠️ 改得多却重复踩坑 → 审视进化是否有效'); hit = true; }
   if (!hit) console.log('  ✅ 机制健康，无需元进化');
+  // 2026-09-11 修（第四轮盲评 · C2）：本工具此前**永远 exit 0**（无任何失败路径）——
+  // 典型"看起来在检查、实际不阻塞"。现在有真报警时置 exitCode=1，让调用方
+  // （agent 自主巡检 / 脚本 / 未来的 hook）能感知"自检要求元进化"。
+  if (hit) process.exitCode = 1;
 } else {
   console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid');
   process.exit(1);

@@ -589,13 +589,26 @@ const DEFAULT_PROJECT_KEY = 'DSHOME';
 function todoProject(project) {
   const projs = path.join(mindPrivateDir(), 'L3', 'projects');
   const p = String(project || '').trim();
-  if (p && !/[/\\]/.test(p) && fs.existsSync(path.join(projs, p))) return p;
+  const okKey = (k) => !!k && !/[/\\]/.test(k) && fs.existsSync(path.join(projs, k));
+  // ① 显式映射表（与 scripts/mind-prime.mjs 的 projectKey 同口径：**声明优先于猜测**；
+  //    第四轮盲评 C1 实测：靠"唯一项目回退"在多项目时会跨项目串味）
+  if (p) {
+    try {
+      const map = JSON.parse(fs.readFileSync(path.join(mindPrivateDir(), 'tasks', 'project-cwd-map.json'), 'utf8'));
+      const mapped = String(map[p] || '').trim();
+      if (okKey(mapped)) return mapped;
+    } catch { /* 无表/坏表 → 走后续 */ }
+  }
+  // ② cwd/指定名恰好就是项目目录名
+  if (okKey(p)) return p;
+  // ③ 唯一项目（无歧义）
   try {
     const all = fs.readdirSync(projs, { withFileTypes: true })
       .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
       .map((e) => e.name).sort();
     if (all.length === 1) return all[0];
   } catch { /* projects 目录不存在 → 走兜底 */ }
+  // ④ 兜底：干净设备首次（语义见 DEFAULT_PROJECT_KEY 注释）
   return DEFAULT_PROJECT_KEY;
 }
 function todoFile(project) { return path.join(mindPrivateDir(), 'L3', 'projects', todoProject(project), 'project.md'); }
