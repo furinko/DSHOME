@@ -77,6 +77,17 @@ window.__ModuleLoader__.load({
       ".dshome-mind-cron-sep{color:var(--dsw-alias-label-tertiary,#6b7a99);font-size:12.5px;white-space:nowrap}",
       ".dshome-mind-cron-preview{font-size:11px;color:var(--dsw-alias-state-warn-primary,#b8860b);margin:0 0 12px 68px}",
       ".dshome-mind-cron-foot{display:flex;justify-content:flex-end;margin-top:2px}",
+      // ── 项目切换（面板项目分区 2026-09-09：全部 / DSHOME / 战姬 / …）──────
+      // 项目多时在一行内横向滚动（可收缩 + max-width + overflow-x），不挤搜索框/图例/缩放
+      ".dshome-mind-pj{display:inline-flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;max-width:42%;overflow-x:auto;white-space:nowrap;scrollbar-width:thin}",
+      ".dshome-mind-pj::-webkit-scrollbar{height:5px}",
+      ".dshome-mind-pj::-webkit-scrollbar-thumb{background:rgba(0,0,0,.16);border-radius:3px}",
+      ".dshome-mind-pj::-webkit-scrollbar-track{background:transparent}",
+      ".dshome-mind-pj .pjlab{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7a99);margin-right:2px;flex:none}",
+      ".dshome-mind-pj .pjb{display:inline-flex;gap:2px;align-items:center;flex:none}",
+      ".dshome-mind-pj button{border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-tertiary,#6b7a99);font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:99px;cursor:pointer;white-space:nowrap}",
+      ".dshome-mind-pj button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.1));color:var(--dsw-alias-brand-primary,#4D6BFE)}",
+      ".dshome-mind-pj button.on{background:var(--dsw-alias-brand-primary,#4D6BFE);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18)}",
     ].join("");
 
     function ensureStyle() {
@@ -266,10 +277,13 @@ window.__ModuleLoader__.load({
         govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
       });
     }
-    function renderTodos(govEl, reload) {
+    function renderTodos(govEl, reload, project) {
       govEl.innerHTML = "";
-      govEl.appendChild(el("div", "dshome-mind-gov-head", "📋 待办 — project.md「下一步」清单（自主巡检发现的问题也入这）"));
-      fetch("/api/mind/todos").then(function (r) { return r.json(); }).then(function (d) {
+      var pjName = project && project !== "all" ? "「" + project + "」" : "DSHOME";
+      var pjHint = project && project !== "all" ? "" : "（全部态 = DSHOME 系统待办；切到具体项目看它的待办）";
+      govEl.appendChild(el("div", "dshome-mind-gov-head", "📋 待办 — " + pjName + " project.md「下一步」清单" + pjHint));
+      fetch("/api/mind/todos" + (project && project !== "all" ? "?project=" + encodeURIComponent(project) : ""))
+        .then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) throw new Error(d.error);
         if (!d.todos || !d.todos.length) govEl.appendChild(el("div", "dshome-mind-empty", "🎉 没有待办"));
         (d.todos || []).forEach(function (t, i) {
@@ -280,29 +294,131 @@ window.__ModuleLoader__.load({
           var del = el("button", "dshome-mind-gov-no", "🗑");
           row.appendChild(cb); row.appendChild(label); row.appendChild(del);
           card.appendChild(row); govEl.appendChild(card);
-          cb.addEventListener("change", function () { postJSON("/api/mind/todos/toggle", { index: i }).then(function () { reload(); }); });
-          del.addEventListener("click", function () { if (window.confirm("删除这条待办？")) postJSON("/api/mind/todos/remove", { index: i }).then(function () { reload(); }); });
+          cb.addEventListener("change", function () { postJSON("/api/mind/todos/toggle", { index: i, project: project || "" }).then(function () { reload(); }); });
+          del.addEventListener("click", function () { if (window.confirm("删除这条待办？")) postJSON("/api/mind/todos/remove", { index: i, project: project || "" }).then(function () { reload(); }); });
         });
         var add = el("div", "dshome-mind-gov-card");
         add.appendChild(el("div", "dshome-mind-gov-name", "➕ 添加待办"));
         var inp = el("input", "dshome-mind-search"); inp.placeholder = "新待办内容";
         var addBtn = el("button", "dshome-mind-gov-ok", "➕ 添加");
         add.appendChild(inp); add.appendChild(addBtn); govEl.appendChild(add);
-        addBtn.addEventListener("click", function () { if (!inp.value.trim()) return; postJSON("/api/mind/todos/add", { text: inp.value.trim() }).then(function () { reload(); }); });
+        addBtn.addEventListener("click", function () { if (!inp.value.trim()) return; postJSON("/api/mind/todos/add", { text: inp.value.trim(), project: project || "" }).then(function () { reload(); }); });
       }).catch(function (e) { govEl.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e))); });
+    }
+
+    // ── 模型清单：实时拉取，不硬编码、不落缓存 ─────────────────────────────
+    // llm.models 每次调用都现场遍历所有 provider 现取一遍（host 侧 buildModelCatalog），
+    // 所以进本页拉一次、点「✏️ 编辑」再强制拉一次，后续增删改模型都能同步到下拉。
+    var __modelInfo = null, __modelInfoAt = 0;
+    function rpcCall(method, params) {
+      return fetch(location.origin + '/api/' + method, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'client-request', rpcId: 'mind-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), method: method, params: params || {}, payload: params || {} }),
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.result && d.result.ok) return d.result.value;
+        throw new Error((d && d.result && d.result.error && d.result.error.message) || (method + ' failed'));
+      });
+    }
+    // 15 秒内复用（同一页多个表单只打一次接口）；force=true 强制重取（点编辑时用）
+    function loadModelInfo(force) {
+      if (!force && __modelInfo && (Date.now() - __modelInfoAt) < 15000) return Promise.resolve(__modelInfo);
+      return Promise.all([
+        rpcCall('llm.models', {}).catch(function () { return { groups: [], failures: [] }; }),
+        rpcCall('host.describe', {}).catch(function () { return {}; }),
+      ]).then(function (r) {
+        var cat = r[0] || {}, host = r[1] || {};
+        __modelInfo = {
+          groups: cat.groups || [],
+          failures: cat.failures || [],
+          current: { provider: host.provider || '', model: host.model || '' },
+        };
+        __modelInfoAt = Date.now();
+        return __modelInfo;
+      });
+    }
+    // 任务里 model 的三种形态 → 展示/回填用：null=跟随默认；字符串=默认 provider+名字（旧数据）；对象={provider,model}
+    function normModel(raw) {
+      if (!raw) return null;
+      if (typeof raw === 'string') return { provider: '', model: raw };
+      if (typeof raw === 'object' && raw.model) return { provider: raw.provider || '', model: raw.model };
+      return null;
+    }
+    function modelKnown(info, m) {
+      if (!info || !m) return false;
+      var groups = info.groups || [];
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i];
+        if (m.provider && g.id !== m.provider) continue;
+        var ms = g.models || [];
+        for (var j = 0; j < ms.length; j++) {
+          if ((ms[j].id || ms[j].model || '') === m.model) return true;
+        }
+      }
+      return false;
+    }
+    function modelLabel(raw, info) {
+      var m = normModel(raw);
+      if (!m) return '跟随默认' + ((info && info.current && info.current.model) ? ('（' + info.current.model + '）') : '');
+      var s = m.model + (m.provider ? ' @ ' + m.provider : '');
+      if (info && (info.groups || []).length && !modelKnown(info, m)) s += ' ⚠ 已不在模型清单';
+      return s;
+    }
+    function fillModelSelect(sel, want, info, hintEl) {
+      sel.textContent = '';
+      var def = (info && info.current) || {};
+      var o0 = document.createElement('option');
+      o0.value = '';
+      o0.textContent = def.model ? ('跟随默认（' + def.model + '）') : '跟随默认（当前默认模型）';
+      sel.appendChild(o0);
+      var matched = false;
+      ((info && info.groups) || []).forEach(function (g) {
+        var og = document.createElement('optgroup');
+        og.label = (g.name || g.id) + '  ·  ' + g.id;
+        (g.models || []).forEach(function (m) {
+          var mid = m.id || m.model || '';
+          if (!mid) return;
+          var o = document.createElement('option');
+          o.value = JSON.stringify({ provider: g.id, model: mid });
+          o.textContent = (m.name && m.name !== mid) ? (m.name + ' · ' + mid) : mid;
+          if (want && want.model === mid && (!want.provider || want.provider === g.id)) { o.selected = true; matched = true; }
+          og.appendChild(o);
+        });
+        if (og.children.length) sel.appendChild(og);
+      });
+      // 孤儿模型（任务里存着、清单里已没有）：补一个保留项 —— 否则 select 会静默跳到
+      // 「跟随默认」，用户一按保存就把任务的模型改掉了
+      if (want && !matched) {
+        var oo = document.createElement('option');
+        oo.value = want.provider ? JSON.stringify({ provider: want.provider, model: want.model }) : want.model;
+        oo.textContent = '⚠ ' + want.model + (want.provider ? (' @ ' + want.provider) : '') + '（已不在清单 · 保持不变）';
+        oo.selected = true;
+        sel.appendChild(oo);
+      }
+      if (hintEl) {
+        var n = 0;
+        ((info && info.groups) || []).forEach(function (g) { n += (g.models || []).length; });
+        hintEl.textContent = n
+          ? (n + ' 个模型' + (((info.failures || []).length) ? ('（' + info.failures.length + ' 个 provider 取失败）') : ''))
+          : '未取到模型清单（可用「跟随默认」）';
+      }
     }
 
     function renderCron(govEl, reload) {
       govEl.innerHTML = "";
       govEl.appendChild(el("div", "dshome-mind-gov-head", "⏰ 定时任务 — cron 自治：到点自动拉起 agent 会话执行。对话里说『每天 9 点做 X』我帮你加"));
-      fetch("/api/mind/cron").then(function (r) { return r.json(); }).then(function (d) {
+      Promise.all([
+        fetch("/api/mind/cron").then(function (r) { return r.json(); }),
+        loadModelInfo(), // 模型清单与任务列表并行取，卡片上就能标出「已不在清单」
+      ]).then(function (rr) {
+        var d = rr[0], modelInfo = rr[1];
         if (!d.ok) throw new Error(d.error);
         if (!d.tasks || !d.tasks.length) {
           govEl.appendChild(el("div", "dshome-mind-empty", "暂无定时任务"));
         }
         (d.tasks || []).forEach(function (t) {
           var card = el("div", "dshome-mind-gov-card");
-          card.appendChild(el("div", "dshome-mind-gov-name", "⏱ " + t.id + " · " + t.cron + " · " + (t.preset || "standard") + (t.once ? " · 单次" : "") + (t.enabled ? "" : "（已停用）")));
+          card.appendChild(el("div", "dshome-mind-gov-name", "⏱ " + t.id + " · " + t.cron + " · " + (t.preset || "standard") + (t.once ? " · 单次" : "") + (t.enabled ? "" : "（已停用）") + " · 🤖 " + modelLabel(t.model, modelInfo)));
           card.appendChild(el("div", "dshome-mind-gov-reason", (t.prompt || "").slice(0, 140)));
           card.appendChild(el("div", "dshome-mind-gov-reason", t.nextRun ? "下次: " + t.nextRun.replace("T", " ").slice(0, 16) : "（无下次）"));
           var row = el("div", "dshome-mind-gov-actions");
@@ -323,10 +439,13 @@ window.__ModuleLoader__.load({
           edit.addEventListener("click", function () {
             editZone.innerHTML = "";
             var ec = el("div", "dshome-mind-gov-card");
+            // 点编辑时强制刷新清单：刚在设置里增删改的模型，这里立刻能选到
+            var infoForEdit = loadModelInfo(true);
             cronForm(ec, {
               title: "编辑任务 · " + t.id, submitLabel: "💾 保存", reload: reload,
-              initial: { cron: t.cron, prompt: t.prompt, preset: t.preset, once: !!t.once },
-              onSubmit: function (data) { postJSON("/api/mind/cron/update", { id: t.id, cron: data.cron, prompt: data.prompt, preset: data.preset, once: data.once }).then(function () { reload(); }); }
+              modelInfo: infoForEdit,
+              initial: { cron: t.cron, prompt: t.prompt, preset: t.preset, once: !!t.once, model: t.model },
+              onSubmit: function (data) { postJSON("/api/mind/cron/update", { id: t.id, cron: data.cron, prompt: data.prompt, preset: data.preset, once: data.once, model: data.model }).then(function () { reload(); }); }
             });
             var cancel = el("button", "dshome-mind-gov-no", "✖ 取消编辑");
             cancel.style.marginTop = "6px";
@@ -340,6 +459,7 @@ window.__ModuleLoader__.load({
         var add = el("div", "dshome-mind-gov-card");
         cronForm(add, {
           title: "添加定时任务", submitLabel: "➕ 添加", reload: reload,
+          modelInfo: Promise.resolve(modelInfo),
           onSubmit: function (data) { postJSON("/api/mind/cron/add", data).then(function () { reload(); }); }
         });
         govEl.appendChild(add);
@@ -428,6 +548,20 @@ window.__ModuleLoader__.load({
       ctrl3.appendChild(inpPreset);
       row3.appendChild(ctrl3);
       add.appendChild(row3);
+
+      // 模型行（清单实时来自 llm.models；「跟随默认」= 不写 model 字段，跟 agent-default-model 走）
+      var rowModel = el("div", "dshome-mind-cron-row");
+      rowModel.appendChild(el("div", "dshome-mind-cron-label", "🤖 模型"));
+      var ctrlM = el("div", "dshome-mind-cron-ctrl");
+      var inpModel = document.createElement("select");
+      var modelHint = el("span", "dshome-mind-cron-hint", "加载中…");
+      ctrlM.appendChild(inpModel); ctrlM.appendChild(modelHint);
+      rowModel.appendChild(ctrlM);
+      add.appendChild(rowModel);
+      var wantModel = normModel(initial && initial.model);
+      (opts.modelInfo || Promise.resolve(null)).then(function (info) {
+        fillModelSelect(inpModel, wantModel, info, modelHint);
+      }).catch(function () { fillModelSelect(inpModel, wantModel, null, modelHint); });
 
       // 只跑一次开关（对周期型也生效）
       var rowOnce = el("div", "dshome-mind-cron-row");
@@ -526,16 +660,21 @@ window.__ModuleLoader__.load({
       addBtn.addEventListener("click", function () {
         var cron = curCron.trim();
         if (!cron || !inpPrompt.value.trim()) return;
-        opts.onSubmit({ cron: cron, prompt: inpPrompt.value.trim(), preset: inpPreset.value, once: freq.value === "once" || onceChk.checked });
+        var mv = inpModel.value || "";
+        var modelOut = null;
+        if (mv) { try { modelOut = JSON.parse(mv); } catch (e) { modelOut = mv; } } // 孤儿项存的是字符串，原样保留
+        opts.onSubmit({ cron: cron, prompt: inpPrompt.value.trim(), preset: inpPreset.value, once: freq.value === "once" || onceChk.checked, model: modelOut });
       });
     }
 
-    function renderCurate(govEl, reload) {
+    function renderCurate(govEl, reload, project) {
       govEl.innerHTML = "";
-      var head = el("div", "dshome-mind-gov-head", "✂️ 剪枝建议 — 扫描 L3 的膨胀候选");
+      var pjName = project && project !== "all" ? "「" + project + "」" : "全部";
+      var head = el("div", "dshome-mind-gov-head", "✂️ 剪枝建议 — 扫描 " + pjName + " L3 的膨胀候选");
       head.appendChild(el("div", "dshome-mind-gov-reason", "操作说明：归档=移入 history（可找回）；保留=以后不再提示；合并/蒸馏/改写等内容级处理→在对话里告诉鱼鱼来做"));
       govEl.appendChild(head);
-      fetch("/api/mind/curate").then(function (r) { return r.json(); }).then(function (d) {
+      fetch("/api/mind/curate" + (project && project !== "all" ? "?project=" + encodeURIComponent(project) : ""))
+        .then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) throw new Error(d.error);
         if (!d.items || !d.items.length) {
           govEl.appendChild(el("div", "dshome-mind-empty", "✂️ L3 很干净，暂无剪枝候选"));
@@ -634,27 +773,43 @@ window.__ModuleLoader__.load({
     }
 
     function layoutGraph(nodes) {
-      // layer -> nodes（同层排序：factory 先、private 后，各自按名）
+      // layer -> nodes
       var byLayer = {};
       nodes.forEach(function (n) {
         (byLayer[n.layer] = byLayer[n.layer] || []).push(n);
+      });
+      function sortNode(a, b) {
+        if (a.zone !== b.zone) return a.zone === "factory" ? -1 : 1;
+        return a.label.localeCompare(b.label, "zh");
+      }
+      // 段组：常规层一组；L3P「项目记忆」按项目拆子段（全部态下每个项目一段，
+      // 「项目记忆 · 战姬 / DSHOME / …」，不再一排混点——面板项目分区 2026-09-09）
+      var groups = [];
+      LAYER_ORDER.forEach(function (lay) {
+        var list = byLayer[lay.id] || [];
+        if (!list.length) return;
+        if (lay.id === "L3P") {
+          var byP = {};
+          list.forEach(function (n) { (byP[n.project || "?"] = byP[n.project || "?"] || []).push(n); });
+          Object.keys(byP).sort(function (a, b) { return a.localeCompare(b, "zh"); }).forEach(function (p) {
+            byP[p].sort(sortNode);
+            groups.push({ label: "项目记忆 · " + p, color: lay.color, nodes: byP[p] });
+          });
+        } else {
+          list.sort(sortNode);
+          groups.push({ label: lay.label, color: lay.color, nodes: list });
+        }
       });
       var pos = {};
       var maxRight = 0;
       var yCursor = 20;
       var layerRects = [];
-      LAYER_ORDER.forEach(function (lay) {
-        var list = byLayer[lay.id] || [];
-        if (!list.length) return;
-        list.sort(function (a, b) {
-          if (a.zone !== b.zone) return a.zone === "factory" ? -1 : 1;
-          return a.label.localeCompare(b.label, "zh");
-        });
+      groups.forEach(function (grp) {
         var titleTop = yCursor;
         yCursor += LAYER_TITLE_H;
         var x = SIDE_PAD;
         var lineBottom = yCursor;
-        list.forEach(function (n) {
+        grp.nodes.forEach(function (n) {
           var textPad = (n.zone === "private" ? 30 : 14) + 8;
           var w = Math.min(MAX_NODE_W, nodeWidth(n.label));
           var availText = w - textPad - 4;
@@ -667,9 +822,9 @@ window.__ModuleLoader__.load({
           x += w + 14;
         });
         yCursor = lineBottom + LAYER_GAP;
-        layerRects.push({ top: titleTop, bottom: lineBottom + 8, color: lay.color, label: lay.label });
+        layerRects.push({ top: titleTop, bottom: lineBottom + 8, color: grp.color, label: grp.label });
       });
-      return { pos, width: Math.max(CANVAS_W, maxRight + SIDE_PAD), height: yCursor + 10, layerRects };
+      return { pos: pos, width: Math.max(CANVAS_W, maxRight + SIDE_PAD), height: yCursor + 10, layerRects: layerRects };
     }
 
     function renderGraph(graph, mountEl, onPick, state) {
@@ -848,7 +1003,7 @@ window.__ModuleLoader__.load({
 
     function mount(host) {
       host.innerHTML = "";
-      var state = { scale: 1 };
+      var state = { scale: 1, project: "all", graphProject: "", pjKeys: [] };
       var unlisten = fitViewport(host);
       state.dispose = function () { if (unlisten) unlisten(); };
 
@@ -869,6 +1024,19 @@ window.__ModuleLoader__.load({
         viewSw.appendChild(b);
       });
       toolbar.appendChild(viewSw);
+      // 项目切换（面板项目分区 2026-09-09）：「全部」= 全量图（图谱 L3P 按项目分段）；
+      // 切到具体项目 = 该项目工作台（图谱/剪枝/待办同口径物理隔离；放行不分区故隐藏）
+      var pjSw = el("div", "dshome-mind-pj");
+      pjSw.appendChild(el("span", "pjlab", "项目"));
+      var pjBody = el("span", "pjb");
+      pjSw.appendChild(pjBody);
+      toolbar.appendChild(pjSw);
+      // 项目多了横向溢出时：滚轮纵向增量转横向滚动（仅当此行确实溢出才接管，避免干扰页面滚动）
+      pjSw.addEventListener("wheel", function (e) {
+        if (pjBody.scrollWidth <= pjSw.clientWidth + 2) return;
+        e.preventDefault();
+        pjSw.scrollLeft += (e.deltaY || e.deltaX || 0);
+      }, { passive: false });
       var search = el("input", "dshome-mind-search");
       search.placeholder = "搜索节点…";
       toolbar.appendChild(search);
@@ -912,18 +1080,21 @@ window.__ModuleLoader__.load({
         govEl.style.display = isGov ? "" : "none";
         legend.style.display = mode === "graph" ? "" : "none";
         zoom.style.display = mode === "graph" ? "" : "none";
+        pjSw.style.display = mode === "approval" ? "none" : ""; // 放行是门禁视图、不分区
         search.placeholder = mode === "graph" ? "搜索节点…" : (mode === "approval" ? "筛选放行…" : "筛选剪枝候选…");
         stat.textContent = mode === "graph" && state.graphStat ? state.graphStat : "";
+        // 回到图谱：若当前画布不是当前项目语境 → 重拉（在剪枝/待办里切了项目，回图谱要同步）
+        if (mode === "graph" && state.graphProject !== (state.project === "all" ? "" : state.project)) loadGraph();
         // 治理视图共用一个容器：每次切入都重渲染，避免残留上一个视图的内容
         if (isGov) {
           if (mode === "approval") renderApproval(govEl, loadApproval);
-          else if (mode === "curate") renderCurate(govEl, loadCurate);
-          else renderTodos(govEl, loadTodosView);
+          else if (mode === "curate") renderCurate(govEl, loadCurate, state.project);
+          else renderTodos(govEl, loadTodosView, state.project);
         }
       }
       function loadApproval() { renderApproval(govEl, loadApproval); }
-      function loadCurate() { renderCurate(govEl, loadCurate); }
-      function loadTodosView() { renderTodos(govEl, loadTodosView); }
+      function loadCurate() { renderCurate(govEl, loadCurate, state.project); }
+      function loadTodosView() { renderTodos(govEl, loadTodosView, state.project); }
       Object.keys(btns).forEach(function (k) {
         btns[k].addEventListener("click", function () { showView(k); });
       });
@@ -978,20 +1149,64 @@ window.__ModuleLoader__.load({
         if (state.applyQuery) state.applyQuery(search.value.trim());
       });
 
-      fetch("/api/mind/graph")
-        .then(function (r) { return r.json(); })
-        .then(function (g) {
-          if (!g.ok) throw new Error(g.error);
-          stat.textContent = g.nodes.length + " 节点 · " + g.edges.length + " 关联";
-          state.graphStat = stat.textContent;
-          renderGraph(g, graphWrap, function (n) {
-            openDetail(n.zone, n.rel);
-          }, state);
-        })
-        .catch(function (e) {
-          stat.textContent = "加载失败";
-          graphWrap.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
+      // 图谱数据源：全部（无参，后端全量）→ 项目态（?project=key，后端物理过滤）
+      function loadGraph() {
+        var pj = state.project && state.project !== "all" ? state.project : "";
+        state.graphProject = pj;
+        fetch("/api/mind/graph" + (pj ? "?project=" + encodeURIComponent(pj) : ""))
+          .then(function (r) { return r.json(); })
+          .then(function (g) {
+            if (!g.ok) throw new Error(g.error);
+            stat.textContent = g.nodes.length + " 节点 · " + g.edges.length + " 关联";
+            state.graphStat = stat.textContent;
+            if (!pj) { state.pjKeys = projectKeysOf(g); renderPjBtns(state.pjKeys); } // 全部态刷新项目列表（新项目即时出现）
+            renderGraph(g, graphWrap, function (n) {
+              openDetail(n.zone, n.rel);
+            }, state);
+            if (search.value.trim() && state.applyQuery) state.applyQuery(search.value.trim());
+          })
+          .catch(function (e) {
+            stat.textContent = "加载失败";
+            var olds = graphWrap.querySelectorAll(".dshome-mind-empty");
+            for (var oi = 0; oi < olds.length; oi++) olds[oi].parentNode.removeChild(olds[oi]);
+            graphWrap.appendChild(el("div", "dshome-mind-empty", "⚠️ " + (e.message || e)));
+          });
+      }
+      // 从全量图谱节点收集项目 key（rel = L3/projects/<key>/…）→ 渲染切换钮
+      function projectKeysOf(g) {
+        var set = {};
+        (g.nodes || []).forEach(function (n) {
+          var m = /^L3\/projects\/([^/]+)\//.exec(n.rel || "");
+          if (m) set[m[1]] = 1;
         });
+        return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, "zh"); });
+      }
+      function renderPjBtns(keys) {
+        pjBody.innerHTML = "";
+        ["all"].concat(keys.filter(function (k) { return k !== "all"; })).forEach(function (k) {
+          var b = el("button", state.project === k ? "on" : "", k === "all" ? "全部" : k);
+          b.title = k === "all" ? "全部项目记忆（图谱按项目分段摆放）" : "只看「" + k + "」项目（图谱/剪枝/待办一起切）";
+          b.addEventListener("click", function () { switchProject(k); });
+          pjBody.appendChild(b);
+        });
+      }
+      function switchProject(key) {
+        if (key === state.project) return;
+        state.project = key;
+        renderPjBtns(state.pjKeys); // 立即刷新切换钮高亮（列表缓存自最近一次全部态）
+        if (state.view === "approval") return; // 放行不分区
+        if (state.view === "graph") {
+          state.scale = 1; // 换图重置缩放（新 svg 不继承旧尺寸）
+          state.panMoved = false;
+          loadGraph();
+        } else if (state.view === "curate") {
+          renderCurate(govEl, loadCurate, state.project);
+        } else if (state.view === "todos") {
+          renderTodos(govEl, loadTodosView, state.project);
+        }
+      }
+      renderPjBtns([]); // 先放「全部」，其余项目按钮等首次图谱数据返回后补
+      loadGraph();      // 初始 = 全部态
 
       // 治理计数徽标（图谱 stat 之外的放行/整理数量）
       function refreshCounts() {

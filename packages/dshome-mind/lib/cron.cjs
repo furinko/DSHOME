@@ -14,6 +14,29 @@ function repoRoot() {
 }
 const CRON_FILE = () => path.join(repoRoot(), 'mind-private', 'tasks', 'cron.json');
 
+// ── 任务级模型 → 完整 selection 对象 {provider, model} ─────────────────────
+// 系统提示的 {{model}} 取自 selection.model，而 selection 契约要求 {provider, model}
+// 一对（见 dsh-agent installModelSelection 取 selected.provider/selected.model，
+// dsh-agent-default-model.currentSelection() 返回同形状对象）。只塞模型名（字符串）
+// 会让底层取到 selected.model === undefined → 组 prompt 时
+// 「prompt variable "{{model}}" has no value (section "deployment:persona")」
+// → 自治会话第一句就崩。故此处统一归一；拿不到 provider 宁可不装选择。
+function normalizeModel(raw, fallback) {
+  const fb = (fallback && typeof fallback === 'object' && fallback.model) ? fallback : null;
+  if (raw === undefined || raw === null || raw === '') return fb;
+  if (typeof raw === 'string') {
+    // 旧数据 / 简写：默认 provider + 该模型名。不继承默认 reasoningEffort——
+    // 换了模型可能不支持那个档位，缺省让适配器用新模型自己的默认行为。
+    return fb ? { provider: fb.provider, model: raw } : null;
+  }
+  if (typeof raw === 'object' && typeof raw.model === 'string' && raw.model) {
+    const provider = (typeof raw.provider === 'string' && raw.provider) ? raw.provider : (fb ? fb.provider : null);
+    if (!provider) return null;
+    return { provider, model: raw.model, ...(raw.reasoningEffort ? { reasoningEffort: raw.reasoningEffort } : {}) };
+  }
+  return fb;
+}
+
 // ── 到点执行：新建 agent 会话 + 注入 prompt + followup 驱动 ────────────────
 async function executeTask(hostCtx, task) {
   try {
@@ -23,7 +46,10 @@ async function executeTask(hostCtx, task) {
     }
     const sessionId = randomUUID();
     const defaultModel = hostCtx.get('agentDefaultModel')?.currentSelection?.();
-    const modelChoice = task.model || defaultModel; // 任务可指定便宜模型跑自治会话（省 token）
+    const modelChoice = normalizeModel(task && task.model, defaultModel); // 任务级模型优先，统一归一成 {provider, model}
+    if (task && task.model && !modelChoice) {
+      console.warn('[dshome-cron]', task.id, '：model 缺 provider 无法归一，本次按无模型选择运行');
+    }
     const { agent } = await agents.create({
       sessionId,
       meta: { cwd: task.cwd ?? process.cwd() },
@@ -192,6 +218,13 @@ class DshCron {
     if (patch && patch.prompt !== undefined) t.prompt = patch.prompt;
     if (patch && patch.preset !== undefined) t.preset = patch.preset;
     if (patch && patch.once !== undefined) t.once = !!patch.once;
+    // 模型：'model' in patch 才算本次要改（未传=保留原值，避免面板没带该字段时被清掉）；
+    // 传 null / 空串 = 清空（改回「跟随默认」）；传字符串或 {provider,model} = 设值。
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'model')) {
+      const m = patch.model;
+      if (m === null || m === undefined || m === '') delete t.model;
+      else t.model = m;
+    }
     this.schedule(t);
     saveCron(this.tasks);
     return { ok: true, id };
@@ -203,4 +236,4 @@ let __instance = null;
 function setCronInstance(i) { __instance = i; }
 function getCronInstance() { return __instance; }
 
-module.exports = { DshCron, loadCron, saveCron, executeTask, CRON_FILE, setCronInstance, getCronInstance };
+module.exports = { DshCron, loadCron, saveCron, executeTask, normalizeModel, CRON_FILE, setCronInstance, getCronInstance };

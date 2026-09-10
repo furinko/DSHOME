@@ -163,13 +163,25 @@ function fmTopic(content) {
   const r = /(?:^|\n)\s*topic:\s*([^\n]+)/.exec(m[1]);
   return r ? String(r[1]).trim().replace(/^['"]|['"]$/g, '').toLowerCase() : '';
 }
-function buildGraph() {
+function buildGraph(project) {
   const all = [];
   walkContentMd(mindFactoryDir(), 'factory', '', all);
   walkContentMd(mindPrivateDir(), 'private', '', all);
   // 进化快照（tasks/evolution/snapshots/）= 归档副本、非活内容 → 不进图谱
   // （否则节点里混入 90+ 个历史副本、连线上出现「副本↔活文件」的假边）
-  const files = all.filter((f) => !f.rel.startsWith('tasks/evolution/snapshots/'));
+  // 项目态过滤（面板项目分区 2026-09-09 修正版）：切项目只隔离「别家项目的 L3 项目记忆」，
+  // 底座原样在场——出厂 L0-L2 规则/技能 + 私有底座（人设卡/Learn/Dream/私有 L2）+ L3/common
+  // + history/tasks/TRASH 全保留；仅剔除 L3/projects/<其它项目>/…。黑名单式隔离：
+  // 项目语境 = 全图 − 别人家的项目记忆。project 含路径分隔符则视为未指定。
+  const pj = String(project || '').trim();
+  const scoped = pj && !/[/\\]/.test(pj);
+  const files = all.filter((f) => {
+    if (f.rel.startsWith('tasks/evolution/snapshots/')) return false;
+    if (!scoped) return true;
+    if (f.zone === 'factory') return true;
+    if (!f.rel.startsWith('L3/projects/')) return true; // 非项目记忆（含私有 L0-L2 底座/common 等）全留
+    return f.rel.startsWith('L3/projects/' + pj + '/'); // 项目记忆只留当前项目
+  });
   const nodes = [];
   const byLabel = new Map();
   const readText = (full) => { try { return fs.readFileSync(full, 'utf8'); } catch { return ''; } };
@@ -177,6 +189,9 @@ function buildGraph() {
     const content = readText(f.full);
     const seg = f.rel.split('/');
     let label = fmName(content);
+    // 项目归属（面板项目分区 2026-09-09）：L3/projects/<项目>/… → 项目 key；其它 → ''
+    let projKey = '';
+    if (seg[0] === 'L3' && seg[1] === 'projects' && seg[2]) projKey = seg[2];
     // 记忆主题短名（记忆层重构 2026-09-09）：L3/common/<主题>/… → seg[2]；L3/projects/<项目>/知识/<主题>/… → 主题段
     if (!label && seg[0] === 'L3') {
       if (seg[1] === 'common' && seg[2]) label = seg[2];
@@ -195,6 +210,7 @@ function buildGraph() {
       layer: lay.id,
       layerLabel: lay.label,
       color: lay.color,
+      project: projKey,
       zone: f.zone,
       path: f.rel,
       rel: f.rel,
@@ -453,9 +469,15 @@ function assignCurate(relPath) {
   fs.writeFileSync(curateJobsFile(), JSON.stringify({ jobs }, null, 2));
   return { ok: true, jobs: jobs.length };
 }
-function listCurate() {
+function listCurate(project) {
+  const p = String(project || '').trim();
+  const scoped = p && !/[/\\]/.test(p);
   const files = [];
-  for (const c of crystalDirs()) walkContentMd(c.dir, 'private', c.prefix, files);
+  for (const c of crystalDirs()) {
+    // 面板项目分区 2026-09-09：项目态只扫 common + 该项目结晶（与图谱/检索同口径）
+    if (scoped && c.prefix !== 'common' && c.prefix !== ('projects/' + p + '/知识')) continue;
+    walkContentMd(c.dir, 'private', c.prefix, files);
+  }
   const kept = new Set(readKept());
   const jobs = new Map(readJobs().map((j) => [j.file, j]));
   const items = [];
@@ -546,18 +568,24 @@ function searchMind(query, limit = 6, project = '') {
 }
 
 // ── 待办（project.md「下一步」区 `- [ ]` 行）───────────────────────────────
-function todoFile() { return path.join(mindPrivateDir(), 'L3', 'projects', 'DSHOME', 'project.md'); }
+// 面板项目分区 2026-09-09：每个项目自己的 project.md（projects/<项目>/project.md）。
+// project 未指定/非法 → 默认 DSHOME（系统自身，历史行为）。
+function todoProject(project) {
+  const p = String(project || '').trim();
+  return (p && !/[/\\]/.test(p)) ? p : 'DSHOME';
+}
+function todoFile(project) { return path.join(mindPrivateDir(), 'L3', 'projects', todoProject(project), 'project.md'); }
 // 首装自建：project.md 缺失时先建目录 + 种最小文件（含「## 下一步」区），
 // 否则「面板加第一条待办」会因文件不存在抛 ENOENT（干净安装无 mind-private 的场景）。
-function ensureTodoFile() {
-  const f = todoFile();
+function ensureTodoFile(project) {
+  const f = todoFile(project);
   if (fs.existsSync(f)) return f;
   fs.mkdirSync(path.dirname(f), { recursive: true });
-  fs.writeFileSync(f, '# DSHOME 项目\n## 下一步\n', 'utf8');
+  fs.writeFileSync(f, `# ${todoProject(project)} 项目\n## 下一步\n`, 'utf8');
   return f;
 }
-function readTodos() {
-  const f = todoFile(); if (!fs.existsSync(f)) return [];
+function readTodos(project) {
+  const f = todoFile(project); if (!fs.existsSync(f)) return [];
   const todos = [];
   for (const line of fs.readFileSync(f, 'utf8').split('\n')) {
     const m = /^\s*-\s*\[( |x)\]\s*(.*)$/.exec(line);
@@ -565,8 +593,8 @@ function readTodos() {
   }
   return todos;
 }
-function mutateTodos(op, arg) {
-  const f = ensureTodoFile(); const body = fs.readFileSync(f, 'utf8');
+function mutateTodos(op, arg, project) {
+  const f = ensureTodoFile(project); const body = fs.readFileSync(f, 'utf8');
   const lines = body.split('\n');
   const idxs = [];
   lines.forEach((line, i) => { if (/^\s*-\s*\[( |x)\]/.test(line)) idxs.push(i); });
@@ -585,7 +613,7 @@ function mutateTodos(op, arg) {
     else { lines.splice(i, 1); changed = true; }
   }
   if (changed) fs.writeFileSync(f, lines.join('\n'));
-  return { ok: true, todos: readTodos() };
+  return { ok: true, todos: readTodos(project) };
 }
 
 function readJsonBody(req) {
@@ -667,7 +695,8 @@ function makeMindRoutes() {
         if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
         if (!guard(req, res)) return;
         try {
-          json(res, 200, buildGraph());
+          const pj = (new URL(req.url, 'http://localhost').searchParams.get('project') || '').trim();
+          json(res, 200, buildGraph(pj));
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
@@ -713,8 +742,10 @@ function makeMindRoutes() {
       handler: async (req, res) => {
         if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
         if (!guard(req, res)) return;
-        try { json(res, 200, { ok: true, items: listCurate() }); }
-        catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+        try {
+          const pj = (new URL(req.url, 'http://localhost').searchParams.get('project') || '').trim();
+          json(res, 200, { ok: true, items: listCurate(pj) });
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
     {
@@ -845,7 +876,7 @@ function makeMindRoutes() {
           const b = await readJsonBody(req);
           const cron = getCronInstance();
           if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
-          const out = cron.add({ id: b?.id, cron: b?.cron, prompt: b?.prompt, cwd: b?.cwd, once: !!b?.once, catchUp: !!b?.catchUp, timezone: b?.timezone, preset: b?.preset });
+          const out = cron.add({ id: b?.id, cron: b?.cron, prompt: b?.prompt, cwd: b?.cwd, once: !!b?.once, catchUp: !!b?.catchUp, timezone: b?.timezone, preset: b?.preset, ...(b && b.model !== undefined && b.model !== null && b.model !== '' ? { model: b.model } : {}) });
           json(res, out.ok ? 200 : 400, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
@@ -888,7 +919,10 @@ function makeMindRoutes() {
           const b = await readJsonBody(req);
           const cron = getCronInstance();
           if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
-          const out = cron.update(b?.id, { cron: b?.cron, prompt: b?.prompt, preset: b?.preset, once: b?.once });
+          // 模型：面板显式带 'model' 才进 patch（null/'' = 清空 → 跟随默认）
+          const patch = { cron: b?.cron, prompt: b?.prompt, preset: b?.preset, once: b?.once };
+          if (b && Object.prototype.hasOwnProperty.call(b, 'model')) patch.model = b.model;
+          const out = cron.update(b?.id, patch);
           json(res, out.ok ? 200 : 404, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
@@ -916,8 +950,10 @@ function makeMindRoutes() {
       handler: async (req, res) => {
         if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
         if (!guard(req, res)) return;
-        try { json(res, 200, { ok: true, todos: readTodos() }); }
-        catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+        try {
+          const pj = (new URL(req.url, 'http://localhost').searchParams.get('project') || '').trim();
+          json(res, 200, { ok: true, project: todoProject(pj), todos: readTodos(pj) });
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
     {
@@ -929,7 +965,7 @@ function makeMindRoutes() {
         try {
           const b = await readJsonBody(req);
           if (!b?.text) return json(res, 400, { ok: false, error: 'text required' });
-          json(res, 200, mutateTodos('add', b.text.trim()));
+          json(res, 200, mutateTodos('add', b.text.trim(), b?.project));
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
@@ -941,7 +977,7 @@ function makeMindRoutes() {
         if (!guard(req, res)) return;
         try {
           const b = await readJsonBody(req);
-          json(res, 200, mutateTodos('toggle', b?.index));
+          json(res, 200, mutateTodos('toggle', b?.index, b?.project));
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
@@ -953,7 +989,7 @@ function makeMindRoutes() {
         if (!guard(req, res)) return;
         try {
           const b = await readJsonBody(req);
-          json(res, 200, mutateTodos('remove', b?.index));
+          json(res, 200, mutateTodos('remove', b?.index, b?.project));
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
