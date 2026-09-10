@@ -29,6 +29,10 @@
 //   ⑥ 「快照」列不再写合成路径：log 行原来指向不存在的文件（老档案 60/68 悬空），改为解析真实快照文件，
 //      找不到就记 — 并告警提醒先 snapshot（真实快照索引另见 ↳快照 行，108/108 有效）。
 //
+// P0（2026-09-10 补，用户放行）：log 参数校验——参数为空 / 字段不足 / 首字段为空时，原来会**静默写垃圾行**
+//   `| 2026-09-10 | x |  |  | …`（实测：不带参数直接跑 `log` 会回「已记录: x」）→ 改为报用法并 `exit 1`。
+//   机制原则：**宁可响亮失败，不要静默写坏数据**（同类教训：① 信号名静默降级）。
+//
 // 存储：mind-private/tasks/evolution/（隐私，不推送）
 import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, readdirSync } from 'node:fs';
 import { join, basename, resolve, dirname } from 'node:path';
@@ -151,7 +155,14 @@ if (cmd === 'snapshot') {
   if (reason) appendFileSync(LOG, `| ${t.slice(0, 10)} | ↳快照:${basename(p)} | ${reason} | 快照旧版 | snapshots/${t}_${name} |\n`);
   console.log(`[evolve-log] 已快照 → ${dst}${reason ? '（理由:' + reason + '）' : ''}`);
 } else if (cmd === 'log') {
-  const parts = (rest[0] || '').split('|');
+  // ── 参数校验（2026-09-10 修）：参数为空 / 字段不足 / 首字段为空 → 原来会静默写一条垃圾行 `| x | | |`
+  //    （实测踩到：`node scripts/evolve-log.mjs log` 无参数时直接回「已记录: x」）→ 改为报用法并拒绝写入。──
+  const rawLog = (rest[0] || '').trim();
+  const parts = rawLog.split('|').map((s) => s.trim());
+  if (!rawLog || !parts[0] || parts.length < 3) {
+    console.error('[evolve-log] 用法: log "<信号>|<对象>|<为什么改>|<改了啥>"（不绑信号则 "<对象>|<为什么改>|<改了啥>"）；当前参数为空或字段不足 → 拒绝写入（防静默写垃圾记录）');
+    process.exit(1);
+  }
   const t = ts();
   const today = t.slice(0, 10);
   // ── 信号名归一化校验（2026-09-10：原来是静默降级，误写 [corrections] → 记录"成功"但绑定全丢）──
