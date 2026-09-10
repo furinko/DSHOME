@@ -77,7 +77,7 @@ window.__ModuleLoader__.load({
       ".dshome-mind-cron-sep{color:var(--dsw-alias-label-tertiary,#6b7a99);font-size:12.5px;white-space:nowrap}",
       ".dshome-mind-cron-preview{font-size:11px;color:var(--dsw-alias-state-warn-primary,#b8860b);margin:0 0 12px 68px}",
       ".dshome-mind-cron-foot{display:flex;justify-content:flex-end;margin-top:2px}",
-      // ── 项目切换（面板项目分区 2026-09-09：全部 / DSHOME / 战姬 / …）──────
+      // ── 项目切换（面板项目分区 2026-09-09：全部 / DSHOME / 其它项目 / …）──────
       // 项目多时在一行内横向滚动（可收缩 + max-width + overflow-x），不挤搜索框/图例/缩放
       ".dshome-mind-pj{display:inline-flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;max-width:42%;overflow-x:auto;white-space:nowrap;scrollbar-width:thin}",
       ".dshome-mind-pj::-webkit-scrollbar{height:5px}",
@@ -783,7 +783,7 @@ window.__ModuleLoader__.load({
         return a.label.localeCompare(b.label, "zh");
       }
       // 段组：常规层一组；L3P「项目记忆」按项目拆子段（全部态下每个项目一段，
-      // 「项目记忆 · 战姬 / DSHOME / …」，不再一排混点——面板项目分区 2026-09-09）
+      // 「项目记忆 · 各项目名 / DSHOME / …」，不再一排混点——面板项目分区 2026-09-09）
       var groups = [];
       LAYER_ORDER.forEach(function (lay) {
         var list = byLayer[lay.id] || [];

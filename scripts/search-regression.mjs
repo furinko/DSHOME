@@ -35,7 +35,7 @@ if (!existsSync(setPath)) {
 const set = JSON.parse(readFileSync(setPath, 'utf8'));
 const limit = topN ?? (set.topN || 6);
 const items = set.items || [];
-// 记忆层重构（2026-09-09）：回归集横跨 DSHOME/通用/战姬 → 全库候选（common + 全部项目，等价旧 L3/index 行为）
+// 记忆层重构（2026-09-09）：回归集横跨 DSHOME/通用/其它项目 → 全库候选（common + 全部项目，等价旧 L3/index 行为）
 const files = listAllMemories(join(repoRoot, 'mind-private', 'L3'));
 
 console.log(`[search-regression] 回归集 ${items.length} 条 · topN=${limit} · 语料文件 ${files.length} 个（离线 searchL3 单一真源）`);

@@ -373,6 +373,47 @@ for (const f of walk(MIND, [], 'mind').concat(extraVersionFiles)) {
     issues.push({ sev: 'warn', file: f.rel, msg: `头/尾版本不一致（头 ${hs} vs 尾 ${ts}）——Power §六 要求一致` });
 }
 
+// ⑨ 出厂卫生：禁词表扫描公开面（2026-09-10）
+//   背景：2026-09-08 隐私事故（Tree.md 登记私有项目名并推送）修复后，09-09 重构波又以"举例"形式把它
+//   写回 AGENTS/Memory/scripts/client.js —— 同一个洞换了扇门。收工自省扫描（git grep HEAD）才抓到 7 处。
+//   判据：出厂区/公开面**永不写私有项目名 / 个人路径**；靠记性守不住，改成机器扫。
+//   禁词表存 `mind-private\tasks\private-denylist.txt`（含私有名 → 本身不能进公开仓库）。
+//   等级：warn（不阻塞固化）——已知存量清完可提升为 critical。
+function publicDenylistCheck() {
+  const listFile = join(PRIV, 'tasks', 'private-denylist.txt');
+  if (!existsSync(listFile)) return;
+  const terms = readFileSync(listFile, 'utf8').split('\n')
+    .map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  if (!terms.length) return;
+  const ROOTS = ['mind', 'scripts', 'packages', 'docs'].map((r) => join(repoRoot, r));
+  const SCAN_EXT = /\.(md|mjs|cjs|js|json|txt|ya?ml)$/i;
+  const SKIP_DIR = /(^|[\\/])(node_modules|build-stage|\.git|retired|archives|dist)$/;
+  const hits = [];
+  const scan = (dir) => {
+    let entries = [];
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = join(dir, e.name);
+      if (SKIP_DIR.test(full)) continue;
+      if (e.isDirectory()) { scan(full); continue; }
+      if (!e.isFile() || !SCAN_EXT.test(e.name)) continue;
+      let text = '';
+      try { text = readFileSync(full, 'utf8'); } catch { continue; }
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        for (const t of terms) {
+          if (lines[i].includes(t)) hits.push(`${full.slice(repoRoot.length + 1).replace(/\\/g, '/')}:${i + 1}「${t}」`);
+        }
+      }
+    }
+  };
+  for (const root of ROOTS) scan(root);
+  if (hits.length) {
+    issues.push({ sev: 'warn', file: '出厂卫生', msg: `公开面出现禁词 ${hits.length} 处（私有项目名/个人路径不得进出厂区）→ ${hits.slice(0, 8).join('、')}${hits.length > 8 ? ` …另 ${hits.length - 8} 处` : ''}` });
+  }
+}
+publicDenylistCheck();
+
 // 输出
 const crit = issues.filter((i) => i.sev === 'critical');
 const warn = issues.filter((i) => i.sev === 'warn');

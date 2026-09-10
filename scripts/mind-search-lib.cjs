@@ -157,7 +157,7 @@ function listL3Files(rootDir) {
  * 记忆候选集（记忆层重构 2026-09-09）：候选 = common（通用，恒含）+ projects/<当前项目>（专属）。
  * 物理目录隔离——不再依赖 frontmatter project 字段过滤（旧 L3/index 单库方案）。
  * @param {string} L3Root 如 <root>/mind-private/L3
- * @param {string} project 当前项目 key（= 项目目录名，如 DSHOME/战姬；空 = 只取通用）
+ * @param {string} project 当前项目 key（= 项目目录名，如 `DSHOME` 或其它项目目录名；空 = 只取通用）
  * @returns {Array<{full:string, rel:string}>} rel 相对 L3Root，带 common/ 或 projects/<key>/ 前缀
  */
 function listMemoryCandidates(L3Root, project) {
