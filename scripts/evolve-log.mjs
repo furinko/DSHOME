@@ -188,8 +188,13 @@ if (cmd === 'snapshot') {
   if (arg0 === 'auto' || arg1 === 'auto') {
     const rows = src.split('\n').map(parseRow).filter(Boolean);
     const target = arg0 === 'auto' ? rows : rows.filter((r) => r.obj === arg0);
+    const today = ts().slice(0, 10);
     let done = 0, skipped = 0;
     for (const r of target) {
+      // 观察期守卫（2026-09-10 收工 step8 实测）：同日记录的进化**还没到能看出效果的时候**——
+      // 直接判会造出"无效(机器判)"的假阴性（实测 dshome-diagnostics repeat-mistakes 1→1）。
+      // 进化改完至少要跨一天再判，否则机器判分不清"没效果"和"还看不出效果"。
+      if (r.date >= today) { skipped++; console.log(`  ⏳ ${r.obj}: 观察期未到（${r.date} 当日记录，至少隔日再判）`); continue; }
       if (hasBackfill(r.obj, r.signal, r.baseline)) { console.log(`  ⏭ ${r.obj}（信号${r.signal} 基线${r.baseline}）已有回测，跳过`); continue; }
       const res = judgeAndRecord(r);
       if (res.skipped) { skipped++; console.log(`  ⏭ ${r.obj}: ${res.reason}`); }
