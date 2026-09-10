@@ -378,7 +378,8 @@ for (const f of walk(MIND, [], 'mind').concat(extraVersionFiles)) {
 //   写回 AGENTS/Memory/scripts/client.js —— 同一个洞换了扇门。收工自省扫描（git grep HEAD）才抓到 7 处。
 //   判据：出厂区/公开面**永不写私有项目名 / 个人路径**；靠记性守不住，改成机器扫。
 //   禁词表存 `mind-private\tasks\private-denylist.txt`（含私有名 → 本身不能进公开仓库）。
-//   等级：warn（不阻塞固化）——已知存量清完可提升为 critical。
+//   等级：**critical**（2026-09-10 当日先用 warn 上线、清零存量后按约定升为 critical）——出厂区写私有名/个人路径
+//   是🔴红线（随 git 推公开仓库即外泄），只提示不阻塞等于留个洞。要放行某处，需先从禁词表移除该词或改掉内容。
 function publicDenylistCheck() {
   const listFile = join(PRIV, 'tasks', 'private-denylist.txt');
   if (!existsSync(listFile)) return;
@@ -409,7 +410,7 @@ function publicDenylistCheck() {
   };
   for (const root of ROOTS) scan(root);
   if (hits.length) {
-    issues.push({ sev: 'warn', file: '出厂卫生', msg: `公开面出现禁词 ${hits.length} 处（私有项目名/个人路径不得进出厂区）→ ${hits.slice(0, 8).join('、')}${hits.length > 8 ? ` …另 ${hits.length - 8} 处` : ''}` });
+    issues.push({ sev: 'critical', file: '出厂卫生', msg: `公开面出现禁词 ${hits.length} 处（私有项目名/个人路径不得进出厂区——Invariants #13）→ ${hits.slice(0, 8).join('、')}${hits.length > 8 ? ` …另 ${hits.length - 8} 处` : ''}` });
   }
 }
 publicDenylistCheck();
