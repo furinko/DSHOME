@@ -7,6 +7,10 @@
 // 另校验发版号单源一致性（version-lib）：packages/dshome/package.json version == 4 个消费者
 //   （壳应用 app.getVersion / 侧栏徽章 / updates.json / DSHOME.iss）——漏更会导致
 //   「已是最新版却反复提示更新」。
+// 2026-09-10 增：出厂内容区一致性（payload vs 源码）。payload 是**本地打包快照**（git 不跟踪，
+//   只靠发版时 stage-payload 刷新），原来只有 mind\L0\AGENTS.md 被 validate (c) 盯着，
+//   其余静默落后（当日实测 mind\ 15 个文件陈旧、含 AGENTS 3.3 vs 源 3.4）→ 规则陈旧会随包发给用户。
+//   判据：mind\ = 出厂固件（行为规则/记忆模式）→ FAIL；scripts/docs/packages（代码·文档）→ WARN。
 // 用法：
 //   node scripts/verify-payload.mjs            # 只校验（退出码 0=通过 / 1=失败）
 //   node scripts/verify-payload.mjs --fix      # 失败时：隔离毒树 + 版本同步到单源（可逆/可审）
@@ -94,6 +98,71 @@ function versionStatus() {
   return { ok: true };
 }
 
+// ── 出厂内容区一致性（2026-09-10）────────────────────────────────────────────
+// 内容比对：字节相同即同；否则按 CRLF→LF 归一化再比（避免换行风格误报）。
+function sameFile(a, b) {
+  try {
+    const ba = readFileSync(a);
+    const bb = readFileSync(b);
+    if (ba.equals(bb)) return true;
+    const norm = (x) => x.replace(/\r\n/g, '\n');
+    return norm(ba.toString('utf8')) === norm(bb.toString('utf8'));
+  } catch { return false; }
+}
+// 列出内容文件（跳过 node_modules；封顶防巨树）
+function listFiles(root, cap = 20000) {
+  const acc = [];
+  const walk = (dir, rel) => {
+    if (acc.length >= cap) return;
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (acc.length >= cap) return;
+      if (e.name === 'node_modules') continue;
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(join(dir, e.name), r);
+      else if (e.isFile()) acc.push(r);
+    }
+  };
+  walk(root, '');
+  return acc;
+}
+// mind\ 陈旧 = 出厂固件陈旧（用户拿到旧行为规则）→ FAIL；其余内容区 → WARN
+function contentDriftStatus() {
+  const GROUPS = [
+    { root: 'mind', hard: true },
+    { root: 'scripts', hard: false },
+    { root: 'docs', hard: false },
+    { root: 'packages', hard: false },
+  ];
+  const hardHits = [];
+  const softHits = [];
+  for (const { root, hard } of GROUPS) {
+    const srcRoot = join(repoRoot, root);
+    const dstRoot = join(payloadDir, root);
+    if (!existsSync(srcRoot)) continue;
+    if (!existsSync(dstRoot)) { (hard ? hardHits : softHits).push(`${root}\\ 整目录缺失`); continue; }
+    const drifted = [];
+    const missing = [];
+    for (const rel of listFiles(srcRoot)) {
+      const dp = join(dstRoot, rel);
+      if (!existsSync(dp)) { missing.push(rel); continue; }
+      if (!sameFile(join(srcRoot, rel), dp)) drifted.push(rel);
+    }
+    if (drifted.length || missing.length) {
+      const sample = drifted.concat(missing).slice(0, 4).map((r) => r.replace(/\\/g, '/')).join('、');
+      (hard ? hardHits : softHits).push(`${root}\\ 陈旧 ${drifted.length} 个、payload 缺 ${missing.length} 个（如 ${sample}${drifted.length + missing.length > 4 ? ' …' : ''}）`);
+    }
+  }
+  if (hardHits.length) {
+    return { ok: false, msg: `出厂固件与 payload 不一致——${hardHits.join('；')}。payload 是本地打包快照（git 不跟踪，只靠发版时同步），规则陈旧会随包发给用户：先跑 node scripts\\stage-payload.mjs 再打包` };
+  }
+  if (softHits.length) {
+    return { ok: true, warn: true, msg: `payload 内容区落后源码（不影响本次 PASS）——${softHits.join('；')}；发版前建议 node scripts\\stage-payload.mjs 同步` };
+  }
+  return { ok: true };
+}
+
 function staleBackupWarn() {
   if (!existsSync(profilesDir)) return;
   for (const e of readdirSync(profilesDir)) {
@@ -104,7 +173,7 @@ function staleBackupWarn() {
 }
 
 function statuses() {
-  return [agentsStatus(), poisonStatus(), versionStatus()];
+  return [agentsStatus(), poisonStatus(), versionStatus(), contentDriftStatus()];
 }
 
 function main() {
