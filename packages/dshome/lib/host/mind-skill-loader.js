@@ -200,7 +200,11 @@ export function apply(ctx) {
       }
       return decision;
     });
-    ctx.logger?.('dshome').info('dshome-mind-skill-loader: Skill 触发加载钩子已挂载 (%d skills)', skills.length);
+    // 2026-09-11 修（同型 bug 第二例）：此处原为 `skills.length`，而 `skills` 只存在于 hook 回调与
+    // getSkills() 内部 → 每次加载抛 `ReferenceError: skills is not defined`，被外层 catch 吞成
+    // "初始化失败"告警。**hook 在抛错前已注册**，故 Skill 卡照常触发、只有"挂载面"是坏的——
+    // 与 `mind-inject.js` 那处同一模式。同批新增 `scripts/verify-host-plugins.mjs` 专门抓这类。
+    ctx.logger?.('dshome').info('dshome-mind-skill-loader: Skill 触发加载钩子已挂载 (%d skills)', initial.length);
   } catch (error) {
     ctx.logger?.('dshome').warn('dshome-mind-skill-loader: 初始化失败 %O', error);
   }

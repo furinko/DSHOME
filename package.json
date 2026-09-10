@@ -5,7 +5,9 @@
   "scripts": {
     "build": "node scripts/syntax-check.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "verify": "pnpm build && pnpm smoke",
+    "mind-check": "node scripts/mind-validate.mjs --strict",
+    "host-check": "node scripts/verify-host-plugins.mjs",
+    "verify": "pnpm build && pnpm smoke && node scripts/mind-validate.mjs --strict && node scripts/verify-host-plugins.mjs",
     "sync-version": "node scripts/sync-version.mjs",
     "publish": "pnpm -r publish",
     "setup": "node scripts/install-electron.mjs"

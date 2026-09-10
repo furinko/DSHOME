@@ -1,0 +1,24 @@
+#!/bin/sh
+# pre-commit — AGENTS §四 自我修改硬流程的「机器强制」（2026-09-11 建）
+#
+# ── 为什么需要它 ─────────────────────────────────────────────────────────────
+# AGENTS §四 要求：① 主人放行 ② 改前快照 ③ 改后 `mind-validate` 通过，任一不满足不落盘。
+# 但 2026-09-11 盲评实测：**只有 ① 被 mind-guard 强制**——②③ 既无 hook 也无任何代码调用，
+# 全靠"agent 记得跑"。本 hook 让「不通过不落盘」从纪律变成**机器事实**（③ 这一半）。
+#
+# ── 做两件事 ─────────────────────────────────────────────────────────────────
+#   ① scripts/mind-validate.mjs --strict   —— 记忆层布局/出厂卫生/版本四元/概念路由… 有 critical 或 warn 即拒
+#   ② scripts/verify-host-plugins.mjs      —— host 插件「挂载面」真加载验证
+#      （`node --check` 只查语法、查不出未定义标识符：2026-09-11 一夜之间同型 bug 两例——
+#        mind-inject.js 的 `payload.length`、mind-skill-loader.js 的 `skills.length`，
+#        两者都被 apply 的 try/catch 吞成 warn，效果面正常、挂载面全坏）
+#
+# ── 逃生门 ───────────────────────────────────────────────────────────────────
+#   `git commit --no-verify`：仅在**明确知情**时用（例如正在修的正是校验器本身）。
+#   ⚠️ ②「改前快照」仍无机器强制（快照与否是历史事实，hook 判不了）；那半步靠 §四 纪律 + 面板放行时的自觉。
+#
+# 装法：cp scripts/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+set -e
+cd "$(git rev-parse --show-toplevel)"
+node scripts/mind-validate.mjs --strict
+node scripts/verify-host-plugins.mjs

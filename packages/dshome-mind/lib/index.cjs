@@ -522,14 +522,22 @@ function archiveCurate(relPath) {
 }
 
 // ── 近重复检测（bigram-Jaccard，照 dsh-evolve search 思路，防"同事实存两份"）──
-/** 扫 topic 目录（+ user-rules 兜底），目标文件按 ## 条目切块逐块比对（防长文件稀释）。记忆层重构：topic 在 common/<topic> 与项目知识区。 */
-function dupCheck(topic, content) {
+/** 扫 topic 目录（+ user-rules 兜底 + 项目知识区），目标文件按 ## 条目切块逐块比对（防长文件稀释）。
+ *  记忆层重构：topic 在 common/<topic> 与项目知识区。
+ *  2026-09-11 修（盲评实测）：原来只扫 `L3/common/<topic>` + `user-rules`，**不扫项目知识区**——
+ *  而召回候选（listMemoryCandidates）是含 `projects/<项目>/知识/` 的 → AGENTS §六 要求的
+ *  "落记忆前查近重复"对**项目专属记忆恒返回空**，项目区可无限重复入库。
+ *  @param {string} [project] 当前项目 key（= cwd 目录名）；给了才纳入该项目知识区
+ *    （物理隔离口径不变：只扫当前项目，其它项目不扫 → 结构上不串）。 */
+function dupCheck(topic, content, project) {
   const hits = [];
   const dirs = [];
   const L3 = path.join(mindPrivateDir(), 'L3');
   if (topic) dirs.push(path.join(L3, 'common', topic));
   const ur = path.join(L3, 'common', 'user-rules');
   if (topic !== 'user-rules' && fs.existsSync(ur)) dirs.push(ur);
+  const pj = String(project || '').trim();
+  if (topic && pj && !/[/\\]/.test(pj)) dirs.push(path.join(L3, 'projects', pj, '知识', topic));
   const q = tokenize(content);
   for (const dir of dirs) {
     const files = [];
@@ -680,6 +688,42 @@ function makeMindRoutes() {
           if (req.method === 'POST') {
             const body = await readJsonBody(req);
             const content = String(body?.content ?? '');
+            // ── 2026-09-11 修（盲评实测）：人设卡是「人格演绎唯一权威源」，属 mind-guard 高危自我修改区，
+            //    但本 API 此前**直接 writeFileSync** → 工具写入被拦、HTTP 写入零门禁 = **半个门禁**
+            //    （而设置页「助手形象→人设卡」走的正是这条路）。
+            //    此处按**与 mind-guard 同口径**判定：同一 `approvals.json`、同 `decidedBy==='user'` 校验、
+            //    同「一次性消费」语义，并同样尊重 autoApprove 开关。有放行 → 写并消费；无 → 写 pending + 403。
+            //    ⚠️ 两个入口必须同口径：改这里要同步 `packages/dshome/lib/host/mind-guard.js`（反之亦然）。
+            const apFile = path.join(mindPrivateDir(), 'tasks', 'approvals.json');
+            const norm = (s) => String(s).replace(/\\/g, '/').toLowerCase(); // 小写归一：Windows 路径大小写不敏感
+            const target = norm(personaFile);
+            let apData = { items: [] };
+            try { apData = JSON.parse(fs.readFileSync(apFile, 'utf8')); } catch { /* 无文件 → 视为无放行 */ }
+            const items = Array.isArray(apData.items) ? apData.items : [];
+            const aa = apData.autoApprove;
+            const autoOn = !!(aa && aa.enabled && aa.decidedBy === 'user');
+            const matched = items.filter((a) => a.status === 'approved' && a.decidedBy === 'user'
+              && (a.op === 'edit' || a.op === 'write')
+              && (() => { const rp = norm(a.path); return rp.endsWith('/') ? target.startsWith(rp) : target === rp; })());
+            if (!autoOn && !matched.length) {
+              const id = 'ap-' + Date.now();
+              items.push({
+                id, kind: 'action', path: personaFile.replace(/\\/g, '/'), op: 'edit',
+                reason: `改身份权威源（人设卡·设置页 HTTP 写入）：${personaFile}（未放行，需面板确认）`,
+                status: 'pending', requestedAt: new Date().toISOString(), decidedAt: null, decidedBy: '',
+              });
+              try {
+                fs.mkdirSync(path.dirname(apFile), { recursive: true });
+                fs.writeFileSync(apFile, JSON.stringify({ ...apData, items }, null, 2));
+              } catch { /* 待裁决写入失败不改变拒绝结果 */ }
+              return json(res, 403, {
+                ok: false, error: 'pending-approval', pendingId: id,
+                hint: '人设卡＝人格演绎唯一权威源（高危自我修改区）：设置页写入同样需要放行。请到「心智 → 动作放行」面板点 ✓ 后重试。',
+              });
+            }
+            if (matched.length) { // 一次性消费（同 guard：命中即删，用完作废）
+              try { fs.writeFileSync(apFile, JSON.stringify({ ...apData, items: items.filter((a) => !matched.includes(a)) }, null, 2)); } catch { /* 忽略 */ }
+            }
             fs.mkdirSync(path.dirname(personaFile), { recursive: true });
             fs.writeFileSync(personaFile, content, 'utf8');
             return json(res, 200, { ok: true, saved: true });
@@ -1004,7 +1048,9 @@ function makeMindRoutes() {
           const topic = typeof body?.topic === 'string' ? body.topic.trim() : '';
           const content = typeof body?.content === 'string' ? body.content : '';
           if (!content) return json(res, 400, { ok: false, error: 'content required' });
-          json(res, 200, { ok: true, hits: dupCheck(topic, content) });
+          // project：当前项目 key（= cwd 目录名）——给了才纳入项目知识区查重（2026-09-11 修）
+          const project = typeof body?.project === 'string' ? body.project.trim() : '';
+          json(res, 200, { ok: true, hits: dupCheck(topic, content, project) });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },

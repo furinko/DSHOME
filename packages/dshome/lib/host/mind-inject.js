@@ -72,15 +72,23 @@ function writeMarker(content) {
 export function apply(ctx) {
   try {
     const root = repoRoot();
-    const text = composeMindL0Text(root);
-    if (!text) {
+    // ── 2026-09-11 修：R0 文本改为**每会话读盘**。──────────────────────────────
+    // 病灶（盲评实测）：原实现把 composeMindL0Text 放在 apply() 里只算一次 → 整个 DSHOME 生命周期
+    //   冻结在**启动时刻**的宪法版本。实测注入的 AGENTS 比磁盘旧一版（marker len=5089 = SOUL+旧版
+    //   AGENTS；磁盘已是 3.6 应为 5397）→「改宪法 = 下次会话生效」不成立，身份与门禁都活在一份
+    //   可能任意陈旧的自述里；而文档头部却写着"全文每次会话注入"。
+    // 不用 mtime 缓存：R0 每会话仅一次、两件合计 ~11KB，读盘成本可忽略——简单正确优先于省一次 readFile。
+    const buildPayload = () => {
+      const text = composeMindL0Text(root);
+      return text ? `\n【心智系统 · R0 运行宪法（SOUL + AGENTS 全文）】\n${text}` : '';
+    };
+    if (!composeMindL0Text(root)) {
       writeMarker(`apply: text empty (R0 files missing?) @ ${new Date().toISOString()}`);
       return;
     }
     // 每会话只注入一次（首次 agent/pre-step 触发）。
     const injectedSessions = new Set();
-    const payload = `\n【心智系统 · R0 运行宪法（SOUL + AGENTS 全文）】\n${text}`;
-    writeMarker(`apply: registered hook (len=${payload.length}) @ ${new Date().toISOString()}`);
+    writeMarker(`apply: registered hook (read-per-session) @ ${new Date().toISOString()}`);
 
     ctx.on('agent/pre-step', async ({ agent, messages, step, signal }, next) => {
       const decision = await next();
@@ -94,7 +102,13 @@ export function apply(ctx) {
           if (!isMindConnected(agent?.session?.header?.id)) {
             return decision;
           }
+          const payload = buildPayload(); // ← 现场读盘：宪法改动**下次会话即生效**
+          if (!payload) return decision;
           injectedSessions.add(key);
+          // marker 记录**实际注入**的长度与两件版本号（SOUL/AGENTS）——让"这次注入的是哪一版"
+          // 在磁盘上可验证（旧 marker 只记 apply 时刻的长度，无法回答"注入了什么"）。
+          const vers = [...payload.matchAll(/_版本：([\d.]+)/g)].map((m) => m[1]).join('/');
+          writeMarker(`inject: len=${payload.length} ver=${vers} @ ${new Date().toISOString()}`);
           const l0Message = createUserMessage({
             content: [{ type: 'text', text: payload }],
             source: { kind: 'agent-instructions', form: 'instructions', plugin: name },
@@ -107,7 +121,13 @@ export function apply(ctx) {
       }
       return decision;
     });
-    ctx.logger?.('dshome').info('dshome-mind-inject: R0 双件注入钩子已挂载 (len=%d)', payload.length);
+    // 2026-09-11 修（回归审计 blocker）：此处原为 `…已挂载 (len=%d)', payload.length`——改用
+    // 「每会话读盘」后 payload 已移入 buildPayload()/hook 的局部作用域 → 本行抛
+    // `ReferenceError: payload is not defined`，被外层 catch 吞成「初始化失败」warn。
+    // hook 在其前已注册（所以 R0 注入本身仍可用、marker 也是新格式），但 apply 永远走不到成功分支、
+    // cordis 的 host-apply 状态不正常。**教训：`node --check` 只查语法，查不出未定义标识符——
+    // 改 host 插件后必须真加载并调用一次 apply() 验证挂载成功，不能只看"效果上还能跑"。**
+    ctx.logger?.('dshome').info('dshome-mind-inject: R0 双件注入钩子已挂载（每会话读盘，构建发生在首次注入时）');
   } catch (error) {
     ctx.logger?.('dshome').warn('dshome-mind-inject: 初始化失败 %O', error);
   }

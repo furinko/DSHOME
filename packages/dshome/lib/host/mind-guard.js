@@ -38,14 +38,27 @@ function normalizePath(p) {
   return String(p).replace(/\\/g, '/');
 }
 
+/** 判定用候选路径（含**小写归一**）。
+ *  2026-09-11 修（盲评实测）：本模块各判定用的 `includes`/正则都是**大小写敏感**的，而 Windows 路径
+ *  大小写不敏感 → 写 `E:\DSHOME\MIND-PRIVATE\L0\人设卡.md`（或全小写 `e:/dshome/…`）命中的是**同一文件**，
+ *  却**绕过全部三道闸**（实测两种变体均返回"放行"）。统一由此生成候选：
+ *  原样 + resolve 后 + 两者的小写形式——判定因此对大小写变体免疫。
+ *  注意：`normalizePath` 本身仍返回原样（供展示/存盘可读），不在此处破坏路径可读性。 */
+function pathCandidates(filePath) {
+  const p = normalizePath(filePath);
+  const abs = normalizePath(resolve(repoRoot(), p));
+  return [...new Set([p, abs, p.toLowerCase(), abs.toLowerCase()])];
+}
+
 /**
  * 目标是否落在"心智区"（mind\ 出厂区 或 mind-private\ 私有区）。
  * 用于「未接入心智会话禁写硬拦」——关状态的会话既不该读也不该写心智，写一律拦。
  */
 function inMindZone(filePath) {
   const p = normalizePath(filePath);
-  const candidates = [p, normalizePath(resolve(repoRoot(), p))];
-  return candidates.some((abs) => /\/(mind|mind-private)(\/|$)/.test(abs));
+  const candidates = pathCandidates(p);
+  // `i` 标志（2026-09-11 补修）：候选含小写变体，正则应同样大小写不敏感，否则 `MIND-PRIVATE\…` 仍绕过。
+  return candidates.some((abs) => /\/(mind|mind-private)(\/|$)/i.test(abs));
 }
 
 /** 目标是否落在"出厂区 mind\"（可推送固件区）。
@@ -53,9 +66,9 @@ function inMindZone(filePath) {
  */
 function inFactoryZone(filePath) {
   const p = normalizePath(filePath);
-  const candidates = [p, normalizePath(resolve(repoRoot(), p))];
+  const candidates = pathCandidates(p);
   return candidates.some((abs) =>
-    /\/(mind)\/(L0|L1|L2|README\.md)/.test(abs) || /\/(mind)\/README\.md$/.test(abs)
+    /\/(mind)\/(L0|L1|L2|README\.md)/i.test(abs) || /\/(mind)\/README\.md$/i.test(abs)
   );
 }
 
@@ -65,20 +78,34 @@ function inFactoryZone(filePath) {
  */
 function inSelfModifyZone(filePath) {
   const p = normalizePath(filePath);
-  const candidates = [p, normalizePath(resolve(repoRoot(), p))];
+  const candidates = pathCandidates(p);
   const zones = [
     '/mind/L0/', '/mind/L1/', '/mind/L2/', '/mind/README.md',
-    '/mind-private/L1/'   // 行为规则/教训层（Learn.md），属"自我修改"
+    '/mind-private/L1/',  // 行为规则/教训层（Learn.md），属"自我修改"
+    // 人设卡（2026-09-11 补漏）：mind-private\L0\人设卡.md 是 SOUL 指定的「人格演绎唯一权威源」，
+    // 属身份维度——此前不在任何 zone → 改它零门禁（盲评实测）。与 SOUL 同级保护，否则
+    // "改人设 = 改我是谁"可绕过全部自我修改流程。
+    '/mind-private/L0/'
   ];
-  return candidates.some((abs) => zones.some((z) => abs.includes(z)));
+  // 大小写归一（2026-09-11 **补修**）：候选与规则**两侧**都必须小写。首版只让 `pathCandidates`
+  // 带小写候选，而规则字面量含大写（如 '/mind-private/L0/'），`includes` 大小写敏感 →
+  // 小写候选匹配不上，**绕过依然存在**（改了比较的一方、忘了另一方）。
+  return candidates.some((abs) => zones.some((z) => abs.includes(z.toLowerCase())));
 }
 
-/** 内容是否带"私密数据"迹象（凭据/密钥/密码/私钥等）。用于隐私红线判定——只有真私密才拦。 */
+/** 内容是否带"私密数据"迹象（凭据/密钥/密码/私钥等）。用于隐私红线判定——只有真私密才拦。
+ *  2026-09-11 修（盲评实测）：原来**只匹配词**——出厂区写「记录 token 消耗教训」「password 管理」
+ *  这类**正当讨论**也会被硬拦，而 privacy 排在 self-modify **之前** return → **面板放行也解不开**
+ *  （Learn 2026-09-06 已记此坑："隐私类拦截无面板通道"）。实测：连 `mind/L1/Learn.md` 这种文档区、
+ *  内容只是提到该词，也被判隐私红线。
+ *  现改为要求**赋值/凭据形态**：`KEY=值` / `KEY: 值`（值 ≥6 位非空白）/ PEM 私钥块。
+ *  权衡（明示）：裸写的、不带 key 名的孤立凭据灵敏度下降；但"拦词"的误报代价更高——它把正常写作
+ *  拦死且**无解除通道**，等于把门禁退化成"别写这些词"的写作禁忌。 */
 function contentHasSecrets(content) {
   if (!content) return false;
   const s = String(content);
-  // 命中任一即视为私密数据进出厂区。常见凭据字段名 + 密钥/私钥/令牌字样。
-  return /(api[\s_-]?key|secret|token|passwd|password|private[\s_-]?key|access[\s_-]?key|client[\s_-]?secret|\.pem|-----BEGIN)/i.test(s);
+  const ASSIGN = /(?:api[\s_-]?key|secret|token|passwd|password|private[\s_-]?key|access[\s_-]?key|client[\s_-]?secret)[\s"']*[:=][\s"']*\S{6,}/i;
+  return ASSIGN.test(s) || /-----BEGIN[ A-Z]*PRIVATE KEY|\.pem\b/i.test(s);
 }
 
 /** 从工具参数中取出将要写入的内容（write→content；edit→new_string；str_replace_editor→content）。 */
@@ -102,8 +129,13 @@ function writeApprovals(items) {
     writeFileSync(approvalsFile(), JSON.stringify(aa ? { items, autoApprove: aa } : { items }, null, 2));
   } catch { /* 忽略 */ }
 }
-/** 面板「自动同意」开关——仅 decidedBy=user 生效（面板人勾选写入；agent 直写文件伪造同 decidedBy 校验，不生效）。
- *  行为约束层（同 approved 记录定位），不当安全边界。开启后高危改动免逐条面板确认。 */
+/** 面板「自动同意」开关——`enabled && decidedBy==='user'` 时生效：高危改动免逐条面板确认。
+ *  ⚠️ 诚实标注（2026-09-11 盲评订正）：decidedBy 只是**来源标注**，不是防伪机制——本函数直接在
+ *  approvals.json 上做字符串比对，agent 直写 `{"enabled":true,"decidedBy":"user"}` 同样生效。
+ *  原注释声称"agent 直写文件伪造同 decidedBy 校验，不生效"，与实现不符（**承诺了不存在的校验**）。
+ *  定位不变：行为约束层（同 approved 记录），**不当安全边界**；真兜底是"被管方不得自批"这条纪律
+ *  + 面板复核（见 Learn 2026-09-06 护栏自批）。
+ *  本机已于 2026-09-11 关闭：开启期间 §四 自我修改硬流程（放行→快照→validate）实际失效。 */
 function readAutoApprove() {
   try {
     const d = JSON.parse(readFileSync(approvalsFile(), 'utf8'));
@@ -125,10 +157,11 @@ function isApproved(filePath, op) {
   // 那些判断用 [原始路径, resolve(repoRoot, p)] 命中相对/绝对路径；此处若只用原始 p，
   // 当 write/edit 传来相对路径（如 mind/L1/Power.md）时 match 不上 stored 的绝对路径，
   // 就会"拦得住但仍把放行记录留在文件里、永不消费"——本修复把候选对齐为绝对/相对都能匹配。
-  const targets = [p, normalizePath(resolve(repoRoot(), p))];
+  const targets = pathCandidates(p);
   const matched = items.filter((a) =>
     a.status === 'approved' && a.decidedBy === APPROVAL_CHANNEL_USER && a.op === op &&
-    (() => { const rp = normalizePath(a.path); return rp.endsWith('/') ? targets.some((t) => t.startsWith(rp)) : targets.some((t) => t === rp); })()
+    // rp 小写化（2026-09-11 补修）：targets 已含小写候选，而存储的 a.path 可能含大写 → 两侧都小写才比得上。
+    (() => { const rp = normalizePath(a.path).toLowerCase(); return rp.endsWith('/') ? targets.some((t) => t.startsWith(rp)) : targets.some((t) => t === rp); })()
   );
   if (matched.length) {
     writeApprovals(items.filter((a) => !matched.includes(a))); // 消费即删，作废该放行
@@ -169,14 +202,21 @@ function addApprovalPending(filePath, op, content) {
  */
 function inHighRiskyZone(filePath) {
   const p = normalizePath(filePath);
-  const candidates = [p, normalizePath(resolve(repoRoot(), p))];
+  const candidates = pathCandidates(p);
   const rules = [
     '/mind/L0/SOUL.md', '/mind/L0/AGENTS.md',
     '/mind/L1/HUB.md', '/mind/L1/Wisdom.md', '/mind/L1/Memory.md',
     '/mind/L1/Power.md', '/mind/L1/Invariants.md', '/mind/L1/Design-Philosophy.md',
     '/mind/L1/Ritual.md', '/mind/L1/Concepts.md',
+    // 人设卡（2026-09-11 **真修**）：`mind-private\L0\人设卡.md` 是 SOUL 指定的「人格演绎唯一权威源」，
+    // 属身份通道，与 SOUL 同级。用**目录前缀**匹配而非精确文件名（抗改名——历史文件名漂移过一次）。
+    // ⚠️ 上一版只把它写进 inSelfModifyZone 的 zones，那只决定"进不进自我修改区"；**本名单才决定
+    // "进区之后硬拦还是静默放行"**——盲评实测：只加 zones 的人设卡仍是零门禁（check() 先判本名单，
+    // 不中则落到提示分支，而该分支只认 /L2/ 与 /mind-private/L1/，两条都不中 → return undefined）。
+    '/mind-private/L0/',
   ];
-  return candidates.some((abs) => rules.some((r) => abs.includes(r)));
+  // 两侧小写（同 inSelfModifyZone 的补修理由）：规则字面量含大写 L0/SOUL… 而 includes 大小写敏感。
+  return candidates.some((abs) => rules.some((r) => abs.includes(r.toLowerCase())));
 }
 
 /** 
@@ -250,6 +290,22 @@ const GUARDS = [
   }
 ];
 
+/** 诊断 marker（2026-09-11 补）：本插件此前是**唯一不写 marker** 的 mind 插件 →
+ *  "护栏在运行时到底挂载没有、拦过什么"在磁盘上**无任何证据**（两轮盲评都因此判"无法核实"）。
+ *  两行固定格式，挂载行保留、拦截行覆盖：
+ *    mounted:   <启动时刻> | autoApprove=<ON/off> | zones=...
+ *    last-deny: <时刻> [护栏 id] <工具> <目标路径>
+ *  只作诊断，失败不影响护栏。 */
+let mountInfo = '';
+function writeMarker(denyLine) {
+  try {
+    const dir = join(repoRoot(), 'profiles', 'dshome', '.dsh-market');
+    mkdirSync(dir, { recursive: true });
+    const lines = [mountInfo, denyLine].filter(Boolean);
+    writeFileSync(join(dir, 'mind-guard-marker.txt'), lines.join('\n'), 'utf8');
+  } catch { /* 诊断标记失败不影响护栏 */ }
+}
+
 /** 宿主插件主体（fail-open）。 */
 export function apply(ctx) {
   try {
@@ -268,12 +324,18 @@ export function apply(ctx) {
       const content = contentOf(args);
       for (const g of GUARDS) {
         const reason = g.check(filePath, content, ctx, exec);
-        if (reason) return reason; // 命中（未接入禁写/隐私红线/自我修改门禁）→ 拦截
+        if (reason) {
+          writeMarker(`last-deny: ${new Date().toISOString()} [${g.id}] ${tool} ${normalizePath(filePath)}`);
+          return reason; // 命中（未接入禁写/隐私红线/自我修改门禁）→ 拦截
+        }
       }
       return undefined; // 其余写入一律放行（不侵入生长空间）
     });
 
     // 记录挂载成功 + 暴露 disposer 供卸载。
+    mountInfo = `mounted: ${new Date().toISOString()} | autoApprove=${readAutoApprove() ? 'ON' : 'off'}`
+      + ` | mutatingTools=${[...MUTATING_TOOLS].join('/')} | root=${root}`;
+    writeMarker('');
     ctx.logger?.('dshome').info(
       'dshome-mind-guard: 护栏已挂载（隐私红线 + 自我修改门禁）@ root=%s',
       root
