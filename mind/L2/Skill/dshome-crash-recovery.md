@@ -1,7 +1,7 @@
 ---
 name: dshome-crash-recovery
 description: DSHOME/DSH 崩溃排查+自愈——先分装配期/运行期/前端半区三层；启动失败（fail-loud boot 崩溃循环）用 marker 定位崩溃插件 → plugin-change-guard --recover / safe 模式逃生；前端「Failed to load plugins」用「__ModuleLoader__.load id == 包名」四证核对；host 半区崩=整宿主起不来、client 崩=仅 UI 缺失。触发：启动失败/起不来/崩溃循环/Failed to load plugins/半区加载失败/插件加载失败/ERR_PACKAGE_PATH_NOT_EXPORTED/重启后依旧崩。
-version: 1.0.4
+version: 1.0.5
 author: DSHOME
 license: internal
 metadata:
@@ -116,8 +116,8 @@ contract:
 - `mind/L2/Skill/dshome-diagnostics.md`——运行态崩/卡/闪断（本卡只管装配/半区）
 - `mind/L2/Skill/dshome-plugin-dev.md`——插件开发、三步 checklist、生命周期/修复/回滚
 - `docs/incidents/`——历史事故档（PLUGIN-LOAD 等 DSHOME-ISSUE-*）
-- `docs/incidents/` 09-04 报告 + E:\DSH 09-06 报告为两次案例原始记录
+- `docs/incidents/` 09-04 报告 + 09-06 报告为两次案例原始记录
 - `packages/dshome/lib/host/` 的 self-heal.html / self-heal-guard.js / plugin-api.js——前端自救界面实现
 
 ---
-_版本：1.0.4 | 2026-09-06 | §五 v4：守护加 DOM 渲染式失败通道（.dshome-mind 知识面板排除 + [data-chat-flow] 排除），同步自 v4 代码；v3 → v4 演进记录在案_
+_版本：1.0.5 | 2026-09-11 | §七 关联索引去掉本机盘符（Power §四 可移植筛：出厂区不写盘符/本机路径）| 1.0.4 | 2026-09-06 | §五 v4：守护加 DOM 渲染式失败通道（.dshome-mind 知识面板排除 + [data-chat-flow] 排除），同步自 v4 代码；v3 → v4 演进记录在案_

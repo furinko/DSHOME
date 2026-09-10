@@ -23,9 +23,9 @@ v0.2.0 安装包（当时为 **7-Zip SFX** 自解压包）在完全干净环境�
 | 项目 | 表现 |
 |---|---|
 | 安装包 | `DSHOME-setup-0.2.0.exe`（约 218MB，7-Zip SFX 特征） |
-| 安装 | 双击展开至 `E:\DSHOME`（根目录文件同一秒创建） |
+| 安装 | 双击展开至 `$DSH_HOME`（根目录文件同一秒创建） |
 | 启动 | `开发启动.cmd` → Electron 弹窗「后端连续 3 次启动失败」 |
-| 后端完整报错 | `Error: dsh: E:\DSHOME\profiles\node_modules\@deepseek-ai\dsh exists and is not a symlink; remove it so dsh can manage the installation fallback`（ensureSymlink / healProfilesModuleFallback 堆栈） |
+| 后端完整报错 | `Error: dsh: $DSH_HOME\profiles\node_modules\@deepseek-ai\dsh exists and is not a symlink; remove it so dsh can manage the installation fallback`（ensureSymlink / healProfilesModuleFallback 堆栈） |
 | 与机器/网络/配置的关系 | 无关——任何用户经该 exe 安装都会复现（包内结构问题） |
 
 ## 3. 排查过程
@@ -34,7 +34,7 @@ v0.2.0 安装包（当时为 **7-Zip SFX** 自解压包）在完全干净环境�
 2. **读源码**：`@deepseek-ai/dsh-app-boot/lib/index.js`
    - `ensureSymlink`（:371-389）：条目存在且非符号链接 → 直接抛错（:379）；
    - `healProfilesModuleFallback`（:409-438）：BFS 依赖闭包逐包 `ensureSymlink` 到 `$DSH_HOME\profiles\node_modules`（:436）。
-3. **实测**：`E:\DSHOME\profiles\node_modules` 为 168MB 实体目录树（数百个真实复制目录）；逐删除后重启继续报下一个 → 确认整树实体化。
+3. **实测**：`$DSH_HOME\profiles\node_modules` 为 168MB 实体目录树（数百个真实复制目录）；逐删除后重启继续报下一个 → 确认整树实体化。
 
 ## 4. 根因分析
 
@@ -46,7 +46,7 @@ v0.2.0 安装包（当时为 **7-Zip SFX** 自解压包）在完全干净环境�
 
 ## 5. 修复（用户侧，已验证）
 
-1. 删除 `E:\DSHOME\profiles\node_modules`（实体复制树）；
+1. 删除 `$DSH_HOME\profiles\node_modules`（实体复制树）；
 2. 重启后端；
 3. dsh 自愈自动重建全部 junction（Windows junction 无需管理员）；
 4. 验证：端口 3099 LISTENING、HTTP 200、`Get-Item ...\@deepseek-ai\dsh` → `LinkType: Junction`、Electron 壳正常。
@@ -102,11 +102,11 @@ v0.2.0 安装包（当时为 **7-Zip SFX** 自解压包）在完全干净环境�
 
 | 项目 | 证据 |
 |---|---|
-| 安装包 | `C:\Users\wjthq\Downloads\DSHOME-setup-0.2.0.exe`（218MB，2026-08-31 22:57:42） |
+| 安装包 | `%USERPROFILE%\Downloads\DSHOME-setup-0.2.0.exe`（218MB，2026-08-31 22:57:42） |
 | 打包器识别 | exe 前/尾部 128KB 扫描命中 "7-Zip" 特征 |
-| 问题目录 | `E:\DSHOME\profiles\node_modules`（修复前 168MB 实体树；修复后 junction 集合） |
+| 问题目录 | `$DSH_HOME\profiles\node_modules`（修复前 168MB 实体树；修复后 junction 集合） |
 | 修复验证 | 端口 3099 LISTENING；HTTP 200；`LinkType=Junction` |
 | 打包快照现状 | `build-stage\payload\profiles\node_modules` 曾含 29,494 实体文件（打包前门禁 `--fix` 隔离为 `node_modules.stale-*`，待人工确认删除） |
 | 门禁落地 | `scripts/verify-payload.mjs`、`scripts/smoke.mjs`、`build-stage/DSHOME.iss` |
-| 启动/卸载 exe | `E:\DSHOME\DSHOME.exe`（5.6KB）、`E:\DSHOME\UninstallDSHOME.exe`（4.6KB）；`DSHOME.exe --selfcheck` 实测通过（路径解析正确） |
+| 启动/卸载 exe | `$DSH_HOME\DSHOME.exe`（5.6KB）、`$DSH_HOME\UninstallDSHOME.exe`（4.6KB）；`DSHOME.exe --selfcheck` 实测通过（路径解析正确） |
 | 重建发布 | 新包 sha256 `54d2c586…`、211,399,028 字节；线上 asset 已覆盖确认；干净安装冒烟全绿（HTTP 200 + junction 自愈） |

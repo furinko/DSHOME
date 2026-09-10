@@ -11,7 +11,7 @@
 DSHOME = 基于 DeepSeek Harness 的个人桌面客户端：**独立 profile + Electron 薄壳 + 自主题/品牌 + 市场/插件管理 + 鱼鱼心智体系**。
 
 ```
-E:\DSHOME\（monorepo，pnpm workspace）
+$DSH_HOME\（monorepo，pnpm workspace）
 ├─ packages/
 │  ├─ dshome/            # 主 bundle：host 插件 + client 插件 + Electron shell-app
 │  ├─ dshome-theme/      # 客户端皮肤（品牌 token + 设置 UI：通知开关、插件管理分区）
@@ -71,12 +71,12 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖位（预留；apiKeyEnv 技�
 ### 5.1 四阶 + 双区
 
 ```
-四阶（参考 Cathome CCBP + Hermes 轮级缓冲）：
+四阶（参考 Cathome CCBP + 轮级缓冲设计）：
 L0 宪法  SOUL（人格）/ AGENTS（纪律·常驻注入）/ TOOL（工具索引）
 L1 法律  HUB / Wisdom / Tree（全索引）/ Power / Memory（归档规则）/ Dream（灵感）/ Learn（教训）
 L2 能力  Skill（方法论·frontmatter 标准化）/ Exp（工具手册）
-L3 记忆  index（结晶知识·按主题 + _index）/ history（时间胶囊·只写不改）
-Project 行动锚点（project.md，与 L0-L3 平级）
+L3 记忆  common（通用结晶·跨项目）/ projects（项目记忆：project.md 导航 + 知识\ 结晶）/ history（归档·只写不改）
+         ※ 记忆层重构 2026-09-09：原「L3/index + 顶层 Project\」已废止，并入 L3 三区（物理目录隔离）
 TRASH   不删只移，可恢复
 
 双区（隐私边界）：
@@ -91,7 +91,7 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
       → 强制层（R2 触发，动作见 AGENTS §八 知识地图：上工 read L1/Tree+Power 头部 + 场景查 Memory/Ritual/Invariants）
       → 查询层（L2 关键词触发 / L3 grep 按需）
 记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/pending 待放行 / mind-private/L1/Dream.md 点子）
-      → 收工闭环 7 步 → 蒸馏入 L3/通用层（Hermes soyawl 模式）
+      → 收工闭环 7 步 → 蒸馏入 L3/通用层（轮级缓冲 soyawl 模式）
 导入：import-artifact 技能（L2）——其他设备/agent 产物"直接丢给鱼鱼"即插即用
       （识别 → 校验 → 归类落 mind-private → 索引 → git checkpoint → 汇报）
 ```

@@ -1,6 +1,6 @@
 # mind — 心智基座（出厂版）
 
-> DSHOME 智能体（DSHOME）的 L0-L3 四阶知识系统，参考 Cathome CCBP 架构 + Hermes 轮级缓冲 + dsh-evolve 自动化理念重构。
+> DSHOME 智能体（DSHOME）的 L0-L3 四阶知识系统，参考 Cathome CCBP 架构 + 轮级缓冲设计 + dsh-evolve 自动化理念重构。
 > 本目录 = **出厂固件**（架构 + 默认内容），可推送 GitHub。运行时自进化数据在 `$DSH_HOME\mind-private\`（仓库同级 `mind-private\`，gitignore，永不上传）。
 
 ## 一、四阶架构
@@ -38,7 +38,7 @@
 name: 条目名
 description: 一句话摘要
 version: 1.0.0
-author: 来源（DSHOME/Hermes/cathome/其他设备）
+author: 来源（DSHOME/cathome/其他设备）
 license: internal | MIT
 metadata:
   tags: [关键词触发]

@@ -26,7 +26,7 @@ DSHOME 双击 `开发启动.cmd` 后**无窗口出现、后端进程立即退出
 1. **环境预检**：node v24.19.0 / pnpm 10.34.5 / `@deepseek-ai/dsh@0.1.1-rc.2` / electron 43.4.0 均在位，依赖完整 → 排除环境问题。
 2. **复现**：裸跑后端
    `node node_modules\@deepseek-ai\dsh\lib\bin.js --profile dshome --no-open --port 3099`
-   （⚠️ 必须 `set DSH_HOME=E:\DSHOME`，否则报 `profile "dshome" does not exist`，是误导性的前置错误）
+   （⚠️ 必须 `set DSH_HOME=<DSHOME 安装目录>`，否则报 `profile "dshome" does not exist`，是误导性的前置错误）
 3. **读栈**：报错点名 entry `dshome-plugin-center`，且 cordis 断言 `invalid plugin, expect function or object with an "apply" method, received object` → 指向该包的根入口导出形态。
 4. **反查引用**：`dshome-plugin-center` 不在 profile `bundles` 数组，而是被 `packages/dshome/cordis.patch.yml` 以 `- insert` 方式挂进插件列表（dshome bundle 的 patch 层）。
 5. **对照同类**：`dshome-palette`（同为 client-only 插件、同为 `module.exports = {...}` 对象导出）**带 `apply() {}`**，可正常加载；`dshome-plugin-center` 的 `18ce32d` 新增入口只导出了 `{ name }` → 差异即根因。
