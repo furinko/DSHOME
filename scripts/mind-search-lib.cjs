@@ -138,14 +138,21 @@ function searchL3(query, files, limit = 6, opts = {}) {
       const conf = confidenceRank(content);
       const scope = (fmValue(content, 'scope') || 'project').toLowerCase();
       const importance = Number(fmValue(content, 'importance')) || 2;
-      // §十 排序：可信度(A/B/C) 优先级最高；同级内 scope（user>self>project）> importance > score
+      // §十 排序：可信度(A/B/C) 优先级最高；同级内 scope（user>self>project）> **相关度** > importance。
+      // 相关度按**百分制**参与（`score*100`）：2026-09-11 精度修复——原为 `+ best.score`（恒 <1，与 `imp*10`
+      // 差一个量级）⇒ **相关度实际上是零权重**。实测 5 条 top1 错全是同一形状："期望文件相关度高 5~7 倍，
+      // 却因 importance 差一档而输"（R01 期望 21 vs 3、R03 期望 15 vs 4）。
+      // 扫权重曲线定位（10 条回归集）：score 权重 10→5/10、**100→7/10**、1000→7/10（拐点 ×100）；
+      // conf 权重 0→1000 **恒 7/10** ⇒ 档序本身没过，病在**量纲**。
+      // 改后：top1 **5/10 → 7/10**、topN 恒 **10/10（召回不退化）**。剩余 3 条任何权重都救不动 ⇒
+      // 属匹配质量/期望合理性问题，非排序（已单独立项）。
       const scopeRank = scope === 'user' ? 3 : scope === 'self' ? 2 : 1;
       hits.push({
         score: Math.round(best.score * 100),
         conf,
         scopeRank,
         importance,
-        sortKey: conf * 1000 + scopeRank * 100 + importance * 10 + best.score,
+        sortKey: conf * 1000 + scopeRank * 100 + importance * 10 + best.score * 100,
         file: rel,
         // 展示优先用所属小节标题（段落块不带标题行时也能标出"在哪一节"）
         section: (best.heading || (best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),

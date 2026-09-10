@@ -69,8 +69,9 @@ for (const d of detail) {
 console.log(`\n[search-regression] 命中率 ${Math.round((hits / items.length) * 100)}%`);
 if (top1off > 0) {
   console.log(`[search-regression] ℹ️ 精度：${top1off}/${items.length} 条"进了 topN 但 top1 不是期望文件"——` +
-    `召回够、排序未到（sortKey 里 conf×1000 / importance×10 远大于 score<1，相关但"重要度低"的记忆排不到第一）。` +
-    `改排序须动 Memory §十（L1 高危险区，需放行）。本行仅信息，不参与退出码。`);
+    `2026-09-11 已修排序量纲：sortKey 的相关度改**百分制**（\`score*100\`，原 \`+score\` 恒 <1 等于零权重），` +
+    `top1 由 5/10 → 7/10、召回恒 10/10。剩余几条**任何权重都救不动** ⇒ 属**匹配质量/期望合理性**问题（非排序），` +
+    `另立项查（语料仅 7 文件、回归仅 10 条，样本太小，不足以当强证据）。本行仅信息，不参与退出码。`);
 }
 
 // 救 search-hit 信号（2026-09-07）：回归命中 = 真实"检索命中"事件 → bump search-hit。
