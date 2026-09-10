@@ -40,7 +40,7 @@ const files = listAllMemories(join(repoRoot, 'mind-private', 'L3'));
 
 console.log(`[search-regression] 回归集 ${items.length} 条 · topN=${limit} · 语料文件 ${files.length} 个（离线 searchL3 单一真源）`);
 
-let hits = 0, misses = 0;
+let hits = 0, misses = 0, top1off = 0;
 const detail = [];
 for (const it of items) {
   const hs = searchL3(it.q, files, limit);
@@ -49,8 +49,15 @@ for (const it of items) {
   // 改为**单向**：期望串必须是命中文件路径的一部分（路径分隔符归一后再比）。
   const normRel = (s) => String(s).replace(/\\/g, '/');
   const matched = hs.some((h) => h.file && normRel(h.file).includes(normRel(it.expect)));
-  if (matched) hits++; else misses++;
   const top = hs[0];
+  // 2026-09-11 补（检索修复 C 的实验疏漏）：只判"进没进 topN"是**只有召回、没有精度**的体温计——
+  // 实测 R03/R09 修好后目标文档确实进了 topN，但 top1 仍是无关文档，而旧判据照样打 ✅。
+  // 这里把 top1 是否正确**记为信息行**（不升门禁：同一问题可能有多个合理答案，硬判会造恒亮灯）。
+  // 注：`top` 必须先声明再被引用——首版把它写在下面，`node --check` 过了但真跑抛 TDZ
+  // `Cannot access 'top' before initialization`（语法检查查不出"东西不存在/未初始化"，同 mind-inject 那例）。
+  const top1ok = !!(matched && top && top.file && normRel(top.file).includes(normRel(it.expect)));
+  if (matched) hits++; else misses++;
+  if (matched && !top1ok) top1off++;
   detail.push({ id: it.id, q: it.q, expect: it.expect, ok: matched, topFile: top ? top.file : '(空)', topScore: top ? top.score : null });
 }
 
@@ -60,6 +67,11 @@ for (const d of detail) {
   if (!d.ok) console.log(`        top1=${d.topFile} (score=${d.topScore})`);
 }
 console.log(`\n[search-regression] 命中率 ${Math.round((hits / items.length) * 100)}%`);
+if (top1off > 0) {
+  console.log(`[search-regression] ℹ️ 精度：${top1off}/${items.length} 条"进了 topN 但 top1 不是期望文件"——` +
+    `召回够、排序未到（sortKey 里 conf×1000 / importance×10 远大于 score<1，相关但"重要度低"的记忆排不到第一）。` +
+    `改排序须动 Memory §十（L1 高危险区，需放行）。本行仅信息，不参与退出码。`);
+}
 
 // 救 search-hit 信号（2026-09-07）：回归命中 = 真实"检索命中"事件 → bump search-hit。
 // 不进 tokenize/Jaccard（已知 bigram 词面盲区，K3 已否决上 embedding）；命中率当作"体温计基线"，低于历史即越调越差。

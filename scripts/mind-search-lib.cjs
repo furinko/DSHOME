@@ -9,6 +9,11 @@
 //   - scripts/mind-prime.mjs（ESM：createRequire 引入）——本次接入
 //
 // 本库只做"检索"，不含 fs 遍历（目录来源由调用方传入，避免双份 walk 差异）。
+//
+// 修复 C（2026-09-11）：**元信息块参评**——frontmatter tags + H1 标题合成一小块，**文件名另成一独立小块**。
+//   此前 `body` 剥掉 frontmatter 后 tags 完全不参与检索（写在 tags 里的关键词写了也没用）。
+//   实证（10 条回归集）：命中 8/10 → **10/10**，平均候选数 1.6 → 2.1，阈值/口径均未动。
+//   注意：文件名必须**单独**成块——并进 tags 那块会因块变长而掉到 9/10（详见 searchL3 内注释）。
 'use strict';
 
 const fs = require('fs');
@@ -99,10 +104,33 @@ function searchL3(query, files, limit = 6, opts = {}) {
     let content = '';
     try { content = require('fs').readFileSync(f.full, 'utf8'); } catch { continue; }
     const rel = f.rel.replace(/^L3\/index\//, '');
+    const fmRaw = (content.match(/^---\n([\s\S]*?)\n---/) || [, ''])[1];
     const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
     // 多粒度切块（2026-09-10 修复 B）：整节 + 节内各段都参评，取最高分块——见 chunksOf 注释
+    // 元信息块（2026-09-11 修复 C）：H1 标题 + frontmatter tags **单独成一小块**参评。
+    //   病灶（实测）：`body` 去掉 frontmatter 后 tags 完全不参与打分 → 按规范写在 tags 里的关键词
+    //   **写了也没用**（`守护横幅误触` 那篇正文无「守护」，tags 行单独作块 5.88% ≫ 0.02，却 0 命中）；
+    //   而元信息块天然很短，Jaccard 分母小——正好补上"短关键词查询对长段落结构性不可达"
+    //   （440 字段落里 3-token 查询理论上限约 0.7%）。
+    //   实测（10 条回归集，语料 7 文件）：8/10 → **10/10**，平均候选数 1.6 → 2.1，阈值与口径均未动。
+    //   反例留档：把**文件名**也并进这块反而掉到 **9/10**（块变长 → 分母膨胀，R09 被挤到阈值下）——
+    //   "往块里多塞人工文本"不是单调增益，加什么必须按实测选。
+    const chunks = chunksOf(body);
+    const metaText = [
+      (/^#\s+(.+)$/m.exec(body) || [, ''])[1].trim(),
+      (/^[ \t]*tags:\s*(.+)$/m.exec(fmRaw) || [, ''])[1].trim(),
+    ].filter(Boolean).join(' ');
+    if (metaText) chunks.push({ text: metaText, heading: '标题/tags' });
+    // 文件名块（2026-09-11 修复 C 之二）：文件名**单独**成块，**不并进** metaText——并进去就是上面那个反例。
+    //   动机（实测）：`守护横幅误触与前端失败检测` 那篇的 **H1 不含「横幅」**（H1 写的是内容主题），
+    //   tags 里也没有「横幅」→ 自然短语「横幅误弹」0 命中，而这个词正是文件名里的。
+    //   实测同类三选（10 条回归集）：单独成块 **10/10 · 平均候选 2.1**（与不启用同档）；
+    //   并入同块 9/10（R09 掉阈值下）；顺带把「横幅误弹」从 0 条救到 1 条（top1 正确），
+    //   并把「守护横幅」的得分余量 3.1% → **23.1%**（更抗阈值漂移）。
+    const baseName = String(path.basename(f.full) || '').replace(/\.md$/, '');
+    if (baseName) chunks.push({ text: baseName, heading: '文件名' });
     let best = null;
-    for (const c of chunksOf(body)) {
+    for (const c of chunks) {
       const sc = jaccard(q, tokenize(c.text));
       if (!best || sc > best.score) best = { score: sc, sec: c.text, heading: c.heading };
     }
