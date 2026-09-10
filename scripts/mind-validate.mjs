@@ -135,6 +135,61 @@ for (const m of memories) {
   }
 }
 
+// ②b 记忆层布局接线自检（2026-09-11 新增）：防「重构换了消费者，存量数据没迁」
+//    实测病灶（2026-09-11 盲评）：2026-09-09 记忆层重构把 L3/index 判为废止，但 6 条存量记忆
+//    从未迁移；检索/召回/图谱/dupCheck 全按新布局寻址 → 生产路径 100% 空转（召回 0/6），
+//    而 ② 因 memoryRoots 返回空数组静默通过（整段成运行时死代码，记忆溯源从未被检查）。
+//    本条把「新布局空 + 旧布局非空」提升为 critical——布局断线不许提交。
+{
+  const legacyDirs = [
+    { dir: join(PRIV, 'L3', 'index'), rel: 'L3/index' },
+    { dir: join(PRIV, 'Project'), rel: 'Project' },
+  ];
+  const legacyCount = legacyDirs.reduce((n, d) => n + (existsSync(d.dir)
+    ? walk(d.dir, [], d.rel).filter((f) => /^\d{4}-\d{2}-\d{2}_/.test(basename(f.rel))).length : 0), 0);
+  const legacyNames = legacyDirs.filter((d) => existsSync(d.dir)).map((d) => d.rel).join(' / ');
+  if (legacyCount > 0 && memories.length === 0) {
+    issues.push({
+      sev: 'critical', file: legacyNames,
+      msg: `记忆层布局断线：新布局区（L3/common + L3/projects/<项目>/知识）无记忆文件，旧布局仍有 ${legacyCount} 条——检索/召回/dupCheck 全按新布局寻址，存量不迁即「写得进、召不回」。迁移数据或回退消费者口径后再提交。`
+    });
+  } else if (legacyCount > 0) {
+    issues.push({
+      sev: 'warn', file: legacyNames,
+      msg: `旧布局残留 ${legacyCount} 条记忆（新布局已有 ${memories.length} 条）——确认为归档副本还是重复真源；单一真源铁律（Memory.md §四 防漂移）。`
+    });
+  }
+}
+
+// ②c 重复真源检测（2026-09-11 补，盲评指摘）：`L3/history` 是归档区（合法，Memory §三「只写不改」），
+//    但若它与**活区**存在同名文件，就有两种可能：① 一次迁移留档（可接受，宜按 §三 命名加 `_归档`
+//    后缀以消除歧义）；② 误复制 → 单一真源被破坏、改活区时副本静默漂移。
+//    ②b 只看「旧布局目录是否还有残留」，**看不见 history 里的同名副本**（盲评实测：8 个文件与活区
+//    内容全同，校验器完全不可见）。等级 warn：归档本身合法，人确认即可，不阻塞提交。
+{
+  const histRoot = join(PRIV, 'L3', 'history');
+  if (existsSync(histRoot)) {
+    const liveByName = new Map();
+    for (const r of memoryRoots()) {
+      for (const f of walk(r.dir, [], r.rel)) liveByName.set(basename(f.rel), f.full);
+    }
+    const dups = [];
+    for (const h of walk(histRoot, [], 'L3/history')) {
+      const live = liveByName.get(basename(h.rel));
+      if (!live) continue;
+      let same = false;
+      try { same = readFileSync(live, 'utf8') === readFileSync(h.full, 'utf8'); } catch { /* 忽略 */ }
+      dups.push(`${h.rel}${same ? '（同名同内容）' : '（同名·内容已漂移）'}`);
+    }
+    if (dups.length) {
+      issues.push({
+        sev: 'warn', file: 'L3/history',
+        msg: `history 与活区同名文件 ${dups.length} 个——归档副本合法，但需确认不是「重复真源」：${dups.slice(0, 3).join('、')}${dups.length > 3 ? ` …另 ${dups.length - 3} 个` : ''}（若为迁移留档，建议按 Memory §三 命名加 \`_归档\` 后缀消除歧义；若显示"内容已漂移"则该副本已失效）`
+      });
+    }
+  }
+}
+
 // ③ related 死链（frontmatter related 属性 → 文件必须存在）
 function relExists(target) {
   const t = (target || '').replace(/\.md$/i, '');
@@ -261,7 +316,10 @@ function routeConcepts() {
   const out = [];
   let inRoutes = false;
   for (const line of readFileSync(p, 'utf8').split('\n')) {
-    if (/^##\s*意图路由表/.test(line)) { inRoutes = true; continue; }
+    // 2026-09-11 修（盲评实测）：原正则 `^##\s*意图路由表` 与 Concepts.md 的实际标题
+    // `## 意图 → 概念 → 权威源（路由表）` 不匹配 → `routeConcepts()` 恒返回 []，本段成**死代码**
+    // （改了路由表也不会报）。放宽为 `^##\s*意图` 前缀匹配。
+    if (/^##\s*意图/.test(line)) { inRoutes = true; continue; }
     if (inRoutes && /^##\s+/.test(line)) break;
     if (!inRoutes) continue;
     const m = /^\|\s*([^|]+?)\s*\|/.exec(line);
@@ -329,7 +387,7 @@ const isc = injectSourceCheck();
 if (isc.ok) issues.push(...isc.issues);
 
 // ⑦ (c) AGENTS 双版本同步：权威版 mind\L0\AGENTS.md 与打包快照 build-stage\payload\AGENTS.md 全文一致
-//    （根版 E:\DSHOME\AGENTS.md 已于 2026-09-04 退役删除，权威版唯一 = mind\L0\AGENTS.md。
+//    （根版 $DSH_HOME\AGENTS.md 已于 2026-09-04 退役删除，权威版唯一 = mind\L0\AGENTS.md。
 //      原「根版 vs payload」基准的条件恒假，导致 (c) 从未真正执行；且旧判定用"反引号路径集合"近似，
 //      抓不住正文漂移（如 USER 残留、措辞差异）。payload 是打包时从权威版同步的快照，
 //      故改为【全文一致】判定——规范化换行后逐字符比对，严格、无近似。允许行尾差异。）
@@ -386,10 +444,25 @@ function publicDenylistCheck() {
   const terms = readFileSync(listFile, 'utf8').split('\n')
     .map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
   if (!terms.length) return;
-  const ROOTS = ['mind', 'scripts', 'packages', 'docs'].map((r) => join(repoRoot, r));
+  // 扫描根 = 一切**会被推送**的目录（2026-09-11 扩面）。
+  // 原来只扫 mind/scripts/packages/docs 四根 → vendor/、profile-template/、仓库根散文件、skills/
+  // 全是盲区（盲评实测），而这些同样进 git。build-stage 仍由 SKIP_DIR 排除（打包产物，源在扫描面内）。
+  const ROOTS = ['mind', 'scripts', 'packages', 'docs', 'profile-template', 'vendor', 'skills']
+    .map((r) => join(repoRoot, r)).filter((d) => existsSync(d));
   const SCAN_EXT = /\.(md|mjs|cjs|js|json|txt|ya?ml)$/i;
   const SKIP_DIR = /(^|[\\/])(node_modules|build-stage|\.git|retired|archives|dist)$/;
   const hits = [];
+  const scanFile = (full) => {
+    if (!SCAN_EXT.test(full)) return;
+    let text = '';
+    try { text = readFileSync(full, 'utf8'); } catch { return; }
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      for (const t of terms) {
+        if (lines[i].includes(t)) hits.push(`${full.slice(repoRoot.length + 1).replace(/\\/g, '/')}:${i + 1}「${t}」`);
+      }
+    }
+  };
   const scan = (dir) => {
     let entries = [];
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
@@ -397,18 +470,17 @@ function publicDenylistCheck() {
       const full = join(dir, e.name);
       if (SKIP_DIR.test(full)) continue;
       if (e.isDirectory()) { scan(full); continue; }
-      if (!e.isFile() || !SCAN_EXT.test(e.name)) continue;
-      let text = '';
-      try { text = readFileSync(full, 'utf8'); } catch { continue; }
-      const lines = text.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        for (const t of terms) {
-          if (lines[i].includes(t)) hits.push(`${full.slice(repoRoot.length + 1).replace(/\\/g, '/')}:${i + 1}「${t}」`);
-        }
-      }
+      if (e.isFile()) scanFile(full);
     }
   };
   for (const root of ROOTS) scan(root);
+  // 仓库根**散文件**单独扫（不递归）：README/LICENSE/*.cmd/*.yml 等也会进 git，属公开面。
+  // 不递归是为了不把 sessions/、storages/、attachments/ 等运行时数据拖进来（它们不进 git，也不该被当公开面）。
+  try {
+    for (const e of readdirSync(repoRoot, { withFileTypes: true })) {
+      if (e.isFile()) scanFile(join(repoRoot, e.name));
+    }
+  } catch { /* 忽略 */ }
   if (hits.length) {
     issues.push({ sev: 'critical', file: '出厂卫生', msg: `公开面出现禁词 ${hits.length} 处（私有项目名/个人路径不得进出厂区——Invariants #13）→ ${hits.slice(0, 8).join('、')}${hits.length > 8 ? ` …另 ${hits.length - 8} 处` : ''}` });
   }

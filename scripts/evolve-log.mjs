@@ -10,6 +10,8 @@
 //   node scripts/evolve-log.mjs effect auto                                 # 机器判定全部可判（去自评）
 //   node scripts/evolve-log.mjs effect "<对象>|<观察>|<verdict>"             # 兼容自评（标 自评，非机器判）
 //   node scripts/evolve-log.mjs decide <对象> <留观|回滚|改进化> "<理由>"      # 转录【主人】对无效/恶化的裁决 → 闭环消费端
+//   node scripts/evolve-log.mjs rollback <path> [<快照时间戳前缀>]            # 回滚到最近/指定快照（回滚前自动留档当前版本）
+//   node scripts/evolve-log.mjs rollback --list <path>                       # 列出该文件全部快照（新→旧）
 //   node scripts/evolve-log.mjs bump <信号> | metrics | health | pending-invalid
 //
 // P1（2026-09-05）effect 判定机械化：去掉"自评有效"——verdict 默认由机器读主信号基线得出。
@@ -123,7 +125,7 @@ const verdictIcon = (v) => (v === '有效' ? '✅' : v === '恶化' ? '🔻' : '
 // 现在改为：按对象名（或首个标识词）在 snapshots\ 里找**真实快照文件**，找不到就写 —（诚实留空，不编路径）。
 function snapshotRef(objName) {
   const base = String(objName).split('[')[0].trim();
-  const safe = base.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const safe = base.replace(/[\\/:*?"<>|]/g, '_');
   const token = (base.split(/[^a-zA-Z0-9_.-]+/).filter((s) => s.length >= 4)[0] || '');
   try {
     const files = readdirSync(SNAP).sort(); // 时间戳前缀 → 升序即时间序
@@ -147,13 +149,58 @@ function decidedObjects(src) {
 if (cmd === 'snapshot') {
   const p = resolve(repoRoot, rest[0] || '');
   if (!existsSync(p)) { console.error('[evolve-log] 不存在:', p); process.exit(1); }
-  const name = basename(p).replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const name = basename(p).replace(/[\\/:*?"<>|]/g, '_');
   const t = ts();
   const dst = join(SNAP, `${t}_${name}`);
   writeFileSync(dst, readFileSync(p, 'utf8'));
   const reason = (rest[1] || '').trim();
   if (reason) appendFileSync(LOG, `| ${t.slice(0, 10)} | ↳快照:${basename(p)} | ${reason} | 快照旧版 | snapshots/${t}_${name} |\n`);
   console.log(`[evolve-log] 已快照 → ${dst}${reason ? '（理由:' + reason + '）' : ''}`);
+} else if (cmd === 'rollback') {
+  // ── 回滚（2026-09-11 新增；此前「无 rollback 子命令」= 号称可回滚实则手工拷回）──
+  // 设计要点：① 回滚前**先给当前版本快照**——否则回滚动作本身不可回滚（"坏则回滚"必须对称，
+  //   退错了还能再退回来）；② 只认 snapshots\ 里真实存在的文件，不合成路径（与 snapshotRef 同口径）；
+  //   ③ 恢复即写入 + changelog 留痕 + 明确提示复验（回滚后必须 mind-validate，失败可再回滚）。
+  const listOnly = rest[0] === '--list' || rest[0] === '-l';
+  const target0 = (listOnly ? rest[1] : rest[0]) || '';
+  const stamp = ((listOnly ? rest[2] : rest[1]) || '').trim();
+  if (!target0) {
+    console.error('用法: rollback <path> [<快照时间戳前缀>] | rollback --list <path>（不带时间戳 = 最近一次快照）');
+    process.exit(1);
+  }
+  const p = resolve(repoRoot, target0);
+  const name = basename(p).replace(/[\\/:*?"<>|]/g, '_');
+  // 兼容 2026-09-11 之前的旧命名（非 ASCII 一律换成 _）：两种口径都试，避免老快照找不到
+  const legacyName = basename(p).replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const names = [...new Set([name, legacyName])];
+  let snaps = [];
+  try { snaps = readdirSync(SNAP).filter((f) => names.some((n) => f.endsWith(`_${n}`))).sort(); } catch { /* 无快照目录 */ }
+  if (!snaps.length) {
+    console.error(`[evolve-log] 未找到 ${basename(p)} 的快照（snapshots/ 下无 *_${name}）→ 无法回滚（快照只对 snapshot 过的文件可用）`);
+    process.exit(1);
+  }
+  if (listOnly) {
+    console.log(`[evolve-log] ${basename(p)} 的快照（新→旧）：`);
+    for (const f of [...snaps].reverse()) console.log(`  ${f.slice(0, 19)}  snapshots/${f}`);
+    process.exit(0);
+  }
+  const pick = stamp ? snaps.filter((f) => f.startsWith(stamp)).pop() : snaps[snaps.length - 1];
+  if (!pick) {
+    console.error(`[evolve-log] 无匹配时间戳「${stamp}」的快照 → 用 rollback --list ${target0} 看可用快照`);
+    process.exit(1);
+  }
+  if (!existsSync(p)) {
+    console.error(`[evolve-log] 目标文件当前不存在: ${p}（快照仍在 snapshots/${pick}，可手工恢复）`);
+    process.exit(1);
+  }
+  const before = `${ts()}_${name}`;
+  writeFileSync(join(SNAP, before), readFileSync(p, 'utf8'));   // ① 回滚前留档当前版本
+  writeFileSync(p, readFileSync(join(SNAP, pick), 'utf8'));      // ② 恢复目标快照
+  appendFileSync(LOG, `| ${ts().slice(0, 10)} | ↳回滚:${basename(p)} | 回滚到 snapshots/${pick} | 已恢复（回滚前版本留档 snapshots/${before}） | snapshots/${before} |\n`);
+  console.log(`[evolve-log] 已回滚 ${basename(p)} ← snapshots/${pick}`);
+  console.log(`[evolve-log] 回滚前版本已留档 → snapshots/${before}`);
+  console.log(`[evolve-log] 反悔可再退：node scripts/evolve-log.mjs rollback ${target0} ${before.slice(0, 19)}`);
+  console.log('[evolve-log] 下一步必做：node scripts\\mind-validate.mjs（回滚后复验，失败可再回滚）');
 } else if (cmd === 'log') {
   // ── 参数校验（2026-09-10 修）：参数为空 / 字段不足 / 首字段为空 → 原来会静默写一条垃圾行 `| x | | |`
   //    （实测踩到：`node scripts/evolve-log.mjs log` 无参数时直接回「已记录: x」）→ 改为报用法并拒绝写入。──
@@ -317,6 +364,6 @@ if (cmd === 'snapshot') {
   if (logRows >= 8 && (m['repeat-mistakes'] || 0) >= 2) { console.log('  ⚠️ 改得多却重复踩坑 → 审视进化是否有效'); hit = true; }
   if (!hit) console.log('  ✅ 机制健康，无需元进化');
 } else {
-  console.error('用法: snapshot <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid');
+  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid');
   process.exit(1);
 }

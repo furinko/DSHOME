@@ -54,25 +54,44 @@ function walkMd(dir, out, rel = '') {
   }
   return out;
 }
+// ── 项目 key 解析（2026-09-11 修回归）──────────────────────────────────────
+// Memory §十 定义「项目 key = 会话 cwd 目录名」，但本机会话 cwd（如本机插件开发工作区）与项目记忆
+// 目录（`projects\<项目>\`）**并不总是同名** → 硬用 cwd 名会让**导航卡与项目层记忆双双失联**
+// （重启后实测：进度/待办恒空、项目层 4 条记忆召不回；此前硬编码 'DSHOME' 反而没这个问题）。
+// fallback 链：cwd 项目目录存在 → 用它；否则 projects 下**只有一个项目**时用它（无歧义）；否则空
+// （只扫 common 层）。**不硬编码项目名**，保持出厂可移植。
+const L3_ROOT = join(PRIV, 'L3');
+const projectKey = (() => {
+  const projs = join(L3_ROOT, 'projects');
+  const cand = String(taskProject || '').trim();
+  if (cand && !/[/\\]/.test(cand) && existsSync(join(projs, cand))) return cand;
+  try {
+    const all = readdirSync(projs, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+      .map((e) => e.name).sort();
+    return all.length === 1 ? all[0] : '';
+  } catch { return ''; }
+})();
+
 function search(limit2) {
-  // 记忆层重构（2026-09-09）：候选 = listMemoryCandidates(L3, taskProject)
-  //   = common（通用，恒含）+ projects/<taskProject>（当前项目专属，物理隔离）
-  const files = listMemoryCandidates(join(PRIV, 'L3'), taskProject);
+  // 记忆层重构（2026-09-09）：候选 = listMemoryCandidates(L3, projectKey)
+  //   = common（通用，恒含）+ projects/<projectKey>（当前项目专属，物理隔离）
+  const files = listMemoryCandidates(L3_ROOT, projectKey);
   const general = [], proj = [];
   for (const f of files) {
     if (f.rel.startsWith('common/')) general.push(f);
-    else if (f.rel.startsWith(`projects/${taskProject}/`)) proj.push(f);
+    else if (projectKey && f.rel.startsWith(`projects/${projectKey}/`)) proj.push(f);
   }
   // 通用层：结果导向三级退——任务 query → 工作区(项目名) → 重要度兜底（不空转）。
   let generalHits = searchL3(generalQuery, general, limit2);
-  if (generalHits.length === 0 && taskProject && taskProject !== generalQuery) {
-    generalHits = searchL3(taskProject, general, limit2);
+  if (generalHits.length === 0 && projectKey && projectKey !== generalQuery) {
+    generalHits = searchL3(projectKey, general, limit2);
   }
   if (generalHits.length === 0 && general.length) {
     generalHits = searchL3('', general, limit2, { minScore: 0 });
   }
   // 项目层：当前项目专属记忆全部列入（项目专属即相关；不靠 query——中英不匹配会漏），minScore 0 保证在场。
-  const projHits = taskProject && proj.length ? searchL3(taskProject, proj, limit2, { minScore: 0 }) : [];
+  const projHits = projectKey && proj.length ? searchL3(projectKey, proj, limit2, { minScore: 0 }) : [];
   // 合并：项目优先保留（当前项目上下文），通用知识补充；去重取前 limit。
   const picked = [];
   const seen = new Set();
@@ -88,10 +107,12 @@ function search(limit2) {
 // 标题匹配容忍序号前缀与括号后缀（如「## 二、进度状态」「## 下一步（待办）」），
 // 跨设备/不同写法都能装配；todo/progress 权威源语义见 mind/L1/Concepts.md。
 function project() {
-  const f = join(PRIV, 'L3', 'projects', 'DSHOME', 'project.md');
+  // 项目 key：projectKey（cwd 名 → 单项目回退，见上）；无项目 → 不注入进度块
+  if (!projectKey) return { progress: '', todos: [] };
+  const f = join(PRIV, 'L3', 'projects', projectKey, 'project.md');
   if (!existsSync(f)) return { progress: '', todos: [] };
   const body = readFileSync(f, 'utf8');
-  let progress = '';
+  const progLines = [];
   let todos = [];
   const lines = body.split('\n');
   let inProgress = false, inTodo = false;
@@ -102,13 +123,18 @@ function project() {
     if (headingIs(line, '进度状态')) { inProgress = true; inTodo = false; continue; }
     if (headingIs(line, '下一步')) { inTodo = true; inProgress = false; continue; }
     if (isHeading(line)) { inProgress = false; inTodo = false; }
-    if (inProgress && line.startsWith('|')) progress += line.trim() + '\n';
+    // 2026-09-11 修复：进度状态的实际写法是 bullet（`- phase:` / `- 里程碑:` / 缩进 ✅），
+    // 此前只收 `|` 表格行 → 实测 progress 恒空（导航卡在场却不注入）。两种写法都收。
+    if (inProgress && (line.startsWith('|') || /^\s*[-*]\s/.test(line))) progLines.push(line.trim());
     if (inTodo) {
       const m = /^\s*-\s*\[( |x)\]\s*(.*)$/.exec(line);
       if (m) todos.push({ done: m[1] === 'x', text: m[2] });
     }
   }
-  return { progress: progress.trim(), todos };
+  // 注入限长（2026-09-11）：phase 行 + 最近 3 条里程碑——里程碑按 Memory §四 逐轮 append
+  // 会无限增长，全文注入会吃掉 R1 预算；真源仍全文在 project.md，此处只装配摘要。
+  const picked = [...new Set([...progLines.slice(0, 1), ...progLines.slice(-3)])];
+  return { progress: picked.join('\n').slice(0, 900), todos };
 }
 
 // ── Learn + user-rules ────────────────────────────────────────────────────
@@ -125,7 +151,7 @@ function userRules() {
 }
 // ── 人设卡（本机私密，演绎唯一权威源）——上工召回自动装配，让鱼鱼开机即带人设 ──
 // Q1（2026-09-06）：优先读约定名「人设卡.md」；不存在则回退扫 L0 下任一含"人设/persona"的 md
-//   （历史文件曾命名为「蓝色大肥鱼人设.md」→ 约定名与物理名漂移导致装配静默为空；回退兜底）。
+//   （历史文件曾用别的命名 → 约定名与物理名漂移导致装配静默为空；回退兜底）。
 function persona() {
   const dir = join(PRIV, 'L0');
   if (!existsSync(dir)) return '';

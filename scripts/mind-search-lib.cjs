@@ -168,9 +168,12 @@ function listMemoryCandidates(L3Root, project) {
   }
   const projKey = String(project || '').trim();
   if (projKey && !/[/\\]/.test(projKey)) {
-    const projDir = path.join(L3Root, 'projects', projKey);
-    if (fs.existsSync(projDir)) {
-      for (const f of listL3Files(projDir)) out.push({ full: f.full, rel: `projects/${projKey}/${f.rel}` });
+    // 项目层只扫「知识」结晶区（Memory.md §十 第 0 步：导航卡 project.md 与记忆档案在项目根、
+    // 靠强制依赖上工直读，不进检索候选）。2026-09-11 修复：此前扫整个项目目录 → 实测
+    // `projects/DSHOME/project.md` 被当记忆命中（score 20 挤进 top5），污染召回。
+    const knowDir = path.join(L3Root, 'projects', projKey, '知识');
+    if (fs.existsSync(knowDir)) {
+      for (const f of listL3Files(knowDir)) out.push({ full: f.full, rel: `projects/${projKey}/知识/${f.rel}` });
     }
   }
   return out;
@@ -191,8 +194,10 @@ function listAllMemories(L3Root) {
     let es; try { es = fs.readdirSync(projsDir, { withFileTypes: true }); } catch { return out; }
     for (const e of es) {
       if (!e.isDirectory() || e.name.startsWith('.')) continue;
-      const pdir = path.join(projsDir, e.name);
-      for (const f of listL3Files(pdir)) out.push({ full: f.full, rel: `projects/${e.name}/${f.rel}` });
+      // 只扫「知识」结晶区，排除项目根的导航卡/记忆档案（同 listMemoryCandidates 口径，2026-09-11）
+      const knowDir = path.join(projsDir, e.name, '知识');
+      if (!fs.existsSync(knowDir)) continue;
+      for (const f of listL3Files(knowDir)) out.push({ full: f.full, rel: `projects/${e.name}/知识/${f.rel}` });
     }
   }
   return out;

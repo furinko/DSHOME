@@ -1,7 +1,7 @@
 // scripts/mind-audit.mjs — 心智生长哲学底座·组件C：离线漏查审计（观测器）
 // 目标：批量审计「该查没查」——会话里用户问题命中 L3 已有记忆主题，但 agent
 //       在那一轮没有做任何记忆/权威源检索（mind-prime / /api/mind/search /
-//       grep mind-private L3 等）。≥2 次同主题 → 输出「意图→记忆弱路由」建议候选。
+//       grep mind-private L3 等）。≥3 次同主题 → 输出「意图→记忆弱路由」建议候选。
 // 性质：观测器，离线跑；不拦 commit（exit 0），只产出候选；用数据长，不拍脑袋。
 //
 // 用法：
@@ -14,7 +14,7 @@
 //   b. 用户回合文本命中 ≥1 主题词 → 该回合「该查」；
 //   c. 查证证据 = 同一回合（下一用户消息前）出现检索类行为：mind-prime 调用、
 //      /api/mind/search、grep/read 命中 mind-private/L3、读 project.md、读 L3 主题文件；
-//   d. 该查但无查证证据 → 漏查候选；同主题累计 ≥2 次 → 弱路由建议。
+//   d. 该查但无查证证据 → 漏查候选；同主题累计 ≥3 次 → 弱路由建议。
 import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -162,8 +162,10 @@ function contentTextOf(msg) {
   }
   return '';
 }
-// 只收用户真实提问：排除系统注入（AGENTS/workspace instructions）、goal/plugin 壳文本
-const SYSTEM_NOISE = /<system-reminder>|<goal_round>|<goal_blocked>|approval policy changed|Workspace instructions|system instructions/i;
+// 只收用户真实提问：排除系统注入（AGENTS/workspace instructions）、goal/plugin 壳文本，
+// 以及**心智系统自己的注入块**（R0 宪法 / 上工召回 / Skill 卡片）——它们由插件插进消息流，
+// 形似用户消息但**不是用户提问**（2026-09-11 修：此前 `命中方法论「…」` 这类卡片被当用户回合）。
+const SYSTEM_NOISE = /<system-reminder>|<goal_round>|<goal_blocked>|approval policy changed|Workspace instructions|system instructions|命中方法论「|【上工自动召回|【心智系统 · R0 运行宪法|user-rules（用户偏好|Output truncated|截断输出/i;
 function isUserTurnText(t, sourceKind) {
   if (!t || !t.trim()) return false;
   if (sourceKind && sourceKind !== 'user') return false;
@@ -171,32 +173,44 @@ function isUserTurnText(t, sourceKind) {
   if (t.length < 2 || t.length > 2000) return false;
   return true;
 }
-function extractUserTexts(events) {
-  const out = [];
-  for (const ev of events) {
+
+/** 事件流 → **回合**（以用户消息为界）。每回合 = [该用户消息 idx, 下一条用户消息 idx)，
+ *  查证证据（检索类工具调用）**按回合内**统计。
+ *  2026-09-11 修：原实现把整会话的工具调用拼成一个 blob 判 `searched`，等于"一个会话里查过一次
+ *  → 该会话所有回合都算查了" —— 判据 c 明写"同一回合"，实现却是会话级，漏查率被系统性低估（盲评实测）。 */
+function extractRounds(events) {
+  const boundaries = [];
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
     const d = ev.data;
     if (!d) continue;
     if (ev.type === 'agent/inbox/spliced' && Array.isArray(d.inserted)) {
       for (const m of d.inserted) {
         const t = contentTextOf(m);
-        if (isUserTurnText(t, m.source && m.source.kind)) out.push(t);
+        if (isUserTurnText(t, m.source && m.source.kind)) boundaries.push({ idx: i, text: t });
       }
     } else if (ev.type === 'user/message') {
       const t = contentTextOf(d);
-      if (isUserTurnText(t, 'user')) out.push(t);
+      // 按**真实** source.kind 过滤（原来硬编码 'user' → 注入卡片走此通道时不被滤）；
+      // 老格式缺 source 时按 'user' 兼容，避免漏掉真用户回合。
+      const kind = (d.source && d.source.kind) || 'user';
+      if (isUserTurnText(t, kind)) boundaries.push({ idx: i, text: t });
     }
   }
-  return out;
-}
-function extractToolEvidence(events) {
-  const ev = [];
-  for (const e of events) {
-    if (e.type === 'tool/call') {
-      const d = e.data || {};
-      ev.push({ name: d.name || d.tool || '', args: JSON.stringify(d.arguments || d.input || d).slice(0, 300) });
-    }
+  const toolAt = [];
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.type !== 'tool/call') continue;
+    const d = e.data || {};
+    toolAt.push({ idx: i, name: d.name || d.tool || '', args: JSON.stringify(d.arguments || d.input || d).slice(0, 300) });
   }
-  return ev;
+  const SEARCH_RE = /mind-prime|\/api\/mind\/search|mind-private[\\/]L3|project\.md|grep.*mind|mind.*grep|dup-check|search\?q=/i;
+  return boundaries.map((b, i) => {
+    const end = i + 1 < boundaries.length ? boundaries[i + 1].idx : events.length;
+    const inRound = toolAt.filter((t) => t.idx > b.idx && t.idx <= end);
+    const blob = inRound.map((t) => `${t.name} ${t.args}`).join('\n');
+    return { userText: b.text, tools: inRound.length, searched: SEARCH_RE.test(blob) };
+  });
 }
 
 // ── 主流程 ──────────────────────────────────────────────────────────────────
@@ -208,21 +222,18 @@ const sessionNotes = [];
 for (const f of files) {
   const events = decodeSessionFile(f.full);
   if (!events.length) continue;
-  const texts = extractUserTexts(events);
-  const tools = extractToolEvidence(events);
-  const toolBlob = tools.map((t) => `${t.name} ${t.args}`).join('\n');
-  sessionNotes.push(`会话 ${basename(f.rel)}：${texts.length} 条用户消息 / ${tools.length} 次工具调用`);
-  // 检索证据判定（任一命中即视为「查了」）
-  const searched = /mind-prime|\/api\/mind\/search|L3\/index|mind-private[\\/]L3|project\.md|grep.*mind|mind.*grep|dup-check|search\?q=/i.test(toolBlob);
-  for (const ut of texts) {
-    const low = ut.toLowerCase();
+  const rs = extractRounds(events);
+  const toolCount = rs.reduce((n, r) => n + r.tools, 0);
+  sessionNotes.push(`会话 ${basename(f.rel)}：${rs.length} 条用户消息 / ${toolCount} 次工具调用`);
+  for (const r of rs) {
+    const low = r.userText.toLowerCase();
     const hit = termList.find((t) => low.includes(t));
     if (hit) {
       rounds.push({
         session: basename(f.rel),
         term: hit,
-        userText: ut.replace(/\s+/g, ' ').slice(0, 160),
-        searched,
+        userText: r.userText.replace(/\s+/g, ' ').slice(0, 160),
+        searched: r.searched,
       });
     }
   }
