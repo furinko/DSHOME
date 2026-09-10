@@ -22,9 +22,10 @@
 //      原来 `now === baseline ? 无效 : 有效` 只看"变没变"→ 信号变坏也判"有效"（方向盲）。
 //   ③ 回测去重键从「对象名」改为「对象+信号+基线」→ 同一对象的第二次进化不再被判"已有回测，跳过"。
 //   ④ 新增 decide：人拍裁决留痕 → pending-invalid 跳过已裁决对象（原来 09-08 已人拍"留观"的条目至今仍列）。
-//   ⑤ health 口径重做：绝对条数阈值(≥15 恒亮 6 天)降为信息行；真报警改为"判效空转 / 新账判效覆盖不足 /
-//      未裁决积压 / 未回填"，并把无自动采集点的手动信号标为信息行（恒红=没报警）。
-//      覆盖率**按新账算**（BINDING_SINCE 之后；全库分母含封存旧账，按那个算阈值永远达不到=又一盏恒亮灯）。
+//   ⑤ health 口径重做：绝对条数阈值(≥15 恒亮 6 天)降为信息行；真报警改为"判效空转 / 未裁决积压 /
+//      未回填"，并把无自动采集点的手动信号标为信息行（恒红=没报警）。
+//      覆盖率**按新账算**（BINDING_SINCE 之后；全库分母含封存旧账，按那个算阈值永远达不到=又一盏恒亮灯）；
+//      且新账覆盖率**只作信息行**——多数进化天生没有可测信号，绑满 50% 不是能可靠做到的动作（判据①）。
 //   ⑥ 「快照」列不再写合成路径：log 行原来指向不存在的文件（老档案 60/68 悬空），改为解析真实快照文件，
 //      找不到就记 — 并告警提醒先 snapshot（真实快照索引另见 ↳快照 行，108/108 有效）。
 //
@@ -281,15 +282,20 @@ if (cmd === 'snapshot') {
     return d && d >= BINDING_SINCE;
   });
   const newBound = newRows.filter(isSignalBound).length;
+  const newCoverage = newRows.length ? newBound / newRows.length : 1;
   console.log('[evolve-log] 元进化自检（自主信号）:');
   console.log(`  进化记录 ${logRows} 条（近7天 ${recentRows} 条 · 另 ↳快照 ${snapRows} 行不计）· 判效覆盖 ${machineRows.length}/${logRows} = ${coverage}%（其中新账 ≥${BINDING_SINCE}：${newBound}/${newRows.length}）· 已回填 ${backfilled} 条 · 未回填 ${unwrapped} 条 · 封存 legacy-unbound ${legacyUnbound} 条(不追不洗)`);
   console.log(`  机器判 无效 ${invalidAll} / 恶化 ${worsenedAll}（未裁决 ${pending}·已人拍 ${invalidAll + worsenedAll - pending}）· 自评回填 ${selfInvalid} 条`);
   const manualMetrics = KNOWN_METRICS.filter((k) => !AUTO_COLLECTED.includes(k));
   console.log(`  ℹ️ 信号：${KNOWN_METRICS.map((k) => `${k}=${m[k] || 0}${AUTO_COLLECTED.includes(k) ? '' : '(人工)'}`).join(' · ')}`);
   console.log(`  ℹ️ 无自动采集点（人工记账·不参与报警）：${manualMetrics.join(', ')}——2026-09-10 定案：这类事件无机器可测信号（只能自报），故只作信息行；发生当下 bump 一笔即可（依据见 limits.md）`);
+  // 新账覆盖率只作信息行（2026-09-10 自检，判据①"报警必须能熄灭"）：大量进化（文档/UX/结构类）
+  // **天生没有可测信号**，"绑满 50%"不是能可靠做到的动作 → 当 ⚠️ 会退化成又一盏恒亮灯。⚠️ 只留"判效空转"。
+  if (newRows.length && newCoverage < 0.5) {
+    console.log(`  ℹ️ 新账判效覆盖 ${newBound}/${newRows.length}（<50%）——多数进化天生无信号，绑得上的就绑，绑不上属正常（不报警）`);
+  }
   let hit = false;
   if (machineRows.length === 0 && logRows >= 8) { console.log('  ⚠️ 判效空转：一条信号绑定都没有 → 机器判效形同虚设，改自我类文件时请绑主信号'); hit = true; }
-  else if (newRows.length >= 2 && newBound / newRows.length < 0.5) { console.log(`  ⚠️ 新账判效覆盖不足（≥${BINDING_SINCE} 的 ${newBound}/${newRows.length} < 50%）→ 新进化请绑主信号`); hit = true; }
   if (unwrapped >= 5) { console.log(`  ⚠️ 未回填 ${unwrapped} 条（≥5）→ 该回填 effect（机器判），别只记不改`); hit = true; }
   if (pending >= 2) { console.log(`  ⚠️ 未裁决 无效/恶化 ≥2（现 ${pending} 条）→ 元进化：人拍留观/回滚/改进化`); hit = true; }
   if (logRows >= 8 && (m['repeat-mistakes'] || 0) >= 2) { console.log('  ⚠️ 改得多却重复踩坑 → 审视进化是否有效'); hit = true; }

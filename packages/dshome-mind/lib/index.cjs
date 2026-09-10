@@ -11,7 +11,7 @@ const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cr
 // 用 repoRoot()（DSH_HOME 优先）定位而非相对 __dirname：发布后 dshome-mind 被实体化到
 // profiles\dshome\node_modules\dshome-mind\lib，`../../../scripts` 会指向 profiles\dshome\scripts
 // （不存在）→ MODULE_NOT_FOUND 后端崩。repoRoot() 在 dev=仓库根、安装=DSH_HOME（含 scripts）。
-const { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files, listMemoryCandidates } = require(path.join(repoRoot(), 'scripts', 'mind-search-lib.cjs'));
+const { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files, listMemoryCandidates, chunksOf } = require(path.join(repoRoot(), 'scripts', 'mind-search-lib.cjs'));
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
@@ -538,15 +538,15 @@ function dupCheck(topic, content) {
       let text = '';
       try { text = fs.readFileSync(f.full, 'utf8'); } catch { continue; }
       const body = text.replace(/^---\n[\s\S]*?\n---\n?/, '');
-      // 按 ## 条目切块（主题文件是条目合集）；无 ## 则整文件为一块
-      const sections = body.split(/\n(?=## )/).map((s) => s.trim()).filter(Boolean);
+      // 切块用共享实现（2026-09-10：原来这里自写一份"按 ## 切"的，与 searchL3 的切块口径分叉——
+      // 依据唯一：chunksOf 由 mind-search-lib.cjs 提供，两侧不再各写一份）
       let best = null;
-      for (const sec of sections) {
-        const score = jaccard(q, tokenize(sec));
-        if (!best || score > best.score) best = { score, sec };
+      for (const c of chunksOf(body)) {
+        const score = jaccard(q, tokenize(c.text));
+        if (!best || score > best.score) best = { score, sec: c.text, heading: c.heading };
       }
       if (best && best.score >= 0.12) {
-        const title = (best.sec.split('\n')[0] || '').replace(/^#+/, '').trim();
+        const title = (best.heading || (best.sec.split('\n')[0] || '')).replace(/^#+/, '').trim();
         hits.push({
           file: f.rel || path.basename(f.full),
           score: Math.round(best.score * 100),

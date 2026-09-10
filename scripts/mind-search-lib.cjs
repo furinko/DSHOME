@@ -50,6 +50,36 @@ function confidenceRank(content) {
 }
 
 /**
+ * 切块（2026-09-10 检索修复 B · **唯一实现**——searchL3 与 index.cjs dupCheck 共用，禁各自再写一份）。
+ *
+ * 病灶：原来只按 `\n(?=## )` 切，**没有小标题的记忆整篇算一块**（实测 349–874 字）→ 短查询
+ * （「事务门禁」「payload 漂移」）与整块的 Jaccard 被分母稀释到 minScore(3%) 以下 → **写得进、召不回**。
+ * 实测：4 个 dated lessons 短查询 5/5 未命中；带 `##` 的 toolchain.md 自召回 53%。
+ *
+ * 现在返回**多粒度块**（整节 + 该节内各段），打分取最高：
+ *   - 整节保留（不弱化"整节相关"的匹配，召回只增不减）；
+ *   - 小节内按空行分段，**标题行跟首段成一块**（标题常是结论概括），其余段落各自成块——
+ *     块越小分母越小，短语命中才浮得出来。
+ * @returns {Array<{text:string, heading:string}>} text 参与打分；heading 供展示
+ */
+function chunksOf(body) {
+  const out = [];
+  const push = (text, heading) => { const t = String(text).trim(); if (t) out.push({ text: t, heading: heading || '' }); };
+  const sections = String(body || '').split(/\n(?=## )/).map((s) => s.trim()).filter(Boolean);
+  for (const sec of sections) {
+    const lines = sec.split('\n');
+    const heading = /^#{2,3} /.test(lines[0]) ? lines.shift().replace(/^#+ /, '').trim() : '';
+    const rest = lines.join('\n').trim();
+    if (!rest) { push(heading, heading); continue; }
+    push(heading ? `## ${heading}\n${rest}` : rest, heading); // 整节
+    const paras = rest.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+    if (paras.length <= 1) continue;                          // 单段小节已是最小块
+    paras.forEach((p, i) => push(i === 0 && heading ? `## ${heading}\n${p}` : p, heading));
+  }
+  return out.length ? out : [{ text: String(body || '').trim(), heading: '' }];
+}
+
+/**
  * L3 记忆检索（§十 权威排序单一实现）。
  * @param {string} query 查询词
  * @param {Array<{full:string, rel:string}>} files 待检索文件列表（调用方遍历提供）
@@ -60,18 +90,21 @@ function confidenceRank(content) {
  */
 function searchL3(query, files, limit = 6, opts = {}) {
   const q = tokenize(query);
-  const minScore = opts.minScore ?? 0.03;
+  // minScore = 召回下限（2026-09-10 体检：原 0.03 卡在**真命中分布中间**——实测 20 条回归里
+  // 真答案的最佳块落在 2.3~2.9%，全被阈值挡在候选之外；降到 0.02 后真答案 20/20 进 top3、
+  // 平均位次 2.1、候选噪声仅 2.4→3.8；再降到 0.015 噪声涨到 5.4 且 top1 质量塌 → 0.02 为甜点）。
+  const minScore = opts.minScore ?? 0.02;
   const hits = [];
   for (const f of files) {
     let content = '';
     try { content = require('fs').readFileSync(f.full, 'utf8'); } catch { continue; }
     const rel = f.rel.replace(/^L3\/index\//, '');
     const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
-    const sections = body.split(/\n(?=## )/).map((s) => s.trim()).filter(Boolean);
+    // 多粒度切块（2026-09-10 修复 B）：整节 + 节内各段都参评，取最高分块——见 chunksOf 注释
     let best = null;
-    for (const sec of sections) {
-      const sc = jaccard(q, tokenize(sec));
-      if (!best || sc > best.score) best = { score: sc, sec };
+    for (const c of chunksOf(body)) {
+      const sc = jaccard(q, tokenize(c.text));
+      if (!best || sc > best.score) best = { score: sc, sec: c.text, heading: c.heading };
     }
     if (best && best.score >= minScore) {
       const conf = confidenceRank(content);
@@ -86,7 +119,8 @@ function searchL3(query, files, limit = 6, opts = {}) {
         importance,
         sortKey: conf * 1000 + scopeRank * 100 + importance * 10 + best.score,
         file: rel,
-        section: ((best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),
+        // 展示优先用所属小节标题（段落块不带标题行时也能标出"在哪一节"）
+        section: (best.heading || (best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),
         snippet: best.sec.replace(/\s+/g, ' ').slice(0, 160),
       });
     }
@@ -164,4 +198,4 @@ function listAllMemories(L3Root) {
   return out;
 }
 
-module.exports = { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files, listMemoryCandidates, listAllMemories };
+module.exports = { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files, listMemoryCandidates, listAllMemories, chunksOf };
