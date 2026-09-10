@@ -268,6 +268,17 @@ window.__ModuleLoader__.load({
               revoke.addEventListener("click", function () {
                 postJSON("/api/mind/approvals/revoke", { id: it.id }).then(function () { reload(); });
               });
+            } else {
+              // 2026-09-11 补（人设卡门禁真机首验的副产物）：被拒绝的记录此前在 UI 上**无处清理**——
+              // 「↺ 撤销」只对 approved 渲染，而服务端 `revokeApproval(id)` 本就按 id 通吃、不限状态，
+              // 于是每条 denied 都永久躺在 approvals.json 的已裁决区（能力存在、入口没露）。
+              // 语义分开：approved 是"收回还没被消费的授权"（撤销）；denied 无授权可收，只是清掉审计流水（清除记录）。
+              // 不做批量清空：approvals.json 是放行真源，审计流水本身有价值 —— 只给逐条的显式动作。
+              var clearBtn = el("button", "dshome-mind-gov-arch", "🗑 清除记录");
+              clearBtn.addEventListener("click", function () {
+                postJSON("/api/mind/approvals/revoke", { id: it.id }).then(function () { reload(); });
+              });
+              row.appendChild(clearBtn);
             }
             card.appendChild(row);
             govEl.appendChild(card);
