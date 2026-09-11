@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 // L3 检索共享库（§十 权威排序单一实现——F3 修复：自动召回不再走纯相似度简化版）
 const require2 = createRequire(import.meta.url);
-const { searchL3, fmValue, listMemoryCandidates } = require2('./mind-search-lib.cjs');
+const { searchL3, fmValue, listMemoryCandidates, tokenize } = require2('./mind-search-lib.cjs');
 
 const repoRoot = resolve(process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..'));
 const PRIV = join(repoRoot, 'mind-private');
@@ -172,11 +172,37 @@ function project() {
 }
 
 // ── Learn + user-rules ────────────────────────────────────────────────────
+// 2026-09-11 改造：`末尾 4 条` → **末尾 4 条（时效）+ 按当前任务检索 top3（相关）+ 限长**。
+// 动机（本机实测）：Learn 已 88 条，末尾 4 条的窗口覆盖率只有 4.5%——88 条里各自合法的教训，
+//   绝大多数**只因不长在文件末尾就永远不被看见**：窗口按"位置"选，不按"相关性"选。
+// 打分用 **query 覆盖率**（query 的 token 有多少出现在条目里）而不用 jaccard：
+//   条目平均 ~496 字、任务 query 十几字，jaccard 的分母是并集 → 天然低分，长短不对称会失真。
+// 限长 300 字：条目长短不齐，限长后"4+3 条"的总体积与旧"4 条"基本持平（实测 R1 总量 +1% 以内）。
+const LEARN_CLIP = 300;
+const LEARN_RETRIEVED = 3;
+/** 按任务 query 给 Learn 全量条目打分取 top n；要求至少命中 2 个 token，避免短 query 的假命中。 */
+function topByQuery(lines, query, n) {
+  const q = tokenize(query);
+  if (!q.size) return [];
+  const scored = [];
+  for (const line of lines) {
+    const lt = tokenize(line);
+    let hit = 0;
+    for (const t of q) if (lt.has(t)) hit++;
+    const score = hit / q.size;
+    if (hit >= 2 && score >= 0.2) scored.push({ line, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, n).map((x) => x.line);
+}
 function learn() {
   const f = join(PRIV, 'L1', 'Learn.md');
   if (!existsSync(f)) return [];
   const lines = readFileSync(f, 'utf8').split('\n').filter((l) => /^-\s*\[/.test(l));
-  return lines.slice(-4); // 最近 4 条教训
+  const recent = lines.slice(-4);                                    // 时效：最近 4 条
+  const related = topByQuery(lines, generalQuery, LEARN_RETRIEVED);  // 相关：按当前任务检索
+  const picked = [...new Set([...recent, ...related])];
+  return picked.map((l) => (l.length > LEARN_CLIP ? l.slice(0, LEARN_CLIP) + '…' : l));
 }
 function userRules() {
   const f = join(PRIV, 'L3', 'common', 'user-rules', 'rules.md');
