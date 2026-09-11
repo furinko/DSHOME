@@ -8,7 +8,7 @@
 // - 观测日志：%APPDATA%\dshome-shell\dshome-shell.log
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, Notification, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, dialog, ipcMain, net } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const { createServer } = require('node:http');
 const path = require('node:path');
@@ -419,7 +419,7 @@ async function isBackendUp() {
   const timer = setTimeout(() => controller.abort(), HEALTHCHECK_TIMEOUT_MS);
   const url = targetUrl();
   try {
-    const r = await fetch(url, { method: 'GET', signal: controller.signal });
+    const r = await net.fetch(url, { method: 'GET', signal: controller.signal });
     clearTimeout(timer);
     if (!r.ok && healthFailLogged < 3) {
       healthFailLogged += 1;
