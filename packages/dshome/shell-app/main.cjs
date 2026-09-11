@@ -36,6 +36,10 @@ const WINDOW_TITLE = 'DSHOME';
  *  都用 targetUrl()，裸 URL 会 401 → r.ok=false → 壳永远判「后端 down」并停在离线页。
  *  token 只出现在后端 stdout 的 `dsh web: <url>` 行，所以壳必须把 stdout 设为 pipe 抓它。 */
 let backendAuthUrl = null;
+/** 后端 spawn 序号：用于在日志里区分「同一次外壳启动中连续拉起的多个后端」。 */
+let backendSpawnSeq = 0;
+/** 存活探测失败只记前几次（避免每 3 秒刷屏），用于拿到「401 还是别的」这一关键事实。 */
+let healthFailLogged = 0;
 function targetUrl() {
   // 优先级：后端自报的带 token URL > dshome/shell 注入的 DSHOME_URL > 裸 URL 兜底
   return backendAuthUrl || process.env.DSHOME_URL || `http://127.0.0.1:${backendPort()}`;
@@ -210,12 +214,19 @@ function startBackend() {
   // 抓后端 stdout 的 `dsh web: <带 token URL>`：0.1.5 起根路径需一次性 token 鉴权，
   // 而壳的存活探测与窗口加载都用 targetUrl()（见 backendAuthUrl 注释）。
   // 🔴 必须消费 stdout：pipe 不读会写满管道、反把后端卡死。
-  backend.stdout?.on('data', (d) => {
-    if (backendAuthUrl) return;
+  // 🔴 只认「当前 backend」：同一次外壳启动里，离线页 retry 可能连续 spawn 多个后端；
+  //    若采纳了**已弃用进程**的 stdout，壳就拿「死后端的 token」探测 → 永远 401
+  //    → 判 down → 再 retry（2026-09-11 实景）。
+  const spawnSeq = ++backendSpawnSeq;
+  const child = backend;
+  logLine({ backend: 'spawn', seq: spawnSeq, pid: typeof child.pid === 'number' ? child.pid : null });
+  child.stdout?.on('data', (d) => {
+    if (backend !== child) return; // 已被更新的后端取代 → 忽略它的输出
     const m = /dsh web:\s*(\S+)/.exec(d.toString());
     if (!m) return;
     backendAuthUrl = m[1];
-    logLine({ backend: 'auth-url-captured' }); // 只记事件，**绝不把 token 写进日志**
+    const tokenLen = (/(?:[?&]token=)([^&\s]*)/.exec(backendAuthUrl)?.[1] ?? '').length;
+    logLine({ backend: 'auth-url-captured', seq: spawnSeq, tokenLen });
     // 若此刻已判定在线，立即切到正确 URL（此前加载的是裸 URL → 401/离线页）
     if (isOnline && window) {
       window.loadURL(targetUrl()).catch((error) => logLine({ authUrlLoadError: String(error?.message ?? error) }));
@@ -406,12 +417,22 @@ ipcMain.handle('shell:retry-backend', async () => {
 async function isBackendUp() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HEALTHCHECK_TIMEOUT_MS);
+  const url = targetUrl();
   try {
-    const r = await fetch(targetUrl(), { method: 'GET', signal: controller.signal });
+    const r = await fetch(url, { method: 'GET', signal: controller.signal });
     clearTimeout(timer);
+    if (!r.ok && healthFailLogged < 3) {
+      healthFailLogged += 1;
+      // 脱敏：只记状态码 + 本次 URL 是否带 token，**绝不记 token 值**
+      logLine({ healthcheck: { status: r.status, hasToken: url.includes('token=') } });
+    }
     return r.ok;
   } catch (e) {
     clearTimeout(timer);
+    if (healthFailLogged < 3) {
+      healthFailLogged += 1;
+      logLine({ healthcheckError: String(e?.message ?? e), hasToken: url.includes('token=') });
+    }
     return false;
   }
 }
