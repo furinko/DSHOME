@@ -40,7 +40,21 @@ function backendUrl(ctx) {
     } catch { /* fall through */ }
     return DEFAULT_PORT;
   })();
-  return `http://127.0.0.1:${port}`;
+  const base = `http://127.0.0.1:${port}`;
+  // 🔴 0.1.5 起根路径启用**一次性 token 鉴权**：裸 URL 返回 401，而 shell-app 的
+  // 存活探测（isBackendUp 的 GET）与窗口加载都用这个 URL → 壳会一直停在离线页
+  // （症状：后端明明活着，窗口却「后端未连接」）。
+  // 优先向官方 `connection` 服务要「已鉴权 URL」——与 web-app 打印 `dsh web: …?token=` 同源。
+  try {
+    const conn = ctx.get?.('connection');
+    const target = conn?.connection ?? conn;
+    const make = target?.authenticatedUrl;
+    if (typeof make === 'function') {
+      const authed = make.call(target, base);
+      if (typeof authed === 'string' && authed) return authed;
+    }
+  } catch { /* 拿不到就退回裸 URL（= 旧版行为；新版会 401，壳显示离线页） */ }
+  return base;
 }
 
 function electronPath() {

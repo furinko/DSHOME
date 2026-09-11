@@ -31,8 +31,14 @@ const ICON_FILE = path.join(__dirname, 'icon-official.png');
 const TRAY_ICON_FILE = path.join(__dirname, 'tray-official.png');
 const WINDOW_TITLE = 'DSHOME';
 
+/** 后端 stdout 打印的「带 token URL」。
+ *  0.1.5 起根路径启用一次性 token 鉴权：壳的存活探测（isBackendUp 的 GET）与窗口加载
+ *  都用 targetUrl()，裸 URL 会 401 → r.ok=false → 壳永远判「后端 down」并停在离线页。
+ *  token 只出现在后端 stdout 的 `dsh web: <url>` 行，所以壳必须把 stdout 设为 pipe 抓它。 */
+let backendAuthUrl = null;
 function targetUrl() {
-  return process.env.DSHOME_URL || `http://127.0.0.1:${backendPort()}`;
+  // 优先级：后端自报的带 token URL > dshome/shell 注入的 DSHOME_URL > 裸 URL 兜底
+  return backendAuthUrl || process.env.DSHOME_URL || `http://127.0.0.1:${backendPort()}`;
 }
 function backendPort() {
   return Number(process.env.DSHOME_PORT || DEFAULT_PORT);
@@ -176,11 +182,11 @@ function startBackend() {
   try {
     if (spec.kind === 'cmd') {
       // 开发/测试：DSHOME_BACKEND_CMD 是完整命令行（node + 参数）
-      backend = spawn(spec.cmd, { shell: true, windowsHide: true, env: spec.env, stdio: ['ignore', 'ignore', 'pipe'] });
+      backend = spawn(spec.cmd, { shell: true, windowsHide: true, env: spec.env, stdio: ['ignore', 'pipe', 'pipe'] });
     } else {
       const args = [spec.cliBin, '--profile', 'dshome', '--no-open', '--port', String(backendPort())];
       if (safeMode) args.push('--patch', SAFE_OVERLAY_FILE);
-      backend = spawn(spec.nodeExe, args, { windowsHide: true, env: spec.env, stdio: ['ignore', 'ignore', 'pipe'] });
+      backend = spawn(spec.nodeExe, args, { windowsHide: true, env: spec.env, stdio: ['ignore', 'pipe', 'pipe'] });
     }
   } catch (e) {
     logLine({ backend: 'spawn-error', error: String(e?.message ?? e) });
@@ -189,6 +195,20 @@ function startBackend() {
   }
   backend.stderr?.on('data', (d) => {
     stderrBuffer = (stderrBuffer + d.toString()).slice(-4000);
+  });
+  // 抓后端 stdout 的 `dsh web: <带 token URL>`：0.1.5 起根路径需一次性 token 鉴权，
+  // 而壳的存活探测与窗口加载都用 targetUrl()（见 backendAuthUrl 注释）。
+  // 🔴 必须消费 stdout：pipe 不读会写满管道、反把后端卡死。
+  backend.stdout?.on('data', (d) => {
+    if (backendAuthUrl) return;
+    const m = /dsh web:\s*(\S+)/.exec(d.toString());
+    if (!m) return;
+    backendAuthUrl = m[1];
+    logLine({ backend: 'auth-url-captured' }); // 只记事件，**绝不把 token 写进日志**
+    // 若此刻已判定在线，立即切到正确 URL（此前加载的是裸 URL → 401/离线页）
+    if (isOnline && window) {
+      window.loadURL(targetUrl()).catch((error) => logLine({ authUrlLoadError: String(error?.message ?? error) }));
+    }
   });
   backend.on('exit', (code, signal) => {
     logLine({ backend: 'exit', code, signal, safe: safeMode, errTail: stderrBuffer.split('\n').slice(-8).join('\n') });
