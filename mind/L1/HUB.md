@@ -1,6 +1,6 @@
 # HUB.md — 知识网络之心
 
-> 版本：1.6 | 2026-09-09 | 记忆层重构：L3 三区表（common/projects/history）替代 L3/index+Project 行；知识流动路径同步 | 1.5 | 2026-09-06 | 注入层对齐 R0：注入层=「dshome-mind-inject 运行时读 SOUL.md + AGENTS.md 双件全文注入（R0 人格宪法+运行宪法，正文=注入源，无手写摘要）+ dshome-mind-recall 动态召回」；强制层读取动作化（AGENTS §八 知识地图）
+> 版本：1.7 | 2026-09-11 | 机制名表述统一 | 1.6 | 2026-09-09 | 记忆层重构：L3 三区表（common/projects/history）替代 L3/index+Project 行；知识流动路径同步 | 1.5 | 2026-09-06 | 注入层对齐 R0：注入层=「dshome-mind-inject 运行时读 SOUL.md + AGENTS.md 双件全文注入（R0 人格宪法+运行宪法，正文=注入源，无手写摘要）+ dshome-mind-recall 动态召回」；强制层读取动作化（AGENTS §八 知识地图）
 > 加载：M 元层——维护/审计/新设备时读；不参与运行时注入（注入=R0 SOUL+AGENTS）
 > 定位：L1 中枢——心智基座的设计理念、加载规则、跨层红线
 
@@ -65,6 +65,6 @@ L2 Skill/Exp 关键词触发；L3 记忆区（common/projects/history）按需 g
 | Memory.md | 规则书 | 记忆层（common/projects/history）归档规则 |
 | Dream.md | 灵感池 | 松散点子 + 整理提醒 |
 | Learn.md | 痕迹库 | 精炼教训（💢/🤗，≤200字/条） |
-| Ritual.md | 行为规程 | 收工闭环 / 自主洗澡 / 元进化 / 行为纪律细则 / 自省判据（AGENTS 细则的家） |
+| Ritual.md | 行为规程 | 收工闭环 / 自主维护 / 元进化 / 行为纪律细则 / 自省判据（AGENTS 细则的家） |
 | Invariants.md | 闸门 | 确定性内核：不可绕过的硬约束/门禁清单（🔴/🟡 不变式）——强制层加载 |
 | Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 权威源 + 意图→概念→权威源路由表 |

@@ -1,4 +1,4 @@
-// scripts/evolve-log.mjs — 鱼鱼进化档案：快照 + 变更日志（帧号式自我记忆）
+﻿// scripts/evolve-log.mjs — 鱼鱼进化档案：快照 + 变更日志（帧号式自我记忆）
 // 模仿 CH4 的 CHANGELOG/design-status 思路：每次改"自我类"文件（AGENTS/mind 规则/技能/心智门禁）
 // 前，先快照旧版 + 记一条理由——进化有据可查、可回滚。
 //
@@ -10,6 +10,9 @@
 //   node scripts/evolve-log.mjs effect auto                                 # 机器判定全部可判（去自评）
 //   node scripts/evolve-log.mjs effect "<对象>|<观察>|<verdict>"             # 兼容自评（标 自评，非机器判）
 //   node scripts/evolve-log.mjs decide <对象> <留观|回滚|改进化> "<理由>"      # 转录【主人】对无效/恶化的裁决 → 闭环消费端
+//   node scripts/evolve-log.mjs lesson-scan                                # 教训复发扫描（Learn.md 自述复发计数 → 蒸馏阈值的数据源）
+//   node scripts/evolve-log.mjs batch <名> <file...>                       # 写前记账：批量快照 + 批次 journal（多文件改动可续跑）
+//   node scripts/evolve-log.mjs batch-status [<名>]                        # 批次进度：按 mtime 判「已改/未改」
 //   node scripts/evolve-log.mjs rollback <path> [<快照时间戳前缀>]            # 回滚到最近/指定快照（回滚前自动留档当前版本）
 //   node scripts/evolve-log.mjs rollback --list <path>                       # 列出该文件全部快照（新→旧）
 //   node scripts/evolve-log.mjs bump <信号> | metrics | health | pending-invalid
@@ -36,7 +39,7 @@
 //   机制原则：**宁可响亮失败，不要静默写坏数据**（同类教训：① 信号名静默降级）。
 //
 // 存储：mind-private/tasks/evolution/（隐私，不推送）
-import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,6 +47,7 @@ const repoRoot = resolve(process.env.DSH_HOME || join(dirname(fileURLToPath(impo
 const EVO = join(repoRoot, 'mind-private', 'tasks', 'evolution');
 const SNAP = join(EVO, 'snapshots');
 const LOG = join(EVO, 'changelog.md');
+const BATCH_DIR = join(EVO, 'batches'); // 写前记账：多文件批次 journal（2026-09-11）
 const METRICS = join(EVO, 'metrics.json');
 const ts = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
@@ -124,6 +128,13 @@ function judge(parsed) {
 }
 function judgeAndRecord(parsed) {
   if (!parsed.signal) return { skipped: true, reason: 'no-signal（legacy-unbound，不机器判）' };
+  // 2026-09-11（元进化·判据口径统一）：**人工记账信号（无自动采集点）不参与机器判效**。
+  // 其值"不变"只说明没人记账，推不出"改动无效"——直接判会造假阴性（实测 3 条：
+  // repeat-mistakes 1→1、redos 2→2 被判「无效/恶化」，实际信号根本没有采集点）。
+  // health 早已定案「这类事件只作信息行、不参与报警」（2026-09-10），本条把**判效口径**与报警口径统一。
+  if (!AUTO_COLLECTED.includes(parsed.signal)) {
+    return { skipped: true, reason: `人工记账信号${parsed.signal}（无自动采集点）→ 不参与机器判效（口径同 health 报警）` };
+  }
   const { now, verdict } = judge(parsed);
   const t = ts();
   const detail = `信号${parsed.signal} 基线${parsed.baseline}→现${now}`;
@@ -212,6 +223,60 @@ if (cmd === 'snapshot') {
   console.log(`[evolve-log] 回滚前版本已留档 → snapshots/${before}`);
   console.log(`[evolve-log] 反悔可再退：node scripts/evolve-log.mjs rollback ${target0} ${before.slice(0, 19)}`);
   console.log('[evolve-log] 下一步必做：node scripts\\mind-validate.mjs（回滚后复验，失败可再回滚）');
+} else if (cmd === 'batch') {
+  // 写前记账（2026-09-11，吸收 openhanako ②）：**多文件批次先记账再动手**。
+  // 病灶：`snapshot` 是文件级的——一次改 7 个文件中途崩，"改到哪"没有记录，只能整批退。
+  // 本命令 = 批量快照 + 写 journal（文件清单 + 每件快照名 + 起始时刻）；
+  // 配 `batch-status` 按 mtime 判「已改/未改」，崩溃后可**续跑**或**逐件回滚**（rollback <file>）。
+  const batchName = (rest[0] || '').trim();
+  const batchFiles = rest.slice(1).map((s) => s.trim()).filter(Boolean);
+  if (!batchName || !batchFiles.length) {
+    console.error('[evolve-log] 用法: batch <批次名> <file1> [file2 ...]（先记账再动手）');
+    process.exit(1);
+  }
+  const safeBatch = batchName.replace(/[\\/:*?"<>|]/g, '_');
+  const startedAt = ts();
+  mkdirSync(SNAP, { recursive: true });
+  const entries = [];
+  for (const rel of batchFiles) {
+    const abs = resolve(repoRoot, rel);
+    if (!existsSync(abs)) { console.warn(`  ⚠️ 跳过（不存在）: ${rel}`); continue; }
+    const nm = basename(abs).replace(/[\\/:*?"<>|]/g, '_');
+    const snapFile = `${startedAt}_${nm}`;
+    writeFileSync(join(SNAP, snapFile), readFileSync(abs, 'utf8'));
+    entries.push({ path: rel.replace(/\\/g, '/'), snapshot: snapFile, mtime: statSync(abs).mtime.toISOString() });
+    console.log(`  📸 ${rel} → snapshots/${snapFile}`);
+  }
+  if (!entries.length) { console.error('[evolve-log] 无有效文件，批次未建立'); process.exit(1); }
+  mkdirSync(BATCH_DIR, { recursive: true });
+  writeFileSync(join(BATCH_DIR, `${safeBatch}.json`),
+    JSON.stringify({ name: batchName, startedAt, files: entries }, null, 2), 'utf8');
+  console.log(`[evolve-log] 批次已记账: ${batchName}（${entries.length} 个文件）→ tasks/evolution/batches/${safeBatch}.json`);
+  console.log(`[evolve-log] 中断后查进度: node scripts/evolve-log.mjs batch-status ${batchName}`);
+} else if (cmd === 'batch-status') {
+  // 判「改到哪」：文件 mtime 晚于**快照时刻**即视为已改（快照存的是改前版本，故 mtime 变化＝动过）。
+  const want = (rest[0] || '').trim();
+  if (!existsSync(BATCH_DIR)) { console.log('[evolve-log] 无批次记录（batches/ 尚未创建）'); process.exit(0); }
+  const all = readdirSync(BATCH_DIR).filter((f) => f.endsWith('.json')).sort();
+  const picks = want ? all.filter((f) => f === `${want.replace(/[\\/:*?"<>|]/g, '_')}.json`) : all;
+  if (!picks.length) {
+    console.error(`[evolve-log] 未找到批次「${want}」（可用: ${all.join(', ') || '无'}）`);
+    process.exit(1);
+  }
+  for (const f of picks) {
+    const rec = JSON.parse(readFileSync(join(BATCH_DIR, f), 'utf8'));
+    console.log(`[evolve-log] 批次 ${rec.name}（${rec.startedAt} 起 · ${rec.files.length} 个文件）`);
+    let done = 0;
+    for (const e of rec.files) {
+      const abs = resolve(repoRoot, e.path);
+      if (!existsSync(abs)) { console.log(`  ❓ 已不存在  ${e.path}`); continue; }
+      const now = statSync(abs).mtime.toISOString();
+      const changed = now > e.mtime;
+      if (changed) done++;
+      console.log(`  ${changed ? '✅ 已改' : '⏳ 未改'}  ${e.path}${changed ? `  （mtime ${now.slice(11, 19)} > 快照 ${e.mtime.slice(11, 19)}）` : ''}`);
+    }
+    console.log(`  进度 ${done}/${rec.files.length}${done === rec.files.length ? ' ✅ 全部动过（可进入复核）' : ' ⏳ 中断可续跑：未改的从头做、已改的先复核'}`);
+  }
 } else if (cmd === 'log') {
   // ── 参数校验（2026-09-10 修）：参数为空 / 字段不足 / 首字段为空 → 原来会静默写一条垃圾行 `| x | | |`
   //    （实测踩到：`node scripts/evolve-log.mjs log` 无参数时直接回「已记录: x」）→ 改为报用法并拒绝写入。──
@@ -291,6 +356,30 @@ if (cmd === 'snapshot') {
   const t = ts();
   appendFileSync(LOG, `| ${t.slice(0, 10)} | ↳裁决:${obj} | ${reason || '—'} | ${verdict}(人拍) | — |\n`);
   console.log(`[evolve-log] 已记录人拍裁决: ${obj} → ${verdict}（此后 pending-invalid 不再列为待裁决）`);
+} else if (cmd === 'lesson-scan') {
+  // 教训复发扫描（2026-09-11 元进化）：给 repeat-mistakes 提供**可跑的采集点**。
+  // 背景：Memory §五 要求「同主题踩坑 ≥3 → 触发蒸馏」，但 repeat-mistakes 属人工记账信号
+  // （health 自述"无自动采集点"）→ 复发次数从来没被数过 → 阈值永不触发 → 蒸馏机制形同虚设。
+  // 口径：只数**自述复发**的条目（第N次/同类/复发/重蹈/再次），**不假装能语义判定"同主题"**。
+  const LEARN = join(repoRoot, 'mind-private', 'L1', 'Learn.md');
+  if (!existsSync(LEARN)) { console.error('[evolve-log] 找不到 Learn.md:', LEARN); process.exit(1); }
+  const learnLines = readFileSync(LEARN, 'utf8').split('\n');
+  const entries = learnLines.filter((l) => /^\s*-\s*\[20\d\d-\d\d-\d\d\]/.test(l));
+  const RELAPSE = /第\s*\d+\s*[次例]|同类|复发|重蹈|再次/;
+  const relapsed = entries.filter((l) => RELAPSE.test(l));
+  console.log(`[evolve-log] 教训复发扫描（Learn.md 共 ${entries.length} 条）`);
+  console.log(`  ↗ 自述复发 ${relapsed.length} 条（口径：第N次/同类/复发/重蹈/再次；只数自述，不做语义判定）`);
+  for (const l of relapsed) {
+    const m = /^\s*-\s*\[(20\d\d-\d\d-\d\d)\]\s*(.*)$/.exec(l);
+    const txt = (m ? m[2] : l).replace(/\*\*/g, '').trim();
+    console.log(`    [${m ? m[1] : '?'}] ${txt.slice(0, 86)}${txt.length > 86 ? '…' : ''}`);
+  }
+  if (relapsed.length >= 3) {
+    console.log('  ⚠️ 自述复发 ≥3 → 按 Memory §五 应触发**蒸馏**（同主题踩坑 ≥3 → 落 L3 / 提炼 Skill）');
+    process.exitCode = 1;
+  } else {
+    console.log('  ✅ 自述复发 <3，未到蒸馏阈值');
+  }
 } else if (cmd === 'bump') {
   const metric = (rest[0] || '').trim();
   if (!KNOWN_METRICS.includes(metric)) {
@@ -327,7 +416,7 @@ if (cmd === 'snapshot') {
     console.log('  裁决后记账：node scripts/evolve-log.mjs decide "<对象>" <留观|回滚|改进化> "<理由>"');
   }
 } else if (cmd === 'health') {
-  // 自主元进化自检：鱼鱼做事/进化中自己跑它，命中信号 → 自主触发元进化（不等收工/用户）
+  // 自主元进化：智能体做事/进化中自己跑它，命中信号 → 自主触发元进化（不等收工/用户）
   const src = existsSync(LOG) ? readFileSync(LOG, 'utf8') : '';
   const rows = src.split('\n').filter((l) => l.startsWith('|') && !l.includes('时间') && !l.startsWith('|---') && !l.startsWith('| ---'));
   const snapRows = rows.filter((l) => /\|\s*↳快照:/.test(l)).length;
@@ -365,7 +454,7 @@ if (cmd === 'snapshot') {
   });
   const newBound = newRows.filter(isSignalBound).length;
   const newCoverage = newRows.length ? newBound / newRows.length : 1;
-  console.log('[evolve-log] 元进化自检（自主信号）:');
+  console.log('[evolve-log] 元进化（自主信号）:');
   console.log(`  进化记录 ${logRows} 条（近7天 ${recentRows} 条 · 另 ↳快照 ${snapRows} 行不计）· 判效覆盖 ${machineRows.length}/${logRows} = ${coverage}%（其中新账 ≥${BINDING_SINCE}：${newBound}/${newRows.length}）· 已回填 ${backfilled} 条 · 未回填 ${unwrapped} 条 · 封存 legacy-unbound ${legacyUnbound} 条(不追不洗)`);
   console.log(`  机器判 无效 ${invalidAll} / 恶化 ${worsenedAll}（未裁决 ${pending}·已人拍 ${invalidAll + worsenedAll - pending}）· 自评回填 ${selfInvalid} 条`);
   const manualMetrics = KNOWN_METRICS.filter((k) => !AUTO_COLLECTED.includes(k));
@@ -381,12 +470,12 @@ if (cmd === 'snapshot') {
   if (unwrapped >= 5) { console.log(`  ⚠️ 未回填 ${unwrapped} 条（≥5）→ 该回填 effect（机器判），别只记不改`); hit = true; }
   if (pending >= 2) { console.log(`  ⚠️ 未裁决 无效/恶化 ≥2（现 ${pending} 条）→ 元进化：人拍留观/回滚/改进化`); hit = true; }
   if (logRows >= 8 && (m['repeat-mistakes'] || 0) >= 2) { console.log('  ⚠️ 改得多却重复踩坑 → 审视进化是否有效'); hit = true; }
-  if (!hit) console.log('  ✅ 机制健康，无需元进化');
+  if (!hit) console.log('  ✅ 机制健康，无需自省');
   // 2026-09-11 修（第四轮盲评 · C2）：本工具此前**永远 exit 0**（无任何失败路径）——
   // 典型"看起来在检查、实际不阻塞"。现在有真报警时置 exitCode=1，让调用方
   // （agent 自主巡检 / 脚本 / 未来的 hook）能感知"自检要求元进化"。
   if (hit) process.exitCode = 1;
 } else {
-  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid');
+  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid | lesson-scan | batch <名> <file...> | batch-status [<名>]');
   process.exit(1);
 }

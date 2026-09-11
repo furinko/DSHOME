@@ -15,7 +15,8 @@
 #        两者都被 apply 的 try/catch 吞成 warn，效果面正常、挂载面全坏）
 #   ④ verify-guard-decisions --allow-partial —— 门禁判定真值表（见下）
 #   ⑤ scripts/verify-safe-overlay.mjs      —— 安全模式覆盖层「CLI == 外壳」同口径（2026-09-11 加）
-#   ⑥ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
+#   ⑥ scripts/verify-scripts-run.mjs       —— 工具脚本「真跑冒烟」（2026-09-11 加；补 scripts/ 这一面）
+#   ⑦ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
 #
 # ── 逃生门 ───────────────────────────────────────────────────────────────────
 #   `git commit --no-verify`：仅在**明确知情**时用（例如正在修的正是校验器本身）。
@@ -38,7 +39,13 @@ node scripts/verify-guard-decisions.mjs --allow-partial
 #    `safe.mjs` 曾是「只解析 L3」的第二实现——崩在 L4 行（agent-teams 三包 / dsh-imagegen）
 #    时逃生通道恰好兜不住；本项锁「CLI 清单 == 外壳清单」。
 node scripts/verify-safe-overlay.mjs
-# ⑤ settings.yaml 留档（私有区，幂等去重；2026-09-11 加）。
+# ⑥ 工具脚本「真跑冒烟」（2026-09-11 加）：覆盖 scripts/ 这一面 —— `node --check` 查不出
+#    未定义标识符与 TDZ（同型已复发 2 次：mind-inject.js 的 `payload.length`、
+#    search-regression.mjs 的 `const top`，都是"语法全过、真跑才炸"）。
+#    host 插件面已由 ③ 覆盖，本项补 scripts/ 面。只跑**安全白名单**（无参=只读/自检）；
+#    有副作用的脚本（stage-payload / install-hooks / backup-settings / patch-* …）跳过并**显式打印**，不静默。
+node scripts/verify-scripts-run.mjs
+# ⑦ settings.yaml 留档（私有区，幂等去重；2026-09-11 加）。
 #    它是运行时配置、不在 git 里、DSH 启动可能整份重写 → 每次提交顺手留一档。
 #    ⚠️ 备份是辅助不是门禁：失败只告警，不阻塞提交。
 node scripts/backup-settings.mjs || echo "[pre-commit] ⚠️ settings 留档失败（不阻塞提交）"

@@ -469,10 +469,26 @@ for (const f of walk(MIND, [], 'mind').concat(extraVersionFiles)) {
 //   是🔴红线（随 git 推公开仓库即外泄），只提示不阻塞等于留个洞。要放行某处，需先从禁词表移除该词或改掉内容。
 function publicDenylistCheck() {
   const listFile = join(PRIV, 'tasks', 'private-denylist.txt');
-  if (!existsSync(listFile)) return;
+  // 2026-09-11 修（openhanako 考古 · 出厂边界）：**输入缺失必须响亮失败**，不再静默 no-op。
+  // 背景：C2 审计指出「删掉禁词表文件即整体解除」——原实现两处 `return` 让门禁在输入缺失时**假装全绿**，
+  // 而这门禁是出厂卫生的**唯一**守卫（禁词表本身在私有区、含私有名 ⇒ 二者只能同生共死）。
+  // 三分支：① 私有区在、表不在 → 本机该有却没有（被误删/未建）→ critical；
+  //         ② 私有区不在（公开克隆的正常态）→ info **显式说明"⑨ 未执行"**（不静默）；
+  //         ③ 表在、零有效词条 → 形同虚设 → critical。
+  if (!existsSync(listFile)) {
+    if (existsSync(PRIV)) {
+      issues.push({ sev: 'critical', file: '出厂卫生', msg: '⑨ 门禁输入缺失：私有区存在但 `mind-private\\tasks\\private-denylist.txt` 不在 → 出厂卫生检查**实际未执行**（C2 审计：「删一个文件即整体解除」）。请重建该表，或明确接受无此门禁' });
+    } else {
+      issues.push({ sev: 'info', file: '出厂卫生', msg: '⑨ 未执行：本机无 `mind-private/`（公开克隆的正常状态）——该门禁需在持有私有区的环境运行' });
+    }
+    return;
+  }
   const terms = readFileSync(listFile, 'utf8').split('\n')
     .map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
-  if (!terms.length) return;
+  if (!terms.length) {
+    issues.push({ sev: 'critical', file: '出厂卫生', msg: '⑨ 门禁输入为空：禁词表存在但**零有效词条** → 检查形同虚设（要么补词、要么删表并显式接受无此门禁）' });
+    return;
+  }
   // 扫描根 = 一切**会被推送**的目录（2026-09-11 扩面）。
   // 原来只扫 mind/scripts/packages/docs 四根 → vendor/、profile-template/、仓库根散文件、skills/
   // 全是盲区（盲评实测），而这些同样进 git。build-stage 仍由 SKIP_DIR 排除（打包产物，源在扫描面内）。

@@ -202,9 +202,33 @@ function addApprovalPending(filePath, op, content) {
   });
   writeApprovals(items);
 }
+
+/** autoApprove 开启时的**自动放行留痕**（2026-09-11 加，主人要求「可以先拦再放，但不能静默」）。
+ *  三态语义：`pending`=待人拍（拦）· `approved`=人已放行 · `auto-approved`=**开关代放，不拦但必留痕**。
+ *  ⚠️ 它**不构成授权**：`isApproved` 要求 `status==='approved' && decidedBy==='user'`，
+ *  故 auto-approved 记录不会被当成放行依据——留痕就是留痕。
+ *  用途：事后可回溯「哪些宪法/规则/门禁改动是在自动同意下过的」（P0 批次关 autoApprove 的关切正是"硬流程被整体绕过"）。 */
+function addApprovalAuto(filePath, op, content) {
+  const items = readApprovals();
+  const p = normalizePath(filePath);
+  const label = p.includes('mind/L0/') ? '宪法/人格/纪律'
+    : /\/?(HUB|Wisdom|Memory|Power|Invariants|Design-Philosophy|Ritual|Concepts)\.md$/.test(p) ? '规则/宪法/门禁'
+    : '自我类文件';
+  const snippet = String(content || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+  const what = snippet ? `；改动内容≈「${snippet}${content && String(content).length > 48 ? '…' : ''}」` : '';
+  const now = new Date().toISOString();
+  items.push({
+    id: 'ap-' + Date.now(), kind: 'action',
+    path: p, op,
+    reason: `改${label}：${p}${what}（**autoApprove 自动放行**：未逐条人拍，留痕供审计）`,
+    status: 'auto-approved',
+    requestedAt: now, decidedAt: now, decidedBy: 'autoApprove',
+  });
+  writeApprovals(items);
+}
 /**
  * 高危规则/宪法/门禁区（只有这里才真拦，需面板放行）。
- * 判据 = 改这个文件是否【改变鱼鱼的行为逻辑】。
+ * 判据 = 改这个文件是否【改变智能体的行为逻辑】。
  * 高危名单（精确到文件/模式）：
  *   mind\L0\SOUL.md / AGENTS.md                      （人格/纪律——行为宪法级）
  *   mind\L0\TOOL.md 不进高危（2026-09-06 降：只改工具操作细则，非行为逻辑；留自修改区正常放行）
@@ -302,7 +326,19 @@ const GUARDS = [
       if (inHighRiskyZone(filePath)) {
         const op = 'edit'; // write/edit 统一按 edit 粒度（区分意义不大）
         if (isApproved(filePath, op)) return undefined; // 已逐条放行 → 放行
-        if (readAutoApprove()) return undefined;        // 面板「自动同意」已开（人勾选）→ 免逐条拦；隐私红线/快照/validate 不受影响
+        if (readAutoApprove()) {
+          // 2026-09-11 修（主人要求：「可以先拦再放，但不能静默」）——原实现**直接 `return undefined`**：
+          //   高危改动**零留痕**，面板无记录、事后无法回溯"哪些宪法/规则改动没经人过目"
+          //   （P0 批次当初「关 autoApprove」的理由正是"§四 硬流程被整体绕过"，那是治标未治本）。
+          // 现在：**先记账再放行** —— 写一条 `status:'auto-approved'` 留痕（累积、可审计），
+          //   与 `pending`（待人拍）/`approved`（人已放行）三态分明。**开关代放 ≠ 没发生过。**
+          addApprovalAuto(filePath, op, _content);
+          ctx?.logger?.('dshome').warn(
+            `[mind-guard] 自我修改门禁：**自动放行**高危区改动 ${normalizePath(filePath)}` +
+            `（autoApprove 开着）——已写留痕（status=auto-approved）供审计，未逐条人拍。`
+          );
+          return undefined;
+        }
         addApprovalPending(filePath, op, _content); // 未放行 → 追加待裁决（带改动内容摘要）供面板
         const p = normalizePath(filePath);
         const label = p.includes('mind/L0/') ? '宪法/人格/纪律'

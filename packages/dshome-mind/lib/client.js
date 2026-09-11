@@ -197,7 +197,12 @@ window.__ModuleLoader__.load({
         if (!d.ok) throw new Error(d.error);
         var items = d.items || [];
         var pending = items.filter(function (x) { return x.status === "pending"; });
-        var decided = items.filter(function (x) { return x.status !== "pending"; });
+        // 2026-09-11 加（主人：「可以先拦再放，但不能静默」）：`auto-approved` = **autoApprove 开关代放**的留痕，
+        // 必须与"人裁决"**分开成栏**——语义不同（主人没逐条过目），但**必须看得见**。
+        // ⚠️ 不拆的话这里会出真 bug：下面的 chip 是 `approved ? "已放行" : "已拒绝"` 二元判断，
+        //    而 `decided` 原为 `status !== "pending"` ⇒ auto-approved 会被**错标成「已拒绝」**。
+        var autoAllowed = items.filter(function (x) { return x.status === "auto-approved"; });
+        var decided = items.filter(function (x) { return x.status !== "pending" && x.status !== "auto-approved"; });
 
         // ⚡ 自动同意（仅本人可勾选）：开启后高危改动免逐条确认——护栏直接放行（隐私红线 / 快照 / validate 不受影响）
         var aaRow = el("label");
@@ -281,6 +286,32 @@ window.__ModuleLoader__.load({
               row.appendChild(clearBtn);
             }
             card.appendChild(row);
+            govEl.appendChild(card);
+          });
+        }
+
+        // 栏3：⚡ 自动放行（开关代放 · 留痕）—— 2026-09-11 加（主人：「可以先拦再放，但不能静默」）。
+        // 这一栏存在的意义：**让"没经人过目的高危改动"在面板上可见**——
+        // 原实现 autoApprove 直接放行、零留痕，事后无法回溯（P0 关 autoApprove 只是治标）。
+        // 它是**审计流水，不是授权**：故只给「🗑 清除记录」，不给「↺ 撤销」（无授权可收）。
+        if (autoAllowed.length) {
+          govEl.appendChild(el("div", "dshome-mind-gov-head",
+            "⚡ 自动放行（autoApprove 代放 · 留痕，未逐条人拍）共 " + autoAllowed.length + " 条"));
+          autoAllowed.forEach(function (it) {
+            var card = el("div", "dshome-mind-gov-card");
+            card.appendChild(govChips(["⚡ 自动放行", it.path || "", it.op || "edit"]));
+            if (it.reason) {
+              var aaLab = el("div", "dshome-mind-gov-reason", it.reason);
+              aaLab.style.margin = "2px 0 6px";
+              card.appendChild(aaLab);
+            }
+            var aaRow2 = el("div", "dshome-mind-gov-actions");
+            var aaClear = el("button", "dshome-mind-gov-arch", "🗑 清除记录");
+            aaClear.addEventListener("click", function () {
+              postJSON("/api/mind/approvals/revoke", { id: it.id }).then(function () { reload(); });
+            });
+            aaRow2.appendChild(aaClear);
+            card.appendChild(aaRow2);
             govEl.appendChild(card);
           });
         }
