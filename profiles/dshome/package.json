@@ -44,7 +44,6 @@
     "dsh-imagegen": "workspace:*",
     "dsh-input-traffic": "^0.2.9",
     "dsh-status-rotator": "0.17.2",
-    "dsh-turn-fold": "0.4.0",
     "dsh-whale-widget": "^0.2.10",
     "dshmarket": "^1.38.1",
     "dshome": "workspace:*",
@@ -65,7 +64,6 @@
         "dsh-input-traffic",
         "dsh-context",
         "dsh-better-sidebar",
-        "dsh-turn-fold",
         "dshmarket"
       ]
     }

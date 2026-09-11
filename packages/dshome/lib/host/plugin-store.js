@@ -115,7 +115,6 @@ const DESC_CN = {
   '@nanmicoder/dsh-agent-teams': '多agent团队协作（AgentTeams，社区插件）',
   'dsh-status-rotator': '回合状态轮播（"Deep diving…" 换成打字机动画彩虹渐变梗文案，JSON 可配）',
   'dsh-input-traffic': '回合输入流量管理：三级计划队列（now/next/later）、拖拽排序、插话/打断、并发保护与批量清空',
-  'dsh-turn-fold': '回合折叠栏：将工具调用 / Think 段自动折叠为步骤记录栏，回合后收敛为带实时指标（耗时 / 首字 / token / 缓存命中）的折叠记录栏，只保留总结正文；前导图标可自定义，内置动态扑克牌动画，零侵入 DSH 源码',
   'dsh-context': '上下文洞察与管理：上下文面板 + 上下文命令，透视上下文的构成与演变',
 };
 

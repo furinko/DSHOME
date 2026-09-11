@@ -208,9 +208,6 @@ importers:
       dsh-status-rotator:
         specifier: 0.17.2
         version: 0.17.2(@deepseek-ai/cordis@4.0.2)
-      dsh-turn-fold:
-        specifier: 0.4.0
-        version: 0.4.0
       dsh-whale-widget:
         specifier: ^0.2.10
         version: 0.2.10
@@ -3758,10 +3755,6 @@ packages:
     peerDependenciesMeta:
       '@deepseek-ai/cordis':
         optional: true
-
-  dsh-turn-fold@0.4.0:
-    resolution: {integrity: sha512-lAnET/mSI+723u7x2EhsFeBThZy/S14gYVZSi4BZPMKrx/jcqvM/wAIZqD8zhmXrwFyoB/VnocPBc09EieOYSg==}
-    engines: {node: '>=20.3'}
 
   dsh-whale-widget@0.2.10:
     resolution: {integrity: sha512-s/9kFqQwGnSi3hLm7Gm4slHDrHL+738D8dcCjlWAxKtrvz/hu7bjoFH44ruWEKwxS0JoTS7qQLma2g0vRvFFBw==}
@@ -8921,8 +8914,6 @@ snapshots:
   dsh-status-rotator@0.17.2(@deepseek-ai/cordis@4.0.2):
     optionalDependencies:
       '@deepseek-ai/cordis': 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
-
-  dsh-turn-fold@0.4.0: {}
 
   dsh-whale-widget@0.2.10: {}
 
