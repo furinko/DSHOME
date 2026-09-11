@@ -128,13 +128,17 @@ function listFiles(root, cap = 20000) {
   walk(root, '');
   return acc;
 }
-// mind\ 陈旧 = 出厂固件陈旧（用户拿到旧行为规则）→ FAIL；其余内容区 → WARN
+// mind\ 陈旧 = 出厂固件陈旧（用户拿到旧行为规则）→ FAIL；
+// packages\ + scripts\ 陈旧 = **会随包发出去的产品代码/工具陈旧**（2026-09-12 提为 hard：
+//   实测 payload 里两份 host 插件仍是「让 46 个会话历史加载失败」的旧 source，而它当时只算
+//   WARN 且本脚本不在任何门禁链里 ⇒ 装机版会带旧 bug 出门）→ 现在漂移即 FAIL。
+// docs\ → WARN（文档漂移没有功能后果）
 function contentDriftStatus() {
   const GROUPS = [
     { root: 'mind', hard: true },
-    { root: 'scripts', hard: false },
+    { root: 'scripts', hard: true },
     { root: 'docs', hard: false },
-    { root: 'packages', hard: false },
+    { root: 'packages', hard: true },
   ];
   const hardHits = [];
   const softHits = [];

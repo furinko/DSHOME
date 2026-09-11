@@ -16,7 +16,8 @@
 #   ④ verify-guard-decisions --allow-partial —— 门禁判定真值表（见下）
 #   ⑤ scripts/verify-safe-overlay.mjs      —— 安全模式覆盖层「CLI == 外壳」同口径（2026-09-11 加）
 #   ⑥ scripts/verify-scripts-run.mjs       —— 工具脚本「真跑冒烟」（2026-09-11 加；补 scripts/ 这一面）
-#   ⑦ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
+#   ⑦ scripts/verify-payload.mjs           —— payload 新鲜度 / 毒树 / 私有面（2026-09-12 加：打包快照不许带旧代码）
+#   ⑧ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
 #
 # ── 逃生门 ───────────────────────────────────────────────────────────────────
 #   `git commit --no-verify`：仅在**明确知情**时用（例如正在修的正是校验器本身）。
@@ -45,7 +46,13 @@ node scripts/verify-safe-overlay.mjs
 #    host 插件面已由 ③ 覆盖，本项补 scripts/ 面。只跑**安全白名单**（无参=只读/自检）；
 #    有副作用的脚本（stage-payload / install-hooks / backup-settings / patch-* …）跳过并**显式打印**，不静默。
 node scripts/verify-scripts-run.mjs
-# ⑦ settings.yaml 留档（私有区，幂等去重；2026-09-11 加）。
+# ⑦ payload 新鲜度（2026-09-12 加）：源码改了而 `build-stage/payload` 没同步 ⇒ 装机版**带旧代码出门**。
+#    实测：payload 里两份 host 插件仍是修复前 `form:'skill-hint'` 版本——正是"让 46 个会话历史加载失败"
+#    的旧 source，而该漂移当时只算 WARN、本脚本又不在任何门禁链里（两道门禁都看不见）。
+#    mind/packages/scripts 漂移即拒（docs 仍 WARN）；修复办法：先 `node scripts/stage-payload.mjs` 再提交。
+#    未 staging（payload 目录不存在）时脚本自行 exit 0 ⇒ 不拦纯开发提交。
+node scripts/verify-payload.mjs
+# ⑧ settings.yaml 留档（私有区，幂等去重；2026-09-11 加）。
 #    它是运行时配置、不在 git 里、DSH 启动可能整份重写 → 每次提交顺手留一档。
 #    ⚠️ 备份是辅助不是门禁：失败只告警，不阻塞提交。
 node scripts/backup-settings.mjs || echo "[pre-commit] ⚠️ settings 留档失败（不阻塞提交）"
