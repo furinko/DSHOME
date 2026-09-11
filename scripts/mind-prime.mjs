@@ -54,31 +54,50 @@ function walkMd(dir, out, rel = '') {
   }
   return out;
 }
-// ── 项目 key 解析（2026-09-11 修回归 → 同日二次修：加**显式映射表**）──────────
+// ── 项目 key 解析（2026-09-11：修回归 → 二次修加显式映射表 → 三次修改**祖先链就近**）──
 // Memory §十 定义「项目 key = 会话 cwd 目录名」，但本机会话 cwd（如插件开发工作区）与项目记忆目录
 // **并不总是同名** → 硬用 cwd 名会让导航卡与项目层记忆双双失联（重启后实测：进度/待办恒空、项目层 4 条记忆召不回）。
 // 首版改为「cwd 名 → 唯一项目回退」，但第四轮盲评 C1 实测指出：**那只是"库里只有 1 个项目"的侥幸** ——
 // 多项目后，cwd 不匹配的会话会读到**别的项目**的记忆（跨项目串味）。
-// 现在改为**显式优先**（声明 > 猜测）：
-//   ① `mind-private/tasks/project-cwd-map.json`（cwd 目录名 → 项目 key）—— 显式声明，优先采用；
-//   ② cwd 目录名恰好就是项目目录名 → 用它；
+// 三修动机（2026-09-11 实测）：库里已不止一个项目 → 规则③「唯一项目」恒失效；
+//   且 map 若只认 basename，子目录会话（E:\X\sub）拿不到顶层声明、DSHOME 自己的子目录（…\DSHOME\profiles）也失联。
+// 现在改为**显式优先 + 祖先链就近**（声明 > 同名 > 唯一；全程不猜，没命中就只扫 common）：
+//   ① 把 cwd 拆成祖先链（自身 → 上级 → … → 盘根），**最靠前**（= 最贴近 cwd）的、在
+//      `mind-private/tasks/project-cwd-map.json` 里被显式声明的目录胜出 → 顶层声明可被其子目录会话继承；
+//   ② 同样沿链就近找「目录名恰好就是项目目录名」的（如 …\DSHOME\profiles → DSHOME）；
 //   ③ projects 下**只有一个项目** → 用它（无歧义，且仅在无映射时）；
 //   ④ 否则空（**只扫 common 层**）—— 宁可少召回，也不跨项目串味。
 const L3_ROOT = join(PRIV, 'L3');
 const projectKey = (() => {
   const projs = join(L3_ROOT, 'projects');
-  const cand = String(taskProject || '').trim();
   const okKey = (k) => !!k && !/[/\\]/.test(k) && existsSync(join(projs, k));
-  // ① 显式映射表
-  if (cand) {
+  // cwd 祖先链（自身在前）；盘根/`.`/`..` 终止，最多 12 级兜底
+  const chain = (() => {
+    if (!projectCwd) return [];
+    const out = [];
+    let cur = resolve(projectCwd);
+    for (let i = 0; i < 12; i++) {
+      const name = basename(cur);
+      if (!name || name === '.' || name === '..') break; // 盘根（E:\ / C:\）→ 停
+      out.push(name);
+      const up = dirname(cur);
+      if (up === cur) break;
+      cur = up;
+    }
+    return out;
+  })();
+  // ① 显式映射表：整条链扫完再进 ② → 保证「声明」整体优先于「同名」猜测；链内则就近优先
+  if (chain.length) {
     try {
       const map = JSON.parse(readFileSync(join(PRIV, 'tasks', 'project-cwd-map.json'), 'utf8'));
-      const mapped = String(map[cand] || '').trim();
-      if (okKey(mapped)) return mapped;
+      for (const name of chain) {
+        const mapped = String(map[name] || '').trim();
+        if (okKey(mapped)) return mapped;
+      }
     } catch { /* 无表/坏表 → 走后续 */ }
   }
-  // ② cwd 名 == 项目目录名
-  if (okKey(cand)) return cand;
+  // ② 目录名 == 项目目录名（沿链就近）
+  for (const name of chain) if (okKey(name)) return name;
   // ③ 唯一项目（无歧义）
   try {
     const all = readdirSync(projs, { withFileTypes: true })
@@ -122,7 +141,7 @@ function search(limit2) {
 // 标题匹配容忍序号前缀与括号后缀（如「## 二、进度状态」「## 下一步（待办）」），
 // 跨设备/不同写法都能装配；todo/progress 权威源语义见 mind/L1/Concepts.md。
 function project() {
-  // 项目 key：projectKey（cwd 名 → 单项目回退，见上）；无项目 → 不注入进度块
+  // 项目 key：projectKey（cwd 祖先链就近命中「映射声明 → 同名目录」，见上）；无项目 → 不注入进度块
   if (!projectKey) return { progress: '', todos: [] };
   const f = join(PRIV, 'L3', 'projects', projectKey, 'project.md');
   if (!existsSync(f)) return { progress: '', todos: [] };

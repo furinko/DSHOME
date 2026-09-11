@@ -590,17 +590,35 @@ function todoProject(project) {
   const projs = path.join(mindPrivateDir(), 'L3', 'projects');
   const p = String(project || '').trim();
   const okKey = (k) => !!k && !/[/\\]/.test(k) && fs.existsSync(path.join(projs, k));
-  // ① 显式映射表（与 scripts/mind-prime.mjs 的 projectKey 同口径：**声明优先于猜测**；
+  // cwd 祖先链（自身在前；2026-09-11 三次修：与 scripts/mind-prime.mjs 的 projectKey 同口径——
+  // 面板 `?project=` 传的是 cwd 目录名，也可能是绝对路径；子目录会话靠顶层声明继承）
+  const chain = (() => {
+    if (!p) return [];
+    const out = [];
+    let cur = p;
+    for (let i = 0; i < 12; i++) {
+      const name = path.basename(cur);
+      if (!name || name === '.' || name === '..') break;
+      out.push(name);
+      const up = path.dirname(cur);
+      if (up === cur) break;
+      cur = up;
+    }
+    return out;
+  })();
+  // ① 显式映射表（沿链就近；与 mind-prime 同口径：**声明优先于猜测**；
   //    第四轮盲评 C1 实测：靠"唯一项目回退"在多项目时会跨项目串味）
-  if (p) {
+  if (chain.length) {
     try {
       const map = JSON.parse(fs.readFileSync(path.join(mindPrivateDir(), 'tasks', 'project-cwd-map.json'), 'utf8'));
-      const mapped = String(map[p] || '').trim();
-      if (okKey(mapped)) return mapped;
+      for (const name of chain) {
+        const mapped = String(map[name] || '').trim();
+        if (okKey(mapped)) return mapped;
+      }
     } catch { /* 无表/坏表 → 走后续 */ }
   }
-  // ② cwd/指定名恰好就是项目目录名
-  if (okKey(p)) return p;
+  // ② cwd/指定名（或其祖先目录名）恰好就是项目目录名
+  for (const name of chain) if (okKey(name)) return name;
   // ③ 唯一项目（无歧义）
   try {
     const all = fs.readdirSync(projs, { withFileTypes: true })
