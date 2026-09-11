@@ -91,7 +91,7 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
       → 强制层（R2 触发，动作见 AGENTS §八 知识地图：上工 read L1/Tree+Power 头部 + 场景查 Memory/Ritual/Invariants）
       → 查询层（L2 关键词触发 / L3 grep 按需）
 记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/pending 待放行 / mind-private/L1/Dream.md 点子）
-      → 收工闭环 7 步 → 蒸馏入 L3/通用层（轮级缓冲 soyawl 模式）
+      → 收工闭环 7 步 → 蒸馏入 L3/通用层（轮级缓冲模式）
 导入：import-artifact 技能（L2）——其他设备/agent 产物"直接丢给鱼鱼"即插即用
       （识别 → 校验 → 归类落 mind-private → 索引 → git checkpoint → 汇报）
 ```

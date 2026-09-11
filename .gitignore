@@ -41,6 +41,9 @@ evolve-workspace/
 # fish mind: private runtime half (memory/projects/learn — never push)
 mind-private/
 
+# 私有暂存区（历史资产暂存；含私有项目名/本机路径 — never push）
+/私有暂存区/
+
 # self-modification snapshots (AGENTS hard-flow working dir — never push)
 .agent-snapshot/
 
