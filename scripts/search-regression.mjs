@@ -9,7 +9,7 @@
 // 用法：node scripts/search-regression.mjs [setPath] [--topN N]
 // 退出码：0=全命中；1=有未命中（越调越差信号）；2=集文件缺失（没跑成）。
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -35,6 +35,18 @@ if (!existsSync(setPath)) {
 const set = JSON.parse(readFileSync(setPath, 'utf8'));
 const limit = topN ?? (set.topN || 6);
 const items = set.items || [];
+
+// ── 精度基线（2026-09-12 加，待办「检索**精度无声退化**」）──────────────────────
+// 起因：脚本原来的精度行把数字**硬编码**在注释里（「top1 由 5/10 → 7/10」），而 2026-09-12 实测是
+//   **5/10** —— 硬编码数字**必然过期**（语料每次增文件，排序格局就变），且该行**只报不拦**
+//   （原作者理由：「同一问题可能有多个合理答案，硬判会造恒亮灯」）。
+// 但「**绝对**阈值会恒亮」不等于「不能有门禁」：**相对基线**不会恒亮 ——
+//   「退化 = 比自己以前差」是客观事实，且基线可随改善显式更新（`--update-baseline`）。
+// 语料条数或回归条数变了 ⇒ 基线**不可比**（这时不拦，只提示重建）——那是语料变化，不是退化。
+const BASELINE = join(repoRoot, 'mind-private', 'tasks', 'regression', 'baseline.json');
+const updateBaseline = process.argv.includes('--update-baseline');
+let base = null;
+try { base = JSON.parse(readFileSync(BASELINE, 'utf8')); } catch { /* 首次：无基线 */ }
 // 记忆层重构（2026-09-09）：回归集横跨 DSHOME/通用/其它项目 → 全库候选（common + 全部项目，等价旧 L3/index 行为）
 const files = listAllMemories(join(repoRoot, 'mind-private', 'L3'));
 
@@ -58,20 +70,51 @@ for (const it of items) {
   const top1ok = !!(matched && top && top.file && normRel(top.file).includes(normRel(it.expect)));
   if (matched) hits++; else misses++;
   if (matched && !top1ok) top1off++;
-  detail.push({ id: it.id, q: it.q, expect: it.expect, ok: matched, topFile: top ? top.file : '(空)', topScore: top ? top.score : null });
+  detail.push({ id: it.id, q: it.q, expect: it.expect, ok: matched, top1ok, topFile: top ? top.file : '(空)', topScore: top ? top.score : null });
 }
 
-console.log(`\n[search-regression] 结果：命中 ${hits}/${items.length} 未命中 ${misses}`);
+console.log(`\n[search-regression] 结果：召回命中 ${hits}/${items.length}（未命中 ${misses}）· 精度 top1 正确 ${items.length - top1off}/${items.length}`);
 for (const d of detail) {
-  console.log(`  ${d.ok ? '✅' : '❌'} ${d.id}「${d.q}」→ 期望 ${d.expect}`);
-  if (!d.ok) console.log(`        top1=${d.topFile} (score=${d.topScore})`);
+  console.log(`  ${d.ok ? '✅' : '❌'} ${d.id}「${d.q}」→ 期望 ${d.expect}  ${d.top1ok ? 'top1✅' : 'top1❌'}`);
+  // 2026-09-12：明细**常打**（原来只在「未命中」时才打 top1）—— 否则"top1 错了 5 条"在输出里**看不见**，
+  // 而那正是精度退化的形态（召回全绿 + 精度悄悄掉）。
+  if (!d.ok || !d.top1ok) console.log(`        top1=${d.topFile} (score=${d.topScore})`);
 }
-console.log(`\n[search-regression] 命中率 ${Math.round((hits / items.length) * 100)}%`);
-if (top1off > 0) {
-  console.log(`[search-regression] ℹ️ 精度：${top1off}/${items.length} 条"进了 topN 但 top1 不是期望文件"——` +
-    `2026-09-11 已修排序量纲：sortKey 的相关度改**百分制**（\`score*100\`，原 \`+score\` 恒 <1 等于零权重），` +
-    `top1 由 5/10 → 7/10、召回恒 10/10。剩余几条**任何权重都救不动** ⇒ 属**匹配质量/期望合理性**问题（非排序），` +
-    `另立项查（语料仅 7 文件、回归仅 10 条，样本太小，不足以当强证据）。本行仅信息，不参与退出码。`);
+console.log(`[search-regression] 召回率 ${Math.round((hits / items.length) * 100)}%`);
+
+// ── 基线对比：**退化即 exit 1**（2026-09-12 加）───────────────────────────────
+// ⚠️ 原注释里的「top1 由 5/10 → 7/10」是**硬编码声称**，2026-09-12 实测为 **5/10** —— 已被本次移除，
+//    数字改由 `baseline.json` **机器记录**（硬编码必然过期）。
+const top1okNow = items.length - top1off;
+let regressed = false;
+if (base) {
+  const comparable = base.corpusFiles === files.length && base.items === items.length;
+  if (comparable) {
+    if (hits < base.hits) {
+      console.error(`[search-regression] ❌ **召回退化**：基线 ${base.hits}/${base.items} → 现 ${hits}/${items.length}`);
+      regressed = true;
+    }
+    if (top1okNow < base.top1ok) {
+      console.error(`[search-regression] ❌ **精度退化**：基线 top1 正确 ${base.top1ok}/${base.items} → 现 ${top1okNow}/${items.length}`);
+      regressed = true;
+    }
+    if (!regressed) console.log(`[search-regression] ✅ 不劣于基线（召回 ${hits}≥${base.hits} · 精度 ${top1okNow}≥${base.top1ok}，基线 ${base.updatedAt}）`);
+  } else {
+    console.log(`[search-regression] ℹ️ 基线**不可比**（基线 ${base.corpusFiles} 语料/${base.items} 条 → 现 ${files.length}/${items.length}）`
+      + '——语料或回归集变了，这不算"退化"；确认新数字可信后跑 `--update-baseline` 重建。');
+  }
+} else {
+  console.log('[search-regression] ℹ️ **无基线**（首次）——确认本次数字可信后跑 `--update-baseline` 建立，此后**退化即拦**。');
+}
+if (updateBaseline) {
+  mkdirSync(dirname(BASELINE), { recursive: true });
+  writeFileSync(BASELINE, JSON.stringify({
+    updatedAt: new Date().toISOString(),
+    note: '召回/精度基线。由 search-regression.mjs --update-baseline 写入；**低于本档即 exit 1**；语料数/条数变化 ⇒ 基线不可比（不拦，提示重建）。',
+    corpusFiles: files.length, items: items.length, topN: limit,
+    hits, misses, top1ok: top1okNow,
+  }, null, 2) + '\n');
+  console.log(`  📌 基线已写入 ${BASELINE}`);
 }
 
 // 救 search-hit 信号（2026-09-07）：回归命中 = 真实"检索命中"事件 → bump search-hit。
@@ -101,4 +144,6 @@ if (hits > 0) {
   }
 }
 
-process.exit(misses === 0 ? 0 : 1);
+// 退出码（2026-09-12 扩）：原来只看召回（`misses`），**精度退化完全不参与** —— 那正是
+// 「7/10 掉到 5/10 却一路 exit 0」的成因。现在召回未命中 **或** 低于基线，任一即 1。
+process.exit(misses === 0 && !regressed ? 0 : 1);

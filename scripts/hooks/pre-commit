@@ -17,7 +17,8 @@
 #   ⑤ scripts/verify-safe-overlay.mjs      —— 安全模式覆盖层「CLI == 外壳」同口径（2026-09-11 加）
 #   ⑥ scripts/verify-scripts-run.mjs       —— 工具脚本「真跑冒烟」（2026-09-11 加；补 scripts/ 这一面）
 #   ⑦ scripts/verify-payload.mjs           —— payload 新鲜度 / 毒树 / 私有面（2026-09-12 加：打包快照不许带旧代码）
-#   ⑧ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
+#   ⑧ scripts/verify-trash.mjs             —— TRASH 回收站真值表 10 例（2026-09-12 加；每例独立临时 DSH_HOME ⇒ 真仓库零触碰）
+#   ⑨ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
 #
 # ── 逃生门 ───────────────────────────────────────────────────────────────────
 #   `git commit --no-verify`：仅在**明确知情**时用（例如正在修的正是校验器本身）。
@@ -52,7 +53,13 @@ node scripts/verify-scripts-run.mjs
 #    mind/packages/scripts 漂移即拒（docs 仍 WARN）；修复办法：先 `node scripts/stage-payload.mjs` 再提交。
 #    未 staging（payload 目录不存在）时脚本自行 exit 0 ⇒ 不拦纯开发提交。
 node scripts/verify-payload.mjs
-# ⑧ settings.yaml 留档（私有区，幂等去重；2026-09-11 加）。
+# ⑧ TRASH 回收站真值表（2026-09-12 加）：建 `evolve-log trash` 时我**手工**跑过 8 项测试并抓到 1 个真 bug
+#    （缺 `--reason` 时误报"用法"而非"必须给理由"）—— 但那些测试是**一次性的**，跑完就没了。
+#    本项把它机器化：10 例（含 4 个反例），每例一个**独立临时 DSH_HOME** ⇒ 真仓库的
+#    `mind-private/TRASH/` 与 `changelog.md` 零触碰（脚本自带 `git status` 自证）。
+#    已过「测试的测试」：故意短路 `--reason` 校验 ⇒ 用例 ② 变红；还原 ⇒ 10/10 回绿（**不是恒绿测试**）。
+node scripts/verify-trash.mjs
+# ⑨ settings.yaml 留档（私有区，幂等去重；2026-09-11 加）。
 #    它是运行时配置、不在 git 里、DSH 启动可能整份重写 → 每次提交顺手留一档。
 #    ⚠️ 备份是辅助不是门禁：失败只告警，不阻塞提交。
 node scripts/backup-settings.mjs || echo "[pre-commit] ⚠️ settings 留档失败（不阻塞提交）"
