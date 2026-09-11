@@ -13,7 +13,8 @@
     "install-hooks": "node scripts/install-hooks.mjs",
     "prepare": "node scripts/install-hooks.mjs",
     "publish": "pnpm -r publish",
-    "setup": "node scripts/install-electron.mjs"
+    "setup": "node scripts/install-electron.mjs",
+    "patch:icon": "node scripts/patch-electron-icon.mjs"
   },
   "dependencies": {
     "dshome": "workspace:*"

@@ -9,6 +9,7 @@
 //     settings.yaml / .anonymous-user-id / .dshw-*.json  —— 一律不外发
 //   - junction 跳过（profiles\node_modules 自愈目录等）
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync, cpSync, lstatSync, readlinkSync, symlinkSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,18 +21,22 @@ const dst = join(src, 'build-stage', 'payload');
 const EXCLUDE_DIR_SEG = new Set([
   'node_modules', 'runtime', '.git', 'build-stage', 'mind-private',
   'sessions', 'storages', 'attachments', '.agent-snapshot', '.dsh-market',
+  '私有暂存区',   // 本机私有暂存（git 已忽略）：装了安装包的用户不该收到这里的交接记录/草稿
 ]);
 // 按文件名排除
 const EXCLUDE_FILE = new Set([
   '.credentials.yaml', 'settings.yaml', '.anonymous-user-id', '.dshw-size.json', '.dshw-usage.json',
 ]);
+// 备份垃圾（*.bak / *.bak2.0 / pnpm-lock.yaml.bak-<ts> 等）：升级/并发会话留下的副本，
+// 不该随安装包发出去（2026-09-11 实测它们每次都从仓库根被复制进 payload）。
+const EXCLUDE_BACKUP_RE = /\.bak/i;
 
 function isExcludedDir(rel) {
   const segs = rel.split(/[\\/]+/).filter(Boolean);
   return segs.some((s) => EXCLUDE_DIR_SEG.has(s));
 }
 function isExcludedFile(name) {
-  return EXCLUDE_FILE.has(name);
+  return EXCLUDE_FILE.has(name) || EXCLUDE_BACKUP_RE.test(name);
 }
 
 let copied = 0;
@@ -188,6 +193,28 @@ if (existsSync(authAgents) && (!existsSync(payloadAgents) || !readFileSync(paylo
   writeFileSync(payloadAgents, readFileSync(authAgents));
   copied += 1;
   changed.push('COPY AGENTS.md (auth←authority)');
+}
+
+// ---- Electron exe 图标补丁（2026-09-11）----------------------------------------
+// 任务栏按钮图标取「进程身份」的图标（AUMID → exe 内嵌图标），BrowserWindow.icon 管不到它；
+// payload 里的 electron.exe 是原封发行文件（内嵌 Electron 原子图标）→ 装机版任务栏会显示 Electro
+// 图标。这里补丁 + 立刻复核，失败即中止发版（宁可打包失败，不可发出错图标的包）。
+const payloadElectron = join(dst, 'node_modules', 'electron', 'dist', 'electron.exe');
+if (process.platform !== 'win32') {
+  console.warn('[stage] WARN: 非 Windows，跳过 electron.exe 图标补丁');
+} else if (!existsSync(payloadElectron)) {
+  console.warn('[stage] WARN: payload 内未找到 electron.exe，跳过图标补丁（payload 别处组装？）');
+} else {
+  const patcher = join(here, 'patch-electron-icon.mjs');
+  const p1 = spawnSync(process.execPath, [patcher, '--target', payloadElectron], { stdio: 'inherit' });
+  const p2 = p1.status === 0
+    ? spawnSync(process.execPath, [patcher, '--target', payloadElectron, '--verify-only', '--quiet'], { stdio: 'inherit' })
+    : p1;
+  if (p1.status !== 0 || p2.status !== 0) {
+    console.error('[stage] FATAL: electron.exe 图标补丁失败——装机版任务栏会显示 Electron 图标，已中止');
+    process.exit(1);
+  }
+  changed.push('PATCH node_modules/electron/dist/electron.exe (taskbar icon)');
 }
 
 console.log(`[stage] 处理完成：copy=${copied} file(s)`);

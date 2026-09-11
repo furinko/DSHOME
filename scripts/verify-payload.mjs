@@ -16,6 +16,7 @@
 //   node scripts/verify-payload.mjs --fix      # 失败时：隔离毒树 + 版本同步到单源（可逆/可审）
 //   node scripts/verify-payload.mjs --quiet    # 通过时不打印明细
 import { existsSync, lstatSync, readdirSync, renameSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONSUMERS, readCanonical, syncAll } from './version-lib.mjs';
@@ -163,6 +164,46 @@ function contentDriftStatus() {
   return { ok: true };
 }
 
+// ── 私有面残留（双区红线，2026-09-11）────────────────────────────────────────
+// stage-payload 只保证「不复制」私有区/运行时数据，不负责清理历史存量：实测 09-05 起
+// `.dshw-usage.json`（机主余额/每日用量）、`私有暂存区\`（交接记录）等一直躺在 payload 里，
+// 下次打包就会随安装包发给使用者 → 每次打包前在这里硬拦。
+const PRIVATE_PAYLOAD_NAMES = [
+  '.credentials.yaml', 'settings.yaml', '.anonymous-user-id', '.dshw-size.json', '.dshw-usage.json',
+  'mind-private', 'sessions', 'storages', 'attachments', '.agent-snapshot', '.dsh-market', '私有暂存区',
+];
+function privateLeakStatus() {
+  const hits = PRIVATE_PAYLOAD_NAMES.filter((n) => existsSync(join(payloadDir, n)));
+  let junk = [];
+  try {
+    junk = readdirSync(payloadDir, { withFileTypes: true })
+      .filter((e) => e.isFile() && /\.bak/i.test(e.name))
+      .map((e) => e.name);
+  } catch { /* payload 不可读 → 交给其它检查 */ }
+  if (hits.length) {
+    return { ok: false, msg: `payload 含私有面文件/目录（会随安装包发给使用者）：${hits.join('、')}——删除这些存量；stage-payload 只保证不复制，不负责清理` };
+  }
+  if (junk.length) {
+    return { ok: true, warn: true, msg: `payload 顶层有备份垃圾：${junk.join('、')}（建议删除，别随包发）` };
+  }
+  return { ok: true, say: true, msg: 'PASS: payload 无私有面文件 / 备份垃圾' };
+}
+
+// ── Electron exe 图标（任务栏按钮图标的真正来源，2026-09-11）─────────────────
+// 任务栏按钮图标 = 进程 exe 内嵌图标（BrowserWindow.icon 无效，实测 2026-09-11）。
+// payload 的 electron.exe 必须是打过 DSHOME 图标的版本，否则装机版任务栏显示 Electron 原子图标。
+function iconStatus() {
+  if (process.platform !== 'win32') return { ok: true, warn: true, msg: '非 Windows 平台：跳过 electron.exe 图标校验' };
+  const exe = join(payloadDir, 'node_modules', 'electron', 'dist', 'electron.exe');
+  if (!existsSync(exe)) return { ok: true };
+  const patcher = join(here, 'patch-electron-icon.mjs');
+  const r = spawnSync(process.execPath, [patcher, '--target', exe, '--verify-only', '--quiet'], { stdio: 'ignore' });
+  if (r.status !== 0) {
+    return { ok: false, msg: `payload 的 electron.exe 未带 DSHOME 图标（装机版任务栏会显示 Electron 图标）——跑 node scripts\\stage-payload.mjs，或 node scripts\\patch-electron-icon.mjs --target "${exe}"` };
+  }
+  return { ok: true, say: true, msg: 'PASS: payload electron.exe 内嵌图标 = DSHOME' };
+}
+
 function staleBackupWarn() {
   if (!existsSync(profilesDir)) return;
   for (const e of readdirSync(profilesDir)) {
@@ -173,7 +214,7 @@ function staleBackupWarn() {
 }
 
 function statuses() {
-  return [agentsStatus(), poisonStatus(), versionStatus(), contentDriftStatus()];
+  return [agentsStatus(), poisonStatus(), versionStatus(), contentDriftStatus(), privateLeakStatus(), iconStatus()];
 }
 
 function main() {
