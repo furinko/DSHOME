@@ -53,8 +53,12 @@ soul/
 # dsh-evolve usage stats sidecar (changes on every load)
 skills/.evolve-usage.json
 
-# dev launcher backups
+# 备份文件（<原名>.bak / <原名>.bak-<时间戳>）—— 勿用 git add -A 误带
+#   沿革：09-09 只枚举了「开发启动.cmd.bak-*」；09-12 同类第 2 次（shell-app/main.cjs.bak-*）漏网
+#   ⇒ 枚举必漏，改按后缀通用忽略（加前已核实：全仓 0 个被跟踪 .bak，规则零副作用）
 开发启动.cmd.bak-*
+*.bak
+*.bak-*
 
 # dshome runtime state (regenerated on boot)
 .agent-presets/
