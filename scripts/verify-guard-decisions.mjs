@@ -60,9 +60,9 @@ const CASES = [
   ['L3 记忆（生长区）', 'mind-private/L3/common/user-rules/rules.md', '中性内容', '放', 'self'],
   ['普通代码文件', 'E:/DSH/foo.txt', '中性内容', '放', 'other'],
   ['出厂区·正当讨论 token', 'mind/L1/Example.md', '记录 token 消耗教训', '放', 'privacy'],
-  ['出厂区·中文密码赋值', 'mind/L1/Example.md', '我的密码是 hunter2xyz', '拦', 'privacy'],
+  ['出厂区·中文密码赋值', 'mind/L1/Example.md', '我的密码是 hunter2xyz', '拦', 'privacy'], // cred-ok（测试真值表的示例值，非真凭据）
   ['出厂区·真凭据形态', 'mind/L1/Example.md', 'api_key: sk-abcdef123456', '拦', 'privacy'],
-  ['mind/L3 + 真凭据（factoryZone 扩面）', 'mind/L3/README.md', 'password: hunter2xyz', '拦', 'privacy'],
+  ['mind/L3 + 真凭据（factoryZone 扩面）', 'mind/L3/README.md', 'password: hunter2xyz', '拦', 'privacy'], // cred-ok（测试真值表的示例值，非真凭据）
   ['mind/Project + 真凭据（factoryZone 扩面）', 'mind/Project/README.md', '私钥: -----BEGIN RSA PRIVATE KEY', '拦', 'privacy'],
 ];
 /** autoApprove 开着时降级：只跑 privacy 类（其余会被短路，跑了也无意义）。 */

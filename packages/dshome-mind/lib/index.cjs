@@ -11,7 +11,7 @@ const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cr
 // 用 repoRoot()（DSH_HOME 优先）定位而非相对 __dirname：发布后 dshome-mind 被实体化到
 // profiles\dshome\node_modules\dshome-mind\lib，`../../../scripts` 会指向 profiles\dshome\scripts
 // （不存在）→ MODULE_NOT_FOUND 后端崩。repoRoot() 在 dev=仓库根、安装=DSH_HOME（含 scripts）。
-const { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files, listMemoryCandidates, chunksOf } = require(path.join(repoRoot(), 'scripts', 'mind-search-lib.cjs'));
+const { tokenize, jaccard, fmValue, confidenceRank, isFrozen, admitVerdict, searchL3, listL3Files, listMemoryCandidates, chunksOf } = require(path.join(repoRoot(), 'scripts', 'mind-search-lib.cjs'));
 
 const API_PREFIX = '/api/mind';
 const MAX_DEPTH = 5;
@@ -572,7 +572,10 @@ function dupCheck(topic, content, project) {
  *  不再依赖 frontmatter project 字段过滤——common 全部可调，其它项目目录不扫 → 结构上不串。 */
 function searchMind(query, limit = 6, project = '') {
   const files = listMemoryCandidates(path.join(mindPrivateDir(), 'L3'), project);
-  return searchL3(query, files, limit);
+  // 冻结位（2026-09-12）：**显式检索**绕过冻结——`/api/mind/search` 是「需现查记忆」，用户明确要查时
+  //   应当查得到。冻结的语义是"不进**默认召回**"（上工自动召回走 mind-prime，那里不传该选项 → 自动排除），
+  //   不是"查不到"；否则冻结＝记忆凭空消失，那正是灵枢「DEFER 只留痕不入队」的老毛病。
+  return searchL3(query, files, limit, { includeFrozen: true });
 }
 
 // ── 待办（project.md「下一步」区 `- [ ]` 行）───────────────────────────────
@@ -1097,7 +1100,18 @@ function makeMindRoutes() {
           if (!content) return json(res, 400, { ok: false, error: 'content required' });
           // project：当前项目 key（= cwd 目录名）——给了才纳入项目知识区查重（2026-09-11 修）
           const project = typeof body?.project === 'string' ? body.project.trim() : '';
-          json(res, 200, { ok: true, hits: dupCheck(topic, content, project) });
+          const hits = dupCheck(topic, content, project);
+          // ⑪ 写入准入裁决（2026-09-12 加，借灵枢 forgetting.py 四态，但**只算不判**）：
+          //   规则：显式优先（AGENTS §六 红线）→ 高相似度 MERGE → 其余 DEFER；**不启用 DROP**（无来源类型字段）。
+          //   ⚠️ **接线状态：本字段目前零消费端**（供 agent 读、供观测分布）——按灵枢的教训
+          //      （「没有消费端的 DEFER ＝ 静默全丢」，实测 0 篇文档），在把 DEFER 接进
+          //      `approvals.json` 待定队列**之前**，`admit` **不得**升级为硬门禁、更不得阻塞写入。
+          const admit = admitVerdict({
+            maxSimilarity: hits.length ? hits[0].score / 100 : 0,
+            importanceHint: Number(body?.importanceHint) || 0,
+            explicit: body?.explicit === true,
+          });
+          json(res, 200, { ok: true, hits, admit });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },

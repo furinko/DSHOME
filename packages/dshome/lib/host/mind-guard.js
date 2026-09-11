@@ -114,7 +114,7 @@ function contentHasSecrets(content) {
   if (!content) return false;
   const s = String(content);
   // 2026-09-11 二次修（第四轮盲评 · C1 实测）：
-  //   ① 原版只认 `KEY[:=]值` → 中文自然语言赋值漏网（实测「我的密码是 hunter2xyz」**放行**）→ 补键名与赋值符的中文形态；
+  //   ① 原版只认 `KEY[:=]值` → 中文自然语言赋值漏网（实测「我的密码是 hunter2xyz」**放行**）→ 补键名与赋值符的中文形态；  cred-ok（示例值，非真凭据）
   //   ② 原版 `\.pem\b` 会把"提到 .pem 文件"也判成凭据，而 privacy **无解除通道**（排在 self-modify 之前 return）
   //      → 误报代价过高，改为只认 **PEM 内容块**本身。
   const KEY = '(?:api[\\s_-]?key|secret|token|passwd|password|private[\\s_-]?key|access[\\s_-]?key|client[\\s_-]?secret|密码|口令|密钥|私钥|令牌)';

@@ -1,4 +1,4 @@
-﻿// scripts/evolve-log.mjs — 鱼鱼进化档案：快照 + 变更日志（帧号式自我记忆）
+// scripts/evolve-log.mjs — 鱼鱼进化档案：快照 + 变更日志（帧号式自我记忆）
 // 模仿 CH4 的 CHANGELOG/design-status 思路：每次改"自我类"文件（AGENTS/mind 规则/技能/心智门禁）
 // 前，先快照旧版 + 记一条理由——进化有据可查、可回滚。
 //
@@ -13,6 +13,10 @@
 //   node scripts/evolve-log.mjs lesson-scan                                # 教训复发扫描（Learn.md 自述复发计数 → 蒸馏阈值的数据源）
 //   node scripts/evolve-log.mjs batch <名> <file...>                       # 写前记账：批量快照 + 批次 journal（多文件改动可续跑）
 //   node scripts/evolve-log.mjs batch-status [<名>]                        # 批次进度：按 mtime 判「已改/未改」
+//   node scripts/evolve-log.mjs entry-log <file> <anchor> "<why>"          # 条目级账本：写前把该小节原文入账
+//   node scripts/evolve-log.mjs entry-mark <id|last>                       # 标记改完（记 after，启用冲突保护）
+//   node scripts/evolve-log.mjs entry-list                                 # 列账目
+//   node scripts/evolve-log.mjs entry-rollback <id|last> [--dry-run]       # 按条目回滚（回滚自身也入账）
 //   node scripts/evolve-log.mjs rollback <path> [<快照时间戳前缀>]            # 回滚到最近/指定快照（回滚前自动留档当前版本）
 //   node scripts/evolve-log.mjs rollback --list <path>                       # 列出该文件全部快照（新→旧）
 //   node scripts/evolve-log.mjs bump <信号> | metrics | health | pending-invalid
@@ -40,6 +44,7 @@
 //
 // 存储：mind-private/tasks/evolution/（隐私，不推送）
 import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, readdirSync, statSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
 import { join, basename, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +55,75 @@ const LOG = join(EVO, 'changelog.md');
 const BATCH_DIR = join(EVO, 'batches'); // 写前记账：多文件批次 journal（2026-09-11）
 const METRICS = join(EVO, 'metrics.json');
 const ts = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+// ── 条目级账本（2026-09-12 加，借灵枢 `evolution.py` 的 ledger.md 形状）──────────────
+// 与**文件级** snapshot 的分工：snapshot 记「整个文件改前版本」；本账本记「**某个锚点小节的原文**」——
+// 一次改 7 个文件里的 7 个小节，其中一节要退，不必整文件回滚。
+// **三条纪律**（抄灵枢）：① **回滚自身也入账**（撤销不可静默）② **冲突即跳过**（当前 hash ≠ after → 拒绝，防覆盖人工修改）
+//                          ③ **记录自带 not_covered**（写清本机制**不覆盖什么**）。
+// ⚠️ **独立文件** `ledger.md`，不塞 changelog.md —— 后者有既存正则解析（health/effect），混入会污染判定。
+const LEDGER = join(EVO, 'ledger.md');
+const entrySha = (s) => createHash('sha256').update(String(s), 'utf8').digest('hex').slice(0, 8);
+function entryId() {
+  const t = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDHHMMSS
+  return `evo-${t}-${randomBytes(2).toString('hex')}`;
+}
+/** 取「## <锚点>」到下一个同级（或更高级）标题之间的整段（含标题行）。
+ *  找不到返回 **null**（不返回空串）——记空段落会让回滚把内容删掉。 */
+function extractAnchor(text, anchor) {
+  const lines = String(text).split('\n');
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(#{2,6})\s+(.*)$/.exec(lines[i]);
+    if (m && m[2].trim() === anchor) { start = i; break; }
+  }
+  if (start < 0) return null;
+  const level = /^(#{2,6})/.exec(lines[start])[1].length;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    const m = /^(#{2,6})\s+/.exec(lines[i]);
+    if (m && m[1].length <= level) { end = i; break; }
+  }
+  return lines.slice(start, end).join('\n');
+}
+/** 解析账本 → [{id, rec}]。**解析失败即抛错**（不静默跳过——Invariants #14）。 */
+function readLedger() {
+  if (!existsSync(LEDGER)) return [];
+  const src = readFileSync(LEDGER, 'utf8');
+  const out = [];
+  const re = /## (evo-[0-9]{14}-[0-9a-f]{4}) · `([^`]+)`[^\n]*\n[\s\S]*?```json state\n([\s\S]*?)\n```/g;
+  let m;
+  while ((m = re.exec(src))) out.push({ id: m[1], target: m[2], rec: JSON.parse(m[3]) });
+  return out;
+}
+/** 追加一条账目（append-only；md 人可读 + 内嵌 json 机可读）。 */
+function appendLedger(rec) {
+  mkdirSync(EVO, { recursive: true });
+  const body = [
+    `## ${rec.id} · \`${rec.file}#${rec.anchor}\``,
+    `- 规律：${rec.why || '—'}`,
+    `- 动作：${rec.kind === 'entry_rollback' ? '回滚段落到 before' : rec.kind === 'entry_mark' ? '标记改后状态' : '段落替换（写前记账）'}`,
+    `- 状态：before ${rec.before ? rec.before.hash : '—'} → after ${rec.after ? rec.after.hash : '（未标记）'}`,
+    `- 来源：${rec.source || 'entry-log'} · 时间：${rec.at}`,
+    '',
+    '```json state',
+    JSON.stringify({
+      kind: rec.kind, file: rec.file, anchor: rec.anchor,
+      before: rec.before || null, after: rec.after || null,
+      writeId: rec.writeId || null, rollbackOf: rec.rollbackOf || null,
+    }, null, 2),
+    '```',
+    '',
+    '> not_covered: 本账本只管**该锚点小节的整段替换**——不覆盖正文之外的结构（frontmatter / 索引 / `_index.md` 引用）、',
+    '> 不覆盖跨节移动、不覆盖加密内容。回滚前若当前段 hash ≠ after → **拒绝并计 conflict**（防覆盖人工修改）；要强行丢弃加 `--force`。',
+    '',
+  ].join('\n');
+  const header = '# 条目级账本（entry ledger）\n\n'
+    + '> append-only（不删只增）。形状借灵枢 `evolution.py` 的 `_evolution/ledger.md`。\n'
+    + '> 用法：`entry-log <文件> <锚点> "<理由>"`（写前）→ 改 → `entry-mark <id|last>`（启用冲突保护）→ 需要时 `entry-rollback <id|last> [--dry-run] [--force]`。\n\n';
+  const prev = existsSync(LEDGER) ? readFileSync(LEDGER, 'utf8') : header;
+  writeFileSync(LEDGER, prev + body + '\n', 'utf8');
+}
 
 // 可测信号（进化关联指标）——方向很重要：up=越高越好，down=越低越好。
 // 判定读"基线→现"，朝好方向=有效、朝坏方向=恶化、没动=无效（修方向盲，2026-09-10）。
@@ -277,6 +351,85 @@ if (cmd === 'snapshot') {
     }
     console.log(`  进度 ${done}/${rec.files.length}${done === rec.files.length ? ' ✅ 全部动过（可进入复核）' : ' ⏳ 中断可续跑：未改的从头做、已改的先复核'}`);
   }
+} else if (cmd === 'entry-log') {
+  const rel = (rest[0] || '').trim();
+  const anchor = (rest[1] || '').trim();
+  const why = (rest[2] || '').trim();
+  if (!rel || !anchor) { console.error('用法: entry-log <文件相对路径> <锚点(小节标题)> "<理由>"'); process.exit(1); }
+  const abs = resolve(repoRoot, rel);
+  if (!existsSync(abs)) { console.error(`[evolve-log] 文件不存在: ${rel}`); process.exit(1); }
+  const seg = extractAnchor(readFileSync(abs, 'utf8'), anchor);
+  if (seg === null || !seg.trim()) {
+    console.error(`[evolve-log] 锚点「${anchor}」在 ${rel} 里找不到（或为空）→ **拒绝记账**（记空段落会让回滚删内容）`);
+    process.exit(1);
+  }
+  const id = entryId();
+  appendLedger({
+    id, kind: 'entry_replace', file: rel.replace(/\\/g, '/'), anchor, why,
+    at: new Date().toISOString(), source: 'entry-log',
+    before: { hash: entrySha(seg), text: seg }, after: null, writeId: `log:${id}`,
+  });
+  console.log(`[evolve-log] 已入账 ${id} → ${rel}#${anchor}（${seg.length} 字 · hash ${entrySha(seg)}）`);
+  console.log(`[evolve-log] 改完后: node scripts/evolve-log.mjs entry-mark ${id}（启用冲突保护）`);
+} else if (cmd === 'entry-mark') {
+  const id = (rest[0] || '').trim();
+  const all = readLedger();
+  const hit = id === 'last' ? all[all.length - 1] : all.find((x) => x.id === id);
+  if (!hit) { console.error(`[evolve-log] 未找到账目「${id}」（用 entry-list 看有哪些）`); process.exit(1); }
+  const abs = resolve(repoRoot, hit.rec.file);
+  const seg = existsSync(abs) ? extractAnchor(readFileSync(abs, 'utf8'), hit.rec.anchor) : null;
+  if (seg === null) { console.error(`[evolve-log] 锚点「${hit.rec.anchor}」现在找不到了 → 拒绝标记（可能被删/改名）`); process.exit(1); }
+  appendLedger({
+    ...hit.rec, id: hit.id, kind: 'entry_mark', source: 'entry-mark',
+    after: { hash: entrySha(seg), text: seg }, writeId: `mark:${hit.id}`, at: new Date().toISOString(),
+  });
+  console.log(`[evolve-log] 已标记 ${hit.id}：after hash ${entrySha(seg)}（此后当前段 ≠ 该值 → 拒绝回滚）`);
+} else if (cmd === 'entry-list') {
+  const all = readLedger();
+  console.log(`[evolve-log] 账本 ${all.length} 条 → tasks/evolution/ledger.md`);
+  for (const x of all) {
+    console.log(`  ${x.id}  [${x.rec.kind}]  ${x.rec.file}#${x.rec.anchor}  before=${x.rec.before ? x.rec.before.hash : '—'} after=${x.rec.after ? x.rec.after.hash : '—'}`);
+  }
+} else if (cmd === 'entry-rollback') {
+  const arg = (rest[0] || '').trim();
+  const dry = rest.includes('--dry-run');
+  const force = rest.includes('--force');
+  const all = readLedger();
+  const hit = arg === 'last' ? all[all.length - 1] : all.find((x) => x.id === arg);
+  if (!hit) { console.error(`[evolve-log] 未找到账目「${arg}」（用 entry-list）`); process.exit(1); }
+  if (hit.rec.kind === 'entry_rollback') {
+    console.error('[evolve-log] 拒绝回滚一条**回滚记录**（灵枢纪律：撤销不可叠撤销）');
+    process.exit(1);
+  }
+  if (!hit.rec.before) { console.error('[evolve-log] 该账目无 before 快照 → 不可回滚'); process.exit(1); }
+  const abs = resolve(repoRoot, hit.rec.file);
+  if (!existsSync(abs)) { console.error(`[evolve-log] 目标文件不存在: ${hit.rec.file}`); process.exit(1); }
+  const cur = readFileSync(abs, 'utf8');
+  const seg = extractAnchor(cur, hit.rec.anchor);
+  if (seg === null) { console.error(`[evolve-log] 锚点「${hit.rec.anchor}」找不到 → 拒绝回滚`); process.exit(1); }
+  const curHash = entrySha(seg);
+  if (curHash === hit.rec.before.hash) {
+    console.log(`[evolve-log] ⏭ 跳过：当前段 hash ${curHash} 已等于 before（无事可做 / 已回滚过）`);
+    process.exit(0);
+  }
+  if (hit.rec.after && curHash !== hit.rec.after.hash && !force) {
+    console.error(`[evolve-log] ❌ 冲突：当前段 hash ${curHash} ≠ after ${hit.rec.after.hash} → **拒绝回滚**（防覆盖后续人工修改）`);
+    console.error('[evolve-log] 确认要丢弃这些改动就加 --force。');
+    process.exit(1);
+  }
+  console.log(`[evolve-log] ${dry ? '[dry-run] ' : ''}将回滚 ${hit.id}：${hit.rec.file}#${hit.rec.anchor}`);
+  console.log(`  当前 ${curHash} → 目标 ${hit.rec.before.hash}（${hit.rec.before.text.length} 字）`);
+  if (dry) process.exit(0);
+  const next = cur.replace(seg, hit.rec.before.text);
+  if (next === cur) { console.error('[evolve-log] 替换未产生变化 → 中止（防写坏）'); process.exit(1); }
+  writeFileSync(abs, next, 'utf8');
+  appendLedger({
+    ...hit.rec, id: entryId(), kind: 'entry_rollback', source: 'entry-rollback',
+    before: { hash: curHash, text: seg }, after: hit.rec.before,
+    rollbackOf: hit.id, writeId: `rollback:${hit.id}:${hit.rec.before.hash}`, at: new Date().toISOString(),
+  });
+  console.log(`[evolve-log] ✅ 已回滚 ${hit.rec.file}#${hit.rec.anchor}（**回滚自身也入账**）`);
+  console.log('[evolve-log] 下一步必做：node scripts\\mind-validate.mjs');
 } else if (cmd === 'log') {
   // ── 参数校验（2026-09-10 修）：参数为空 / 字段不足 / 首字段为空 → 原来会静默写一条垃圾行 `| x | | |`
   //    （实测踩到：`node scripts/evolve-log.mjs log` 无参数时直接回「已记录: x」）→ 改为报用法并拒绝写入。──
@@ -476,6 +629,6 @@ if (cmd === 'snapshot') {
   // （agent 自主巡检 / 脚本 / 未来的 hook）能感知"自检要求元进化"。
   if (hit) process.exitCode = 1;
 } else {
-  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid | lesson-scan | batch <名> <file...> | batch-status [<名>]');
+  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid | lesson-scan | batch <名> <file...> | batch-status [<名>] | entry-log <file> <anchor> "<why>" | entry-mark <id|last> | entry-list | entry-rollback <id|last> [--dry-run] [--force]');
   process.exit(1);
 }

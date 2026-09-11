@@ -569,6 +569,58 @@ function publicDenylistCheck() {
 }
 publicDenylistCheck();
 
+// ⑩ 凭据 / PII 形态（2026-09-12 加，借灵枢 src/hooks.ts:67-88 的 desensitize 模式表）
+//   ⑨ 扫的是**人维护的禁词表**（私有项目名 / 个人路径）；本项扫的是**凭据与个人标识的形态**——
+//   形态可机械识别、**不依赖任何词表文件**（删不掉），正好补 ⑨「删一个文件即整体解除」的弱点。
+//   口径同 ⑨：只扫「会被推送的面」（`git ls-files --cached --others --exclude-standard`）；**无输入即响亮失败**。
+//   豁免：**同行含 `cred-ok`** → 视为"已知示例/测试值"（显式、可 grep、可审；不引入新词表）。
+//   等级：**critical**——公开面出现真凭据形态 = 随 git 推送即泄露（🔴 红线，Invariants #13）。
+//   阈值比灵枢上调（如 sk- 后 ≥16 位、Bearer ≥20 位）：它是**写入前脱敏**（误报代价=内容被替换），
+//   我是**公开面阻塞**（误报代价=门禁误拦），故宁可漏一点，也不造恒亮灯。
+const CRED_PATTERNS = [
+  { re: /\bsk-[A-Za-z0-9_-]{16,}\b/, label: 'API密钥(sk-)' },
+  { re: /\b(?:api[_-]?key|apikey|access[_-]?token|secret[_-]?key)\b\s*[:=]\s*["']?[A-Za-z0-9_-]{16,}/i, label: '密钥赋值' },
+  { re: /\b(?:password|passwd|pwd)\b\s*[:=]\s*["']?[^\s"',，。;；]{6,}/i, label: '密码赋值' },
+  { re: /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/, label: 'Bearer令牌' },
+  { re: /密码\s*[:：是]\s*[A-Za-z0-9_@#$%^&*!.-]{6,}/, label: '中文密码赋值' },
+  { re: /\b\d{17}[\dXx]\b/, label: '身份证号' },
+  { re: /\b1[3-9]\d{9}\b/, label: '手机号' },
+];
+const CRED_EXEMPT = /cred-ok/;
+const CRED_SCAN_EXT = /\.(md|mjs|cjs|js|json|txt|ya?ml|ts|tsx)$/i;
+
+function credentialLeakCheck() {
+  let face = [];
+  try {
+    const out = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    face = out.split('\0').filter(Boolean).map((p) => join(repoRoot, p));
+  } catch { face = []; }
+  const hits = [];
+  let scanned = 0;
+  for (const full of face) {
+    if (!CRED_SCAN_EXT.test(full)) continue;
+    let text = '';
+    try { text = readFileSync(full, 'utf8'); } catch { continue; }
+    scanned++;
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (CRED_EXEMPT.test(line)) continue; // 显式豁免：已知示例/测试值
+      for (const p of CRED_PATTERNS) {
+        if (p.re.exec(line)) hits.push(`${full.slice(repoRoot.length + 1).replace(/\\/g, '/')}:${i + 1}[${p.label}]`);
+      }
+    }
+  }
+  if (!scanned) {
+    issues.push({ sev: 'critical', file: '凭据/PII 形态', msg: '⑩ 扫描面无输入（0 个文件被检查）→ 该检查实际未执行（无输入即响亮失败）' });
+  }
+  if (hits.length) {
+    issues.push({ sev: 'critical', file: '凭据/PII 形态', msg: `公开面出现凭据/PII 形态 ${hits.length} 处（Invariants #13：凭据永不进出厂区）→ ${hits.slice(0, 8).join('、')}${hits.length > 8 ? ` …另 ${hits.length - 8} 处` : ''}（若确为示例/测试值，在该行加 cred-ok 标记豁免）` });
+  }
+}
+credentialLeakCheck();
+
 // 输出
 const crit = issues.filter((i) => i.sev === 'critical');
 const warn = issues.filter((i) => i.sev === 'warn');

@@ -54,6 +54,61 @@ function confidenceRank(content) {
   return 1;                             // C 待验证
 }
 
+/** 冻结位（2026-09-12 加，借灵枢"不删只冻结"）——`status: frozen` = **留库但不进默认召回**。
+ *
+ * 设计取舍（对照 Memory.md §十一「记忆重写范围」）：
+ *   · **不删、不降权、不改分**——只在候选**进入检索时**跳过；文件仍在盘上、仍可 read、仍可显式检索。
+ *   · 可逆：改一个字段就还原（比删除安全，比衰减可验证）。
+ *   · 零迁移：无该字段 = active（存量 0 个 frozen，行为零变化）。
+ *   · 动机（借灵枢评估结论）：真痛点不是"噪音多"，而是**检索分不清冷热**；
+ *     冻结即可解决，**不必有删除权**（灵枢自己也坚持"永不删节点"，4 处重复）。 */
+function isFrozen(content) {
+  return String(fmValue(content, 'status') || '').toLowerCase() === 'frozen';
+}
+
+/** 写入准入裁决（2026-09-12 加，借灵枢 `forgetting.py` 的四态，但**只取不依赖新数据的三条**）。
+ *
+ * ⚠️ **只算不判**：返回值仅用于**观测与提示**——不阻塞写入、不改任何状态、不产生副作用。
+ *    两条理由：① 借 DROP 需要"来源类型"字段（我没有），硬上会退化成"agent 自证式丢弃"；
+ *    ② 灵枢自己的教训是「**没有消费端的 DEFER ＝ 静默全丢**」（实测 0 篇 md 文档）。
+ *
+ * 三条规则（顺序即语义；第一条必须是"显式优先"）：
+ *   ① `explicit`（主人显式要求记）或 `importanceHint >= 0.7` → **ACCEPT**
+ *      —— 🔴 红线：AGENTS §六「主人说记一下 → 实时落」，**闸门不得静默违抗显式指令**；
+ *   ② 与既有记忆 `maxSimilarity >= 0.85` → **MERGE**（并入既有条目，不新增节点）；
+ *   ③ 其余 → **DEFER**（判据不足就诚实待定；**不启用 DROP**——无来源类型字段）。
+ *
+ * @returns {{verdict:'ACCEPT'|'MERGE'|'DEFER', reason:string, maxSimilarity:number, policy:string}}
+ *   `policy` 恒为 `'observe-only'`——防止未来有人误把它当硬门禁（要先有消费端）。
+ */
+function admitVerdict({ maxSimilarity = 0, importanceHint = 0, explicit = false } = {}) {
+  const pct = Math.round(maxSimilarity * 100);
+  if (explicit || importanceHint >= 0.7) {
+    return {
+      verdict: 'ACCEPT',
+      reason: explicit
+        ? '主人显式要求记（AGENTS §六：实时落，闸门不拦）'
+        : `importanceHint ${importanceHint} ≥ 0.7（高重要度直接收录）`,
+      maxSimilarity: pct,
+      policy: 'observe-only',
+    };
+  }
+  if (maxSimilarity >= 0.85) {
+    return {
+      verdict: 'MERGE',
+      reason: `与既有记忆相似度 ${pct}% ≥ 85% → 并入既有条目（不新增）`,
+      maxSimilarity: pct,
+      policy: 'observe-only',
+    };
+  }
+  return {
+    verdict: 'DEFER',
+    reason: `判据不足（最高相似度 ${pct}% < 85%；且无"来源类型 / 低熵"字段 ⇒ **不判 DROP**）→ 待定仅供观测，**不阻塞写入**`,
+    maxSimilarity: pct,
+    policy: 'observe-only',
+  };
+}
+
 /**
  * 切块（2026-09-10 检索修复 B · **唯一实现**——searchL3 与 index.cjs dupCheck 共用，禁各自再写一份）。
  *
@@ -106,6 +161,10 @@ function searchL3(query, files, limit = 6, opts = {}) {
     const rel = f.rel.replace(/^L3\/index\//, '');
     const fmRaw = (content.match(/^---\n([\s\S]*?)\n---/) || [, ''])[1];
     const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+    // 冻结位（2026-09-12）：`status: frozen` 的记忆**不进默认召回**。
+    //   放过 `opts.includeFrozen` 的**显式检索**（/api/mind/search）——用户明确要查时应当查得到；
+    //   否则冻结会变成"记忆凭空消失"，那正是灵枢「DEFER 只留痕不入队」的老毛病。
+    if (!opts.includeFrozen && isFrozen(content)) continue;
     // 多粒度切块（2026-09-10 修复 B）：整节 + 节内各段都参评，取最高分块——见 chunksOf 注释
     // 元信息块（2026-09-11 修复 C）：H1 标题 + frontmatter tags **单独成一小块**参评。
     //   病灶（实测）：`body` 去掉 frontmatter 后 tags 完全不参与打分 → 按规范写在 tags 里的关键词
@@ -238,4 +297,4 @@ function listAllMemories(L3Root) {
   return out;
 }
 
-module.exports = { tokenize, jaccard, fmValue, confidenceRank, searchL3, listL3Files, listMemoryCandidates, listAllMemories, chunksOf };
+module.exports = { tokenize, jaccard, fmValue, confidenceRank, isFrozen, admitVerdict, searchL3, listL3Files, listMemoryCandidates, listAllMemories, chunksOf };
