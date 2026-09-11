@@ -1,0 +1,29 @@
+{
+  "name": "dshome-rescue",
+  "private": true,
+  "description": "DSHOME 救援 profile：最小可启动集合——只挂引擎与 Web 界面，不挂任何自有/第三方插件。用于主 profile 起不来时打通一条能对话、能读文件、能跑命令的最小通道。",
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-base": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-web-app": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-agent-instructions": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-persona": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-fs-local": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-fs": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-fs-search": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-pwsh": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-pwsh-persistent": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-ask-user": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-todo": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-terminal": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-terminal-bash": "0.1.5-rc.2"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app"
+      ]
+    }
+  }
+}

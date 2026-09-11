@@ -1,0 +1,22 @@
+# DSHOME 救援 profile 的补丁层 —— **刻意留空**。
+#
+# ── 为什么是空的（2026-09-11）────────────────────────────────────────────────
+# 主 profile (`profiles\dshome\cordis.patch.yml`) 里有 4 条**对官方行的覆盖**
+# （web-runtime / webserver / llm-deepseek / ui-brand-official），且 config 是
+# **整体替换、不合并**。这带来一个已知的 P0 风险：
+#
+#   官方行 id 一旦改名／拆分／合并 → 覆盖**静默失效**（不报错，配置不生效），
+#   或者启动直接报错。主 profile 起不来的崩溃源，有可能就在这 4 条里
+#   ——`safe.mjs` 安全模式**管不了它们**（它只禁 dshome- 前缀的自有插件行）。
+#
+# 救援 profile 存在的意义是"在主 profile 起不来时还能起来"。如果它自己也带
+# 同样这批覆盖，就等于**把待排查的风险复制进了救援通道**。
+#
+# 所以这里刻意留空：
+#   · 不覆盖任何官方行 → 不依赖任何官方行 id
+#   · 端口 / 不开浏览器等运行参数，一律走 CLI 参数（`--port 3098 --no-open`）
+#   · 只挂 dsh-base + dsh-web-app 两个 bundle（见 package.json）
+#   · **不挂 dshome bundle** → 因而**没有 mind-guard 护栏**，救援时改文件不会被自己的门禁拦住
+#
+# 用法： node node_modules\@deepseek-ai\dsh\lib\bin.js --profile rescue --port 3098 --no-open
+[]
