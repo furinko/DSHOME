@@ -21,7 +21,8 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createUserMessage } from '@deepseek-ai/dsh-llm';
+// 经 upstream 层运行时获取（原为静态具名导入）——理由见 upstream.js 头注。
+import { createUserMessage } from './upstream.js';
 
 /** Stable Cordis plugin name (cordis.patch.yml: name dshome/mind-skill-loader). */
 export const name = 'dshome-mind-skill-loader';
@@ -149,6 +150,10 @@ export function apply(ctx) {
       return;
     }
     writeMarker(`apply: registered hook (skills=${initial.length}, lazy) @ ${new Date().toISOString()}`);
+    // 上游 createUserMessage 缺失 → Skill 卡注入停用（apply 仍成功、不拖垮宿主）；marker 留痕。
+    if (!createUserMessage) {
+      writeMarker(`apply: degraded — createUserMessage unavailable, skill hints disabled @ ${new Date().toISOString()}`);
+    }
 
     // 每会话已提示过的 Skill id（防重复刷屏）
     const hintedBySession = new Map(); // sessionKey -> Set<skillId>
@@ -160,6 +165,7 @@ export function apply(ctx) {
         if (!key || decision?.kind !== 'enter') return decision;
         if (!hintedBySession.has(key)) hintedBySession.set(key, new Set());
         const hinted = hintedBySession.get(key);
+        if (!createUserMessage) return decision; // 上游导出缺失 → 静默跳过（apply 期已留痕）
 
         // 扫"本会话全部消息"找触发词（简单可靠：命中未提示过的 Skill 就注入卡片）
         const joined = [...(messages || []), ...(decision.messages || [])].map(contentText).join('\n');

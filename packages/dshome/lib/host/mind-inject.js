@@ -23,7 +23,10 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createUserMessage } from '@deepseek-ai/dsh-llm';
+// 经 upstream 层**运行时**获取（原为静态具名导入 `from '@deepseek-ai/dsh-llm'`）：
+// 静态具名导入是 ESM 链接期错误，官方改名/移除该导出时模块根本没求值成功 →
+// 本文件 apply() 的 try/catch 一行都执行不到 → 可能拖垮整个插件树（见 upstream.js 头注）。
+import { createUserMessage } from './upstream.js';
 import { sessionKey, insertAfterClaimed } from './mind-insert.js';
 import { isMindConnected } from './mind-connect.js';
 
@@ -98,6 +101,11 @@ export function apply(ctx) {
     // 每会话只注入一次（首次 agent/pre-step 触发）。
     const injectedSessions = new Set();
     writeMarker(`apply: registered hook (read-per-session) @ ${new Date().toISOString()}`);
+    // 上游 createUserMessage 缺失（官方改名/移除）→ R0 注入停用，但 apply 仍判成功、
+    // 宿主不受影响。marker 留痕便于诊断；运行期只看 hook 内的判空，不重复写标记。
+    if (!createUserMessage) {
+      writeMarker(`apply: degraded — createUserMessage unavailable, R0 injection disabled @ ${new Date().toISOString()}`);
+    }
 
     ctx.on('agent/pre-step', async ({ agent, messages, step, signal }, next) => {
       const decision = await next();
@@ -113,6 +121,7 @@ export function apply(ctx) {
           }
           const payload = buildPayload(); // ← 现场读盘：宪法改动**下次会话即生效**
           if (!payload) return decision;
+          if (!createUserMessage) return decision; // 上游导出缺失 → 静默跳过（apply 期已留痕）
           injectedSessions.add(key);
           // marker 记录**实际注入**的长度与两件版本号（SOUL/AGENTS）——让"这次注入的是哪一版"
           // 在磁盘上可验证（旧 marker 只记 apply 时刻的长度，无法回答"注入了什么"）。

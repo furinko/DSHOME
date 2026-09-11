@@ -24,7 +24,9 @@ import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createUserMessage } from '@deepseek-ai/dsh-llm';
+// 经 upstream 层运行时获取（原为静态具名导入）——理由见 upstream.js 头注：
+// 静态具名导入若在官方新版消失会在模块链接期抛错，apply 的兜底够不着。
+import { createUserMessage } from './upstream.js';
 import { sessionKey, insertAfterClaimed } from './mind-insert.js';
 import { isMindConnected } from './mind-connect.js';
 
@@ -83,6 +85,10 @@ export function apply(ctx) {
     }
     const injectedSessions = new Set();
     writeMarker(`apply: registered hook @ ${new Date().toISOString()}`);
+    // 上游 createUserMessage 缺失 → 上工召回停用（apply 仍成功、不拖垮宿主）；marker 留痕。
+    if (!createUserMessage) {
+      writeMarker(`apply: degraded — createUserMessage unavailable, recall disabled @ ${new Date().toISOString()}`);
+    }
 
     ctx.on('agent/pre-step', async ({ agent, messages, step, signal }, next) => {
       const decision = await next();
@@ -126,6 +132,7 @@ export function apply(ctx) {
 
         // 块头由 mind-prime 首行自带（【上工自动召回 · <query>】），不再包一层同义头（A4）。
         const payload = `\n${primeText}`;
+        if (!createUserMessage) return decision; // 上游导出缺失 → 静默跳过（apply 期已留痕）
         const recallMessage = createUserMessage({
           content: [{ type: 'text', text: payload }],
           source: { kind: 'plugin', plugin: name, form: 'recall' },

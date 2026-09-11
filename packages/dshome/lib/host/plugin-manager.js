@@ -4,16 +4,20 @@
 // 启/停 = 改写 profile 的 cordis.patch.yml（id 定位 disabled）+ 重启生效。
 // 共享逻辑见 ./plugin-store.js（plugin-api 的 /api/dshome/plugins 复用同一份真相）。
 
-import z from '@deepseek-ai/schemastery';
-import { settingsNamespace } from '@deepseek-ai/dsh-settings';
+// 上游导出经 upstream 层运行时获取（原为静态导入：schemastery 的 z + dsh-settings 的 settingsNamespace）。
+// 理由见 upstream.js 头注：静态具名/默认导入是 ESM 链接期错误，官方改名即带崩整棵插件树。
+import { settingsNamespace, schemastery as z } from './upstream.js';
 import { isProtected, writeToggle, snapshot } from './plugin-store.js';
 import { setupPluginApi } from './plugin-api.js';
 
 export const name = 'dshome-plugin-manager';
 export const inject = ['loader'];
-export const PLUGIN_NS = settingsNamespace('dshome-pluginmanager');
+// 同 notify：settingsNamespace() 原样返回字符串，缺失时退回同值，避免模块求值期抛错。
+export const PLUGIN_NS = settingsNamespace ? settingsNamespace('dshome-pluginmanager') : 'dshome-pluginmanager';
 
-const SettingsSchema = z.object({ entries: z.any(), request: z.any(), result: z.any() });
+// schemastery 缺失 → 不构造 schema：本插件**设置总线**停用，但模块照常加载（不拖垮宿主）。
+// 三元短路是必须的——`z.any()` 在实参求值期就先跑，函数体里判空拦不住。
+const SettingsSchema = z ? z.object({ entries: z.any(), request: z.any(), result: z.any() }) : null;
 
 export function apply(ctx) {
   try {
@@ -21,6 +25,10 @@ export function apply(ctx) {
     setupPluginApi(ctx);
 
     ctx.inject(['settings'], (sctx) => {
+      if (!SettingsSchema) {
+        ctx.logger?.('dshome').warn('dshome-plugin-manager: schemastery 缺失 → 设置总线停用');
+        return;
+      }
       sctx.effect(() => {
         const scope = sctx.settings.register(PLUGIN_NS, SettingsSchema, { applies: 'live' });
         let lastRequest = '';

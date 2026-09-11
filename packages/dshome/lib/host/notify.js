@@ -11,8 +11,9 @@
 // 护栏（设计见历史文档，已归档）：每个服务挂载独立 try/catch，失败只记日志，
 // 绝不阻断 profile 启动；通知投递失败静默忽略。
 
-import z from "@deepseek-ai/schemastery";
-import { settingsNamespace } from "@deepseek-ai/dsh-settings";
+// 上游导出（schemastery 的 z + dsh-settings 的 settingsNamespace）经 upstream 层运行时获取。
+// 理由见 upstream.js 头注：静态导入是 ESM 链接期错误，官方改名/移除即带崩整棵插件树。
+import { settingsNamespace, schemastery as z } from './upstream.js';
 
 /** Stable Cordis plugin name (row: `name: dshome/notify`). */
 export const name = 'dshome-notify';
@@ -21,17 +22,22 @@ export const name = 'dshome-notify';
 export const inject = [];
 
 /** 通知设置命名空间（与客户端设置行共用；须匹配 `^[a-z][a-z0-9-]*$`）。 */
-export const SETTINGS_NAMESPACE = settingsNamespace('dshome');
+// settingsNamespace() 只做格式校验并**原样返回字符串**，故上游缺失时退回同值字符串：
+// 正常路径行为完全一致，且**不在模块求值期抛错**（真正的注册失败由 apply 的 try/catch 兜）。
+export const SETTINGS_NAMESPACE = settingsNamespace ? settingsNamespace('dshome') : 'dshome';
 
 /** 设置 schema：扁平对象，便于客户端 scope.set 单字段写入。 */
-export const NotifySettingsSchema = z.object({
+// schemastery 缺失（上游消失/改名）→ 不再构造 schema：本插件**设置面**停用，但模块照常
+// 加载。原静态 default 导入会在模块求值期直接抛错 → 可能带崩整棵插件树（见 upstream.js 头注）。
+// 三元短路是必须的——`z.boolean()` 在实参求值期就先跑，函数体里判空拦不住。
+export const NotifySettingsSchema = z ? z.object({
   // 通知总开关
   enabled: z.boolean().default(true),
   // 回合完成时提醒（仅在总开关开启时生效）
   notifyOnTurnCompletion: z.boolean().default(true),
-});
+}) : null;
 
-const DEFAULT_SETTINGS = NotifySettingsSchema({});
+const DEFAULT_SETTINGS = NotifySettingsSchema ? NotifySettingsSchema({}) : { enabled: true, notifyOnTurnCompletion: true };
 
 /** 壳内通知监听端口（与 shell.js 的 NOTIFY_PORT 默认一致）。 */
 const NOTIFY_PORT = Number(process.env.DSHOME_NOTIFY_PORT || 32123);
@@ -104,6 +110,10 @@ export function apply(ctx) {
   // 1) 注册 `dshome` 设置命名空间并持续跟踪其值（设置面读写同一命名空间）。
   try {
     ctx.inject(['settings'], (settingsCtx) => {
+      if (!NotifySettingsSchema) {
+        ctx.logger?.('dshome').warn('dshome-notify: schemastery 缺失 → 设置面停用（通知按默认值工作）');
+        return;
+      }
       settingsCtx.effect(() => {
         const scope = settingsCtx.settings.register(SETTINGS_NAMESPACE, NotifySettingsSchema, { applies: 'live' });
         settings = scope.get();
