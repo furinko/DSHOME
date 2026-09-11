@@ -62,15 +62,24 @@ window.__ModuleLoader__.load({
     /** 所需服务：UI 槽注册表（官方品牌同款）。 */
     const inject = ["slots"];
 
-    /** DSHOME 侧 CSS 覆盖（稳定属性选择器，升级/重装免疫）：input-traffic 插队 dock 限宽。 */
+    /** DSHOME 侧 CSS 覆盖（稳定属性选择器，升级/重装免疫）：
+     *  ① input-traffic 插队 dock 限宽；
+     *  ② 隐藏会话内容列两侧的宽度拖拽手柄——DSH 的 ConversationRoot 把它渲染在
+     *     「对话/轨迹/心智/定时」**共用**的外壳层（body 内、viewArea 之外），与当前选中哪个页签无关，
+     *     于是非对话页签也带着一个拖了没用、却会偷偷改掉对话宽度的隐形控件；全关后各页签一致
+     *     （`data-width-handle` 是官方语义属性，非打包哈希，官方重新打包也不失效）。 */
     function ensureOverrides() {
       try {
         if (typeof document === "undefined" || !document.head) return;
+        // 会话宽度恢复默认：清掉历史拖拽偏好。手柄关掉后该偏好已无法再被修改，
+        // 留着只会让对话停在旧宽度；清掉后回落 clamp(680px, 列宽*0.64, 920px)。
+        try { localStorage.removeItem("dsh.conversation.contentWidth"); } catch { /* 无 localStorage → 跳过 */ }
         if (document.querySelector("style[data-dshome-overrides]")) return;
         const tag = document.createElement("style");
         tag.setAttribute("data-dshome-overrides", "1");
         tag.textContent =
-          "div[data-steer-dock]{width:100%;max-width:780px;margin-inline:auto}";
+          "div[data-steer-dock]{width:100%;max-width:780px;margin-inline:auto}" +
+          "[data-width-handle]{display:none}";
         document.head.appendChild(tag);
       } catch (error) {
         console.warn("dshome-theme: override css failed", error);
