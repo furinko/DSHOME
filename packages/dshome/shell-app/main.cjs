@@ -14,19 +14,25 @@ const { createServer } = require('node:http');
 const path = require('node:path');
 const fs = require('node:fs');
 const updater = require('./updater.cjs');
+const safeOverlay = require('./safe-overlay.cjs');
 
 // ---- 配置 ----
 const DEFAULT_PORT = 3099;
 const POLL_MS = 3000;
 const BOOT_GRACE_MS = 15000;          // 后端启动宽限期：撑过 = 启动成功，重置失败计数
 const RESTART_DELAYS = [1000, 3000, 10000, 30000]; // 指数退避序列（ms）
-const MAX_CONSECUTIVE_FAILS = 3;      // 连续启动失败次数 → 弹窗建议安全模式
+const MAX_CONSECUTIVE_FAILS = 3;      // 连续异常退出次数 → 弹窗建议安全模式
+const STABLE_MS = 120000;             // 后端稳定存活满 2 分钟才把崩溃计数清零
+const DIALOG_MIN_INTERVAL_MS = 60000; // 两次崩溃弹窗的最小间隔（防连环弹）
 const HEALTHCHECK_TIMEOUT_MS = 4000;  // 探活超时（ms）：放宽到 4s，避免忙时一次打盹就误判离线
 const OFFLINE_REQUIRED = 3;           // 连续探活失败多少次才切离线页（防抖：单次瞬态假失败不翻页）
 const OFFLINE_FILE = path.join(__dirname, 'offline.html');
 const STATE_FILE = path.join(app.getPath('userData'), 'dshome-shell-state.json');
 const LOG_FILE = path.join(app.getPath('userData'), 'dshome-shell.log');
 const SAFE_OVERLAY_FILE = path.join(app.getPath('userData'), 'dshome-safe.yml');
+// 后端 stderr 全量滚动落盘：外壳日志此前只留最后 8 行 errTail，真崩因被截断（2026-09-11 教训）
+const STDERR_FILE = path.join(app.getPath('userData'), 'dshome-backend-stderr.log');
+const STDERR_KEEP_CHARS = 200 * 1024; // 内存里单次启动保留的最后 stderr 字符数
 const ICON_FILE = path.join(__dirname, 'icon-official.png');
 const TRAY_ICON_FILE = path.join(__dirname, 'tray-official.png');
 const WINDOW_TITLE = 'DSHOME';
@@ -90,6 +96,24 @@ function logLine(entry) {
   } catch { /* ignore */ }
 }
 
+/** 取文本最后 n 行（丢弃结尾空行），用于日志尾/弹窗详情。 */
+function tailOf(text, n) {
+  const arr = String(text ?? '').split(/\r?\n/);
+  if (arr.length && arr[arr.length - 1] === '') arr.pop();
+  return arr.slice(-n).join('\n');
+}
+
+/** 把本轮后端 stderr 全量追加到诊断文件（滚动：超 2MB 只留最后 1MB）。 */
+function dumpBackendStderr(meta) {
+  if (!stderrFull.trim()) return;
+  try {
+    fs.appendFileSync(STDERR_FILE, `\n===== ${new Date().toISOString()} ${JSON.stringify(meta)} =====\n${stderrFull}`);
+    if (fs.statSync(STDERR_FILE).size > 2 * 1024 * 1024) {
+      fs.writeFileSync(STDERR_FILE, fs.readFileSync(STDERR_FILE, 'utf8').slice(-1024 * 1024));
+    }
+  } catch (e) { logLine({ stderrDumpError: String(e?.message ?? e) }); }
+}
+
 // ---- 状态 ----
 let window = null;
 let tray = null;
@@ -104,6 +128,15 @@ let restartCount = 0;
 let restartTimer = null;
 let bootWatchTimer = null;
 let stderrBuffer = '';
+/** 本轮后端的完整 stderr（内存里截尾保留，退出时落盘）——真崩因诊断用。 */
+let stderrFull = '';
+/** 后端本轮启动时刻，用于算存活时长（区分「起不来」与「跑一会儿才崩」）。 */
+let backendStartedAt = 0;
+/** 连续异常退出计数：只要没稳定活满 STABLE_MS 就累加；这是弹窗判据（旧版用启动失败计数，
+ *  被 boot-ok 一清零 → 「能启动、随后崩」的循环永远凑不满 3 次，报错框形同消失）。 */
+let crashStreak = 0;
+/** 上次崩溃弹窗时刻（防连环弹）。 */
+let lastFailDialogAt = 0;
 // 初始安全模式：DSHOME_SAFE_MODE=1 时壳以 --patch 覆盖层禁全部自有插件启动（命令行入口/自动化测试）
 let safeMode = process.env.DSHOME_SAFE_MODE === '1';
 
@@ -115,62 +148,56 @@ function saveState(patch) {
 }
 
 // ---- 后端生命周期 ----
-// 自有插件清单从 cordis.patch.yml 动态解析（v2，2026-09-05）：
-// 静态清单曾漏掉 mind 系插件（mind/mind-inject/mind-guard/mind-recall），
-// 崩溃源是 mind 插件时安全模式兜不住 → 现以 patch 文件为准，新增插件自动纳入。
-// 定位：profDir\node_modules\dshome\cordis.patch.yml（junction→packages\dshome）；
-// spec 未解析（纯 UI 客户端）时向上遍历查找；找不到才回退静态清单并告警。
-function ownPluginIdsFromPatch() {
-  const spec = resolveBackendSpec();
-  const candidates = [];
-  if (spec && spec.profDir) candidates.push(path.join(spec.profDir, 'node_modules', 'dshome', 'cordis.patch.yml'));
-  if (spec && spec.instDir) candidates.push(path.join(spec.instDir, 'packages', 'dshome', 'cordis.patch.yml'));
-  let dir = __dirname;
-  for (let i = 0; i < 6; i++) {
-    candidates.push(path.join(dir, 'cordis.patch.yml'));
-    candidates.push(path.join(dir, '..', 'cordis.patch.yml'));
-    dir = path.dirname(dir);
-  }
-  for (const f of candidates) {
-    try {
-      if (!fs.existsSync(f)) continue;
-      const text = fs.readFileSync(f, 'utf8');
-      const ids = [];
-      for (const line of text.split(/\r?\n/)) {
-        const m = /^\s*- id:\s*(dshome[\w-]+)\s*$/.exec(line.trim());
-        if (m && !ids.includes(m[1])) ids.push(m[1]);
-      }
-      if (ids.length) return { ids, from: f };
-    } catch { /* try next */ }
-  }
-  return null;
+// 自有插件清单从 patch 各层动态解析（v3，2026-09-11）：
+// v2 只取「找到的第一个 patch 文件」→ 只覆盖 L3 产品层 15 行，L4 覆盖层后加的
+// dsh-imagegen / Agent Teams 实验包不在禁用范围（dump-config 实测证实）；
+// 现改为汇总 L3+L4 全部候选文件（纯函数在 safe-overlay.cjs，可单独 node 测试）。
+// 找不到任何 patch 层才回退静态清单并告警。
+const SAFE_FALLBACK_IDS = [
+  'dshome-core', 'dshome-shell', 'dshome-theme', 'dshome-palette', 'dshome-notify',
+  'dshome-plugin-manager', 'dshome-plugin-center', 'dshome-assistant-identity',
+  'dshome-mind', 'dshome-mind-inject', 'dshome-mind-guard', 'dshome-mind-recall',
+  'dshome-mind-connect', 'dshome-mind-skill-loader', 'dshome-desktop',
+];
+
+function safeProfileName(spec) {
+  if (!spec) return null;
+  if (spec.kind === 'install') return 'dshome';       // 安装版固定 profile 名
+  return safeOverlay.profileFromCmd(spec.cmd);        // dev：从 DSHOME_BACKEND_CMD 里取
 }
-function safeOverlayContent() {
-  const parsed = ownPluginIdsFromPatch();
-  if (parsed) {
-    return [
-      '# DSHOME safe-mode overlay: disable every own plugin row (dynamic from cordis.patch.yml).',
-      ...parsed.ids.map((id) => `- id: ${id}\n  disabled: true`),
-      '',
-    ].join('\n');
-  }
-  // 回退：找不到 patch → 静态保底清单（最后一次同步 = 13 个自有插件），并告警
-  try { logLine({ safeOverlayFallback: 'cordis.patch.yml not found, using static list' }); } catch { /* ignore */ }
-  const ids = [
-    'dshome-core', 'dshome-shell', 'dshome-theme', 'dshome-palette', 'dshome-notify',
-    'dshome-plugin-manager', 'dshome-plugin-center', 'dshome-assistant-identity',
-    'dshome-mind', 'dshome-mind-inject', 'dshome-mind-guard', 'dshome-mind-recall', 'dshome-desktop',
-  ];
-  return [
-    '# DSHOME safe-mode overlay: disable every own plugin row.',
-    ...ids.map((id) => `- id: ${id}\n  disabled: true`),
-    '',
-  ].join('\n');
+
+/** 汇总自有插件 id + 来源层；找不到层则回退静态清单。 */
+function buildSafeOverlay() {
+  const spec = resolveBackendSpec();
+  const { ids, sources } = safeOverlay.collectSafeIds({
+    shellDir: __dirname,
+    profDir: spec?.profDir ?? null,
+    instDir: spec?.instDir ?? null,
+    dshHome: process.env.DSH_HOME || null,
+    profile: safeProfileName(spec),
+  });
+  const dynamic = ids.length > 0;
+  if (!dynamic) logLine({ safeOverlayFallback: 'no patch layer found, using static list' });
+  const used = dynamic ? ids : SAFE_FALLBACK_IDS;
+  return {
+    text: safeOverlay.overlayText(used),
+    ids: used,
+    dynamic,
+    sources: sources.map((s) => s.file),
+  };
 }
 
 function writeSafeOverlay() {
-  try { fs.writeFileSync(SAFE_OVERLAY_FILE, safeOverlayContent(), 'utf8'); }
-  catch (e) { logLine({ safeOverlayError: String(e?.message ?? e) }); }
+  const built = buildSafeOverlay();
+  try {
+    fs.writeFileSync(SAFE_OVERLAY_FILE, built.text, 'utf8');
+    logLine({
+      safeOverlay: {
+        file: SAFE_OVERLAY_FILE, count: built.ids.length, dynamic: built.dynamic,
+        layers: built.sources, ids: built.ids,
+      },
+    });
+  } catch (e) { logLine({ safeOverlayError: String(e?.message ?? e) }); }
 }
 
 function startBackend() {
@@ -192,24 +219,37 @@ function startBackend() {
   // （2026-09-11 实景：日志 portKill → start → auth-url-captured → retry → 无限重复）。
   backendAuthUrl = null;
   stderrBuffer = '';
-  logLine({ backend: 'start', safe: safeMode, count: restartCount });
+  stderrFull = '';
+  logLine({ backend: 'start', safe: safeMode, count: restartCount, crashStreak });
   if (safeMode) writeSafeOverlay();
   try {
     if (spec.kind === 'cmd') {
-      // 开发/测试：DSHOME_BACKEND_CMD 是完整命令行（node + 参数）
-      backend = spawn(spec.cmd, { shell: true, windowsHide: true, env: spec.env, stdio: ['ignore', 'pipe', 'pipe'] });
+      // 开发/测试：DSHOME_BACKEND_CMD 是完整命令行（node + 参数）。
+      // 🔴 安全模式必须把 --patch 插到 launcher 旗标区（--profile 之后、app 参数之前）：
+      // 旧写法拼在末尾 → dsh 判 `unknown option '--patch'` → 后端根本起不来。
+      const cmd = safeMode ? safeOverlay.withPatchFlag(spec.cmd, SAFE_OVERLAY_FILE) : spec.cmd;
+      if (safeMode) logLine({ backend: 'spawn-cmd', patched: true, cmd });
+      backend = spawn(cmd, { shell: true, windowsHide: true, env: spec.env, stdio: ['ignore', 'pipe', 'pipe'] });
     } else {
-      const args = [spec.cliBin, '--profile', 'dshome', '--no-open', '--port', String(backendPort())];
+      // 🔴 --patch 必须排在 app 参数之前（0.1.5 实测：`--no-open --port x --patch y` = unknown option）
+      const args = [spec.cliBin, '--profile', 'dshome'];
       if (safeMode) args.push('--patch', SAFE_OVERLAY_FILE);
+      args.push('--no-open', '--port', String(backendPort()));
+      if (safeMode) logLine({ backend: 'spawn-install', patched: true, args });
       backend = spawn(spec.nodeExe, args, { windowsHide: true, env: spec.env, stdio: ['ignore', 'pipe', 'pipe'] });
     }
   } catch (e) {
     logLine({ backend: 'spawn-error', error: String(e?.message ?? e) });
     backend = null;
+    crashStreak += 1;      // spawn 直接抛异常也算一次异常退出，否则壳会静默停摆不再重启
+    scheduleRestart();
     return;
   }
+  backendStartedAt = Date.now();
   backend.stderr?.on('data', (d) => {
-    stderrBuffer = (stderrBuffer + d.toString()).slice(-4000);
+    const text = d.toString();
+    stderrBuffer = (stderrBuffer + text).slice(-4000);
+    stderrFull = (stderrFull + text).slice(-STDERR_KEEP_CHARS);
   });
   // 抓后端 stdout 的 `dsh web: <带 token URL>`：0.1.5 起根路径需一次性 token 鉴权，
   // 而壳的存活探测与窗口加载都用 targetUrl()（见 backendAuthUrl 注释）。
@@ -239,17 +279,36 @@ function startBackend() {
     }
   });
   backend.on('exit', (code, signal) => {
-    logLine({ backend: 'exit', code, signal, safe: safeMode, errTail: stderrBuffer.split('\n').slice(-8).join('\n') });
+    // 🔴 只认「当前 backend」：手动重启（stopBackend 杀老进程）时，老进程也会触发 exit；
+    //    若无条件接管状态，会把老进程误记成一次崩溃、还可能把新 backend 引用清空。
+    const isCurrent = backend === child;
+    const uptimeMs = backendStartedAt ? Date.now() - backendStartedAt : 0;
+    logLine({
+      backend: 'exit', code, signal, safe: safeMode, uptimeMs, current: isCurrent,
+      errTail: tailOf(stderrBuffer, 8),
+    });
+    dumpBackendStderr({ code, signal, safe: safeMode, uptimeMs }); // 全量 stderr 落盘（诊断真崩因）
+    if (!isCurrent) return;
     backend = null;
+    backendStartedAt = 0;
     if (quitting) return;
+    // 🔴 弹窗判据 = 「异常退出」，不是「启动失败」：活过 15s 的宽限期不代表健康，
+    //    「起得来、跑一会儿就崩」同样要计数（旧版在这里被 boot-ok 清零 → 永不弹框）。
+    if (uptimeMs >= STABLE_MS) {
+      crashStreak = 0;
+      logLine({ backend: 'crash-streak-reset', uptimeMs });
+    } else {
+      crashStreak += 1;
+      logLine({ backend: 'crash-streak', crashStreak, uptimeMs });
+    }
     scheduleRestart();
   });
-  // 启动宽限：撑过 BOOT_GRACE_MS 视为启动成功
+  // 启动宽限：撑过 BOOT_GRACE_MS 视为「进程没秒退」，仅用于重置退避计数（不再清零崩溃计数）
   clearTimeout(bootWatchTimer);
   bootWatchTimer = setTimeout(() => {
     if (backend && backend.exitCode === null) {
       restartCount = 0;
-      logLine({ backend: 'boot-ok' });
+      logLine({ backend: 'boot-ok', uptimeMs: Date.now() - backendStartedAt, crashStreak });
     }
   }, BOOT_GRACE_MS);
 }
@@ -259,22 +318,36 @@ function scheduleRestart() {
   restartCount += 1;
   const idx = Math.min(restartCount - 1, RESTART_DELAYS.length - 1);
   const delay = RESTART_DELAYS[idx];
-  logLine({ backend: 'restart-scheduled', delay, count: restartCount });
-  if (restartCount >= MAX_CONSECUTIVE_FAILS && process.env.DSHOME_FAIL_LOUD !== '0') {
-    // fail-loud：连续启动失败 → 弹窗询问（重试 / 安全模式 / 取消）
-    // DSHOME_FAIL_LOUD=0 时跳过弹窗（自动化测试用），直接按「重试」继续退避
-    const errTail = stderrBuffer.split('\n').slice(-6).join('\n');
+  logLine({ backend: 'restart-scheduled', delay, count: restartCount, crashStreak });
+  // fail-loud：连续异常退出 → 弹窗询问（重试 / 安全模式 / 取消）。
+  // DSHOME_FAIL_LOUD=0 时跳过弹窗（自动化测试用），直接按「重试」继续退避。
+  const quiet = process.env.DSHOME_FAIL_LOUD === '0';
+  const canDialog = !quiet
+    && crashStreak >= MAX_CONSECUTIVE_FAILS
+    && Date.now() - lastFailDialogAt >= DIALOG_MIN_INTERVAL_MS;
+  if (canDialog) {
+    const streak = crashStreak;
+    lastFailDialogAt = Date.now();
+    crashStreak = 0; // 弹过即重新计数：避免用户点「重试」后被同一轮崩溃连环弹
+    const errTail = tailOf(stderrFull, 20) || '（无 stderr 输出）';
     try {
       const choice = dialog.showMessageBoxSync({
         type: 'error',
-        title: 'DSHOME 后端启动失败',
-        message: `后端连续 ${restartCount} 次启动失败，可能由插件或配置损坏引起。`,
-        detail: errTail ? `最近错误：\n${errTail}` : '（无错误输出）',
+        title: 'DSHOME 后端异常退出',
+        message: `后端连续 ${streak} 次异常退出（每次都没能稳定运行满 ${Math.round(STABLE_MS / 1000)} 秒），可能由插件或配置损坏引起。`,
+        detail: [
+          '最近错误（stderr 尾部）：',
+          errTail,
+          '',
+          `完整 stderr 已落盘：${STDERR_FILE}`,
+          `安全模式覆盖层：${SAFE_OVERLAY_FILE}`,
+        ].join('\n'),
         buttons: ['重试', '安全模式重启', '回滚上次插件变更并重启', '取消'],
-        defaultId: 0,
+        defaultId: 1, // 反复崩说明「重试」已无效，默认指向安全模式
         cancelId: 3,
         noLink: true,
       });
+      logLine({ failDialog: { streak, choice, safeMode } });
       if (choice === 1) {
         safeMode = true;
         restartCount = 0;
@@ -291,7 +364,7 @@ function scheduleRestart() {
         app.quit();
         return;
       }
-    } catch { /* 弹窗失败也继续退避 */ }
+    } catch (e) { logLine({ failDialogError: String(e?.message ?? e) }); }
   }
   restartTimer = setTimeout(startBackend, delay);
 }
@@ -302,6 +375,7 @@ function stopBackend() {
   if (backend) {
     const pid = backend.pid;
     backend = null;
+    backendStartedAt = 0;
     try {
       // 杀整棵进程树（node 可能带 worker 子进程）；用 spawnSync 保证杀完再退出/重启，
       // 避免异步 taskkill 与 app.quit() 竞态导致后端漏杀成孤儿（DSHOME-ISSUE-004 旁支）。
@@ -334,6 +408,8 @@ function killPortOwner(port) {
 function restartBackend(mode) {
   if (mode === 'safe') safeMode = true; else safeMode = false;
   restartCount = 0;
+  backendStartedAt = 0;
+  logLine({ backend: 'manual-restart', safe: safeMode, crashStreak });
   stopBackend();
   // 接管孤儿/外部拉起的后端：先清掉 3099 的监听进程，再拉自己的（否则新进程撞端口）
   killPortOwner(backendPort());
