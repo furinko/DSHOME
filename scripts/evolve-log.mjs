@@ -19,6 +19,9 @@
 //   node scripts/evolve-log.mjs entry-rollback <id|last> [--dry-run]       # 按条目回滚（回滚自身也入账）
 //   node scripts/evolve-log.mjs rollback <path> [<快照时间戳前缀>]            # 回滚到最近/指定快照（回滚前自动留档当前版本）
 //   node scripts/evolve-log.mjs rollback --list <path>                       # 列出该文件全部快照（新→旧）
+//   node scripts/evolve-log.mjs trash <path...> --reason "<为什么>"          # 移入 TRASH 回收站（不删只移；§十一 硬约束 4-5）
+//   node scripts/evolve-log.mjs trash --list                                # 看回收站索引
+//   node scripts/evolve-log.mjs trash --restore <名|原路径>                   # 从回收站移回原路径
 //   node scripts/evolve-log.mjs bump <信号> | metrics | health | pending-invalid
 //
 // P1（2026-09-05）effect 判定机械化：去掉"自评有效"——verdict 默认由机器读主信号基线得出。
@@ -43,9 +46,9 @@
 //   机制原则：**宁可响亮失败，不要静默写坏数据**（同类教训：① 信号名静默降级）。
 //
 // 存储：mind-private/tasks/evolution/（隐私，不推送）
-import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, readdirSync, statSync, renameSync, rmSync, cpSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
-import { join, basename, resolve, dirname } from 'node:path';
+import { join, basename, resolve, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -63,6 +66,12 @@ const ts = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 //                          ③ **记录自带 not_covered**（写清本机制**不覆盖什么**）。
 // ⚠️ **独立文件** `ledger.md`，不塞 changelog.md —— 后者有既存正则解析（health/effect），混入会污染判定。
 const LEDGER = join(EVO, 'ledger.md');
+// ── TRASH 回收站（2026-09-12 建）──────────────────────────────────────────────
+// 「不删只移、可恢复」此前**只是口号**：`mind-private\TRASH\` 从建立起**一次都没被用过**（空目录），
+// 而 `Memory §十一` 硬约束 4-5 要求**裁剪 / 退役动作必须移入 TRASH 并留痕**。
+// 本组把那句话变成**机器动作**：`trash <path...> --reason "…"` / `trash --list` / `trash --restore <名>`。
+const TRASH = join(repoRoot, 'mind-private', 'TRASH');
+const TRASH_INDEX = join(TRASH, '_index.md');
 const entrySha = (s) => createHash('sha256').update(String(s), 'utf8').digest('hex').slice(0, 8);
 function entryId() {
   const t = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDHHMMSS
@@ -150,6 +159,55 @@ function writeMetrics(m) {
 const metricNow = (name) => readMetrics()[name] || 0;
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// ── TRASH 回收站 helper（2026-09-12）─────────────────────────────────────────
+const relOf = (abs) => relative(repoRoot, abs).split(sep).join('/');
+/** 读 `_index.md` 表行 → [{at, orig, size, why}]。**解析失败即抛**（不静默跳过，Invariants #14）。 */
+function readTrashIndex() {
+  if (!existsSync(TRASH_INDEX)) return [];
+  const out = [];
+  for (const line of readFileSync(TRASH_INDEX, 'utf8').split('\n')) {
+    const m = /^\|\s*(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})\s*\|\s*`([^`]+)`\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|$/.exec(line);
+    if (m) out.push({ at: m[1], orig: m[2], size: m[3].trim(), why: m[4].trim() });
+  }
+  return out;
+}
+/** 追加一行到 `_index.md`（懒创建——`Memory §六` 的"首次移入时若无则建"）。 */
+function appendTrashIndex(at, orig, size, why) {
+  if (!existsSync(TRASH_INDEX)) {
+    mkdirSync(TRASH, { recursive: true });
+    writeFileSync(TRASH_INDEX, [
+      '# TRASH 回收站索引',
+      '',
+      '> 「不删只移、可恢复」的落点（`Memory §六` / `§十一` 硬约束 4-5）。',
+      '> **恢复 = 移回「原路径」**；本索引是唯一权威（`trash --restore <名>` 依它定位）。',
+      '',
+      '| 移入时间 | 原路径 | 体积 | 理由 |',
+      '|---|---|---|---|',
+      '',
+    ].join('\n'));
+  }
+  appendFileSync(TRASH_INDEX, `| ${at} | \`${orig}\` | ${size} | ${why} |\n`);
+}
+function dirSize(p) {
+  if (!existsSync(p)) return 0;
+  if (!statSync(p).isDirectory()) return statSync(p).size;
+  let n = 0;
+  for (const e of readdirSync(p, { withFileTypes: true })) {
+    const q = join(p, e.name);
+    n += e.isDirectory() ? dirSize(q) : statSync(q).size;
+  }
+  return n;
+}
+const humanSize = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MB`);
+/** 移动文件 / 目录；跨盘 rename 抛 EXDEV → 退回 copy + rm。 */
+function movePath(src, dst) {
+  try { renameSync(src, dst); }
+  catch (e) {
+    if (e && e.code === 'EXDEV') { cpSync(src, dst, { recursive: true }); rmSync(src, { recursive: true, force: true }); }
+    else throw e;
+  }
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 
 // 2026-09-11 修（第四轮盲评 · C2 的诚实指摘）：下面两步原来是**模块顶层无条件执行** —— 连
@@ -173,6 +231,7 @@ function ensureStore() {
 const READ_ONLY_CMDS = new Set(['health', 'metrics', 'pending-invalid']);
 const isReadOnlyRun = READ_ONLY_CMDS.has(cmd)
   || (cmd === 'rollback' && (rest[0] === '--list' || rest[0] === '-l'))
+  || (cmd === 'trash' && (rest[0] === '--list' || rest[0] === '-l'))
   || cmd === undefined;
 if (!isReadOnlyRun) ensureStore();
 
@@ -628,7 +687,63 @@ if (cmd === 'snapshot') {
   // 典型"看起来在检查、实际不阻塞"。现在有真报警时置 exitCode=1，让调用方
   // （agent 自主巡检 / 脚本 / 未来的 hook）能感知"自检要求元进化"。
   if (hit) process.exitCode = 1;
+} else if (cmd === 'trash') {
+  // 三种形态：trash <path...> --reason "…"（移入）| trash --list（看）| trash --restore <名>（移回）
+  const sub = rest[0];
+  if (sub === '--list' || sub === '-l') {
+    const rows = readTrashIndex();
+    if (!rows.length) console.log(`[evolve-log] TRASH 为空（${TRASH}）——「不删只移」尚无动作。`);
+    else {
+      console.log(`[evolve-log] TRASH 索引 ${rows.length} 条（${TRASH}）：`);
+      for (const r of rows) console.log(`  · ${r.at}  ${r.size}  ${r.orig}  ← ${r.why}`);
+    }
+  } else if (sub === '--restore' || sub === '-r') {
+    const key = rest[1];
+    if (!key) { console.error('[evolve-log] ❌ --restore 需要 <名|原路径>（先用 --list 看）'); process.exit(1); }
+    const rows = readTrashIndex();
+    const hits = rows.filter((r) => r.orig === key || basename(r.orig) === key || r.orig.endsWith('/' + key));
+    // 不猜：找不到就响亮失败；命中多条也拒绝（歧义不替用户选）
+    if (!hits.length) { console.error(`[evolve-log] ❌ TRASH 索引里找不到「${key}」——不做模糊恢复，先 --list`); process.exit(1); }
+    if (hits.length > 1) { console.error(`[evolve-log] ❌ 命中 ${hits.length} 条，名字有歧义，请给完整原路径：\n  ${hits.map((h) => h.orig).join('\n  ')}`); process.exit(1); }
+    const r = hits[0];
+    const src = join(TRASH, `${r.at}__${basename(r.orig)}`);
+    const dst = join(repoRoot, r.orig);
+    if (!existsSync(src)) { console.error(`[evolve-log] ❌ 回收站里没有实体：${src}（索引与磁盘不一致）`); process.exit(1); }
+    if (existsSync(dst)) { console.error(`[evolve-log] ❌ 原路径已被占用，拒绝覆盖：${dst}`); process.exit(1); }
+    mkdirSync(dirname(dst), { recursive: true });
+    movePath(src, dst);
+    // 索引不删行：划掉 + 记恢复时刻（留痕；「撤销不可静默」口径同 entry-rollback）
+    const before = readFileSync(TRASH_INDEX, 'utf8');
+    writeFileSync(TRASH_INDEX, before.replace(`| ${r.at} | \`${r.orig}\` |`, `| ${r.at} | ~~\`${r.orig}\`~~（已恢复 ${ts()}） |`));
+    appendFileSync(LOG, `| ${ts().slice(0, 10)} | ↳恢复:${basename(r.orig)} | 从 TRASH 移回原路径 | ${r.orig} | — |\n`);
+    console.log(`[evolve-log] ↩️ 已恢复 → ${r.orig}（${r.size}）`);
+  } else {
+    // 移动模式：解析 --reason（缺理由 = 拒绝，硬约束 5）
+    const ri = rest.indexOf('--reason');
+    const reason = ri >= 0 ? rest[ri + 1] : null;
+    // ⚠️ 只有**真的给了** --reason 才排除它的值：`ri = -1`（没给）时 `i !== ri+1` 等价于 `i !== 0`
+    //    → 会把 rest[0] 的路径也吃掉，于是报"用法"而不是"必须给 --reason"（A2 测试 T2 实测抓到的 bug）。
+    const paths = rest.filter((a, i) => !(ri >= 0 && (i === ri || i === ri + 1)) && !a.startsWith('-'));
+    if (!paths.length) { console.error('用法: trash <path...> --reason "<为什么>" | trash --list | trash --restore <名>'); process.exit(1); }
+    if (!reason || !String(reason).trim()) { console.error('[evolve-log] ❌ 必须给 --reason "<为什么>"（§十一 硬约束 5：裁剪 / 退役动作要留痕）'); process.exit(1); }
+    mkdirSync(TRASH, { recursive: true });
+    let ok = 0;
+    for (const p of paths) {
+      const abs = resolve(repoRoot, p);
+      if (!existsSync(abs)) { console.error(`[evolve-log] ❌ 不存在，拒绝静默跳过：${p}`); process.exitCode = 1; continue; }
+      const at = ts();
+      const dst = join(TRASH, `${at}__${basename(abs)}`);
+      if (existsSync(dst)) { console.error(`[evolve-log] ❌ 回收站已存在同名，拒绝覆盖：${dst}`); process.exitCode = 1; continue; }
+      const size = dirSize(abs);
+      movePath(abs, dst);
+      appendTrashIndex(at, relOf(abs), humanSize(size), reason);
+      appendFileSync(LOG, `| ${at.slice(0, 10)} | ↳退役:${basename(abs)} | ${reason} | 移入 TRASH（不删只移） | — |\n`);
+      console.log(`  🗑 ${relOf(abs)}  →  TRASH/${basename(abs)}  (${humanSize(size)})`);
+      ok++;
+    }
+    console.log(`[evolve-log] 已移入 TRASH ${ok}/${paths.length} 项 · 理由：${reason}`);
+  }
 } else {
-  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid | lesson-scan | batch <名> <file...> | batch-status [<名>] | entry-log <file> <anchor> "<why>" | entry-mark <id|last> | entry-list | entry-rollback <id|last> [--dry-run] [--force]');
+  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid | lesson-scan | batch <名> <file...> | batch-status [<名>] | entry-log <file> <anchor> "<why>" | entry-mark <id|last> | entry-list | entry-rollback <id|last> [--dry-run] [--force] | trash <path...> --reason "<为什么>" | trash --list | trash --restore <名>');
   process.exit(1);
 }
