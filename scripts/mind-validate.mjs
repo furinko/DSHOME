@@ -492,7 +492,7 @@ function publicDenylistCheck() {
   // 扫描根 = 一切**会被推送**的目录（2026-09-11 扩面）。
   // 原来只扫 mind/scripts/packages/docs 四根 → vendor/、profile-template/、仓库根散文件、skills/
   // 全是盲区（盲评实测），而这些同样进 git。build-stage 仍由 SKIP_DIR 排除（打包产物，源在扫描面内）。
-  const ROOTS = ['mind', 'scripts', 'packages', 'docs', 'profile-template', 'vendor', 'skills']
+  const ROOTS = ['mind', 'scripts', 'packages', 'docs', 'profile-template', 'vendor', 'skills', 'profiles']
     .map((r) => join(repoRoot, r)).filter((d) => existsSync(d));
   const SCAN_EXT = /\.(md|mjs|cjs|js|json|txt|ya?ml)$/i;
   const SKIP_DIR = /(^|[\\/])(node_modules|build-stage|\.git|retired|archives|dist)$/;
@@ -508,13 +508,28 @@ function publicDenylistCheck() {
       return new Set(out.split('\0').filter(Boolean).map((p) => resolve(repoRoot, p)));
     } catch { return new Set(); }
   })();
+  // 🔴 2026-09-12 再修判据（同一病的第二次）：扫描面此前是**手写白名单 ROOTS** —— 实测漏掉 `profiles/`：
+  //   2026-09-12 推前双区自检抓到 `profiles/dshome/cordis.patch.yml`（**git 跟踪、装机版会发**）
+  //   里写进了本机人设词，而 ⑨ 门禁**完全没看见**（`profiles` 不在白名单里）。手写清单必漏。
+  //   ⇒ 改为**以 git 为准**：`ls-files --cached --others --exclude-standard`
+  //      = 已跟踪 + 未跟踪但不被忽略 = 「会被推送的面」；git 不可用/集合为空时退回白名单（已补 profiles/）。
+  const gitFace = (() => {
+    try {
+      const out = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+        { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+      return out.split('\0').filter(Boolean).map((p) => join(repoRoot, p));
+    } catch { return []; }
+  })();
   const hits = [];
+  let scanned = 0;
   const scanFile = (full) => {
     if (!SCAN_EXT.test(full)) return;
+    if (SKIP_DIR.test(full)) return;
     if (ignored.has(resolve(full))) return; // 永不推送的本机文件 → 不算公开面
 
     let text = '';
     try { text = readFileSync(full, 'utf8'); } catch { return; }
+    scanned++;
     const lines = text.split('\n');
     for (let i = 0; i < lines.length; i++) {
       for (const t of terms) {
@@ -522,24 +537,32 @@ function publicDenylistCheck() {
       }
     }
   };
-  const scan = (dir) => {
-    let entries = [];
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const full = join(dir, e.name);
-      if (SKIP_DIR.test(full)) continue;
-      if (e.isDirectory()) { scan(full); continue; }
-      if (e.isFile()) scanFile(full);
-    }
-  };
-  for (const root of ROOTS) scan(root);
-  // 仓库根**散文件**单独扫（不递归）：README/LICENSE/*.cmd/*.yml 等也会进 git，属公开面。
-  // 不递归是为了不把 sessions/、storages/、attachments/ 等运行时数据拖进来（它们不进 git，也不该被当公开面）。
-  try {
-    for (const e of readdirSync(repoRoot, { withFileTypes: true })) {
-      if (e.isFile()) scanFile(join(repoRoot, e.name));
-    }
-  } catch { /* 忽略 */ }
+  if (gitFace.length) {
+    // 主路径：按「会被推送的面」逐文件扫（含 profiles/、llm-deepseek/ 等任意顶层目录）
+    for (const full of gitFace) scanFile(full);
+  } else {
+    // 兜底（无 git / 空集合）：退回白名单递归 + 仓库根散文件（不递归，避免把 sessions/ 等运行时数据拖进来）
+    const scan = (dir) => {
+      let entries = [];
+      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        const full = join(dir, e.name);
+        if (SKIP_DIR.test(full)) continue;
+        if (e.isDirectory()) { scan(full); continue; }
+        if (e.isFile()) scanFile(full);
+      }
+    };
+    for (const root of ROOTS) scan(root);
+    try {
+      for (const e of readdirSync(repoRoot, { withFileTypes: true })) {
+        if (e.isFile()) scanFile(join(repoRoot, e.name));
+      }
+    } catch { /* 忽略 */ }
+  }
+  // 无输入即响亮失败：一个文件都没扫到 = 这条门禁实际未执行（不许静默全绿）
+  if (!scanned) {
+    issues.push({ sev: 'critical', file: '出厂卫生', msg: '⑨ 扫描面无输入（0 个文件被检查）→ 出厂卫生检查实际未执行（无输入即响亮失败）' });
+  }
   if (hits.length) {
     issues.push({ sev: 'critical', file: '出厂卫生', msg: `公开面出现禁词 ${hits.length} 处（私有项目名/个人路径不得进出厂区——Invariants #13）→ ${hits.slice(0, 8).join('、')}${hits.length > 8 ? ` …另 ${hits.length - 8} 处` : ''}` });
   }

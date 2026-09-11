@@ -14,7 +14,7 @@
 # 任务板 task-1 走到 completed。工具包会**取代**同名的旧 subagent 控件
 # （list_agents / send_message / interrupt_agent）——这是官方设计，不是故障。
 # 临时停用：把下面这条 insert 整块注释掉即可（或只注释 tool-agent-team 那一行）。
-# ⚠️ 2026-09-11 20:30 蓝色大肥鱼救火：三包依赖未装进 node_modules（根 .pnpm 为空）→
+# ⚠️ 2026-09-11 20:30 救火：三包依赖未装进 node_modules（根 .pnpm 为空）→
 #    后端启动 20s 后 ERR_MODULE_NOT_FOUND 必死 → 壳连试 3 次弹「启动失败」→ 曾整块停用。
 # ✅ 2026-09-11 22:05 恢复：三包已由官方 pnpm 10 `install --frozen-lockfile` 落地
 #    （@deepseek-ai/dsh-experimental-{agent,tool-agent,client-ui-agent}-team 均 0.1.5-rc.2，实测存在）。
