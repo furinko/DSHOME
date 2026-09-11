@@ -1,7 +1,7 @@
 ---
 name: dshome-plugin-dev
 description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地三步（exports 注册易漏）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
-version: 1.3.0
+version: 1.3.1
 author: DSHOME
 license: internal
 metadata:
@@ -139,9 +139,18 @@ Host `harness.handle('method', handler)`，Client `await host.call('method', arg
 3. [ ] **cordis.patch.yml 注册**：insert 块加 `- id: dshome-<name>` / `name: dshome/<name>` 条目
       （还要同步 `settings.yaml` 的 `include:` 启用条目——参考 dshome-mind-inject 行）
 
-**安全模式自动覆盖（v2，2026-09-05 起）**：`scripts/safe.mjs` 与 `shell-app/main.cjs` 的
-safeOverlay 已改为**从 cordis.patch.yml 动态解析**自有插件 id（dshome- 前缀）。**加插件后无需再手动
-同步安全模式清单**——但若看到这两处出现硬编码 id 数组（回退分支），说明动态解析失败，需排查 patch 路径。
+**安全模式（v3，2026-09-11 实测重写）**：覆盖层 = **L3 产品层 + L4 profile 覆盖层的并集**——
+`packages/dshome/shell-app/safe-overlay.cjs` 收「`insert` 块内的自有行」+「任何位置的 `dshome*` 行」；
+官方覆盖行（`web-runtime`/`webserver`/`llm-deepseek`/`ui-brand-official`）**永不进名单**（禁了会把宿主打死）。
+v2「只取第一个 patch 文件」只覆盖 L3（15 行）、L4 后加的行漏禁——实测 dump-config 证实。两个实测坑：
+
+- 🔴 **`--patch` 必须排在 launcher 旗标区**：`--profile <name>` 之后、app 参数（`--no-open`/`--port`）**之前**。
+  拼在 app 参数之后 → dsh 0.1.5 直接报 `unknown option '--patch'`，**安全模式反而让后端起不来**（v2 安装分支即此写法）。
+  验证姿势：`dsh --profile dshome --patch <yml> --dump-config`（launcher 旗标可任意顺序，但都要在 app 参数前）。
+- ⚠️ **`scripts/safe.mjs` 仍是 L3 单层**（`ownPluginIds()` 只读 `packages/dshome/cordis.patch.yml`）→ L4 后加的
+  插件（Agent Teams 三包 / `dsh-imagegen` 等）**它兜不住**。崩因在 L4 时改用外壳安全模式、或临时手补名单。
+- **回归**：`scripts/verify-safe-overlay.mjs`（18 断言：解析规则 / 参数位置 / 真实仓库布局；已进 `pnpm verify`）——
+  改这块之前之后都跑它（变异测试：把 `--patch` 退回拼末尾 → B1/B2 FAIL、退出码 1）。
 
 **自检信号**（改完重启宿主后）：
 - 有 marker 的插件：marker 时间戳必须刷新（`profiles\dshome\.dsh-market\<name>-marker.txt`）
@@ -159,4 +168,4 @@ safeOverlay 已改为**从 cordis.patch.yml 动态解析**自有插件 id（dsho
 - 组件渲染/纯逻辑可先单测（本地 node + 匹配 react），但**不要**把从外部源码反推的接口当真实契约。
 
 ---
-_版本：1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
+_版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_

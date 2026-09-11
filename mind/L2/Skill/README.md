@@ -59,7 +59,7 @@ _版本：<x.y.z> | <YYYY-MM-DD> | 变更摘要_
 | boot-recall | 1.0.3 | 上工自动召回：project+L3+教训+user-rules+人设卡 装配成注入上下文 |
 | dshome-diagnostics | 1.1.0 | DSHOME 诊断两层：进程层（崩/卡/闪断）+ agent 层（报错→源码链→会话日志四跳定位） |
 | dshome-crash-recovery | 1.0.5 | DSHOME/DSH 崩溃排查+自愈：三层定位 + marker 定位崩溃插件 + guard --recover/safe 逃生 |
-| dshome-plugin-dev | 1.3.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发 |
+| dshome-plugin-dev | 1.3.1 | DSHOME/DSH 结构与运行时 Cordis 插件开发（含安全模式 v3：L3+L4 覆盖层 + `--patch` 位置坑） |
 | landing-audit | 1.0.0 | 落地审计三查法（定义/接线/数据逐层查） |
 | scar-inference | 1.1.0 | 伤疤反推法/咬痕考古法（版本差/反推坑/作者画像） |
 
