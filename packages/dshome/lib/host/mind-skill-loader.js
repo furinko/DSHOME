@@ -193,7 +193,13 @@ export function apply(ctx) {
 
           const cardMessage = createUserMessage({
             content: [{ type: 'text', text: card }],
-            source: { kind: 'plugin', plugin: name, form: 'skill-hint' },
+            // 2026-09-11 修（会话格式 v1 合规）：`form:'skill-hint'` 不在 v1 schema 的 form 白名单
+            // （仅 instructions|catalog|snapshot|notice|relay|recall）→ 新版迁移器拒收整条会话。
+            // 现统一为 plugin source + form:'catalog'（技能卡目录，语义贴合）。source 仅作溯源标签。
+            // 注（2026-09-12 订正）：官方 v1 另有合法 kind `skill-catalog`（required: kind+form+entries，
+            // form 仅 catalog）——此前注释误称它「v1 中不存在」，且本文件历史从未用过该写法
+            // （git log -S 'skill-catalog' 零命中），已删去该不实表述。
+            source: { kind: 'plugin', plugin: name, form: 'catalog' },
           });
           // 追加到消息流末尾（提示性质，不抢占位置）
           decision.messages.push(cardMessage);

@@ -3,7 +3,9 @@
 // 把「装/改插件后人工裸跑后端盯输出」变成可执行断言：
 //   ① 后端在超时内输出 "dsh web:"
 //   ② 输出中不含失败标记（ISSUE-001/002 的实测报错文本）
-//   ③ HTTP GET 根路径 == 200
+//   ③ 复刻浏览器落地路径后根路径 == 200（dsh 0.1.5-rc.2 起启用 token 鉴权：
+//      `?token=` → 303 + Set-Cookie → 带 cookie 求 `/` 才 200；裸请求 401。
+//      判据不放松成 `200 || 401`，详见下方 httpOk() 注释）
 //   ④ profiles\node_modules 自愈结果为 junction（ISSUE-003 门禁：实体目录 = 安装包毒树复现）
 // 用法：
 //   node scripts/smoke.mjs                        # 正向冒烟（期望通过）
@@ -46,15 +48,52 @@ function freePort() {
   });
 }
 
-function httpOk(port) {
+// token 只用于本地探活，日志/报错里一律打码（不得把 token 写进 CI 输出）。
+function maskToken(url) {
+  return String(url).replace(/token=[^&\s]*/g, 'token=***');
+}
+
+// 单发 GET（可带 cookie），把判定所需的三件事都带回来。
+function getOnce(target, cookie) {
+  let t;
+  try {
+    t = new URL(target);
+  } catch {
+    return Promise.resolve({ status: 0, why: 'bad url: ' + maskToken(target) });
+  }
   return new Promise((res) => {
-    const req = get({ host: '127.0.0.1', port, path: '/', timeout: 10000 }, (r) => {
-      r.resume();
-      res(r.statusCode === 200);
-    });
-    req.on('timeout', () => { req.destroy(); res(false); });
-    req.on('error', () => res(false));
+    const req = get(
+      {
+        host: t.hostname,
+        port: t.port || 80,
+        path: t.pathname + t.search,
+        headers: cookie ? { cookie } : {},
+        timeout: 10000,
+      },
+      (r) => {
+        r.resume();
+        r.on('end', () => res({ status: r.statusCode, location: r.headers.location, setCookie: r.headers['set-cookie'] }));
+      }
+    );
+    req.on('timeout', () => { req.destroy(); res({ status: 0, why: 'timeout' }); });
+    req.on('error', (e) => res({ status: 0, why: e.code || e.message }));
   });
+}
+
+// dsh 0.1.5-rc.2 起根路径启用 token 鉴权，且**不是**「带 token 就 200」：
+//   GET /?token=…  → 303 + Set-Cookie: dsh-auth-…  → Location: /
+//   GET /（带该 cookie）→ 200 ；不带 cookie → 401
+// （2026-09-12 实测。注意 curl/PowerShell 会自动跟跳转，所以只看它们的结果会误以为 200。）
+// 本判据复刻浏览器那条落地路径：拿 cookie → 带 cookie 求 200。不放松成 `200 || 401`——
+// 那会把「页面真坏了」也判绿。httpOk 返回 {ok,status,why} 供报错打点。
+async function httpOk(bootUrl) {
+  const first = await getOnce(bootUrl);
+  if (first.status === 200) return { ok: true, status: 200 };
+  const cookie = (first.setCookie || []).map((c) => c.split(';')[0]).join('; ');
+  const next = first.location ? new URL(first.location, bootUrl).toString() : bootUrl;
+  const second = await getOnce(next, cookie);
+  if (second.status === 200) return { ok: true, status: 200 };
+  return { ok: false, status: second.status || first.status, why: second.why || first.why || `首跳 status=${first.status}` };
 }
 
 // ISSUE-003：扁平模块 fallback 目录必须是 junction 集合（实体目录 = 安装包毒树复现）。
@@ -133,8 +172,16 @@ async function main() {
     if (settled) return;
     const marker = FAIL_MARKERS.find((m) => out.includes(m));
     if (marker) return finish(false, `命中失败标记："${marker}"`);
-    const okHttp = await httpOk(listenPort);
-    if (!okHttp) return finish(false, `HTTP GET http://127.0.0.1:${listenPort}/ != 200`);
+    // 无鉴权 URL = 无输入即响亮失败（不退回裸请求 401 的模糊判定）
+    const bootUrl = (out.match(/dsh web:\s*(\S+)/) || [])[1];
+    if (!bootUrl) return finish(false, '未从后端输出取到 "dsh web:" 带鉴权 URL（无法判定 HTTP 200）');
+    const http = await httpOk(bootUrl);
+    if (!http.ok) {
+      return finish(
+        false,
+        `HTTP GET ${maskToken(bootUrl)} != 200（实测 status=${http.status}${http.why ? ' / ' + http.why : ''}）`
+      );
+    }
     const junc = assertFallbackJunctions(dshHome);
     if (!junc.ok) return finish(false, junc.reason);
     finish(true, `http://127.0.0.1:${listenPort} 启动成功，HTTP 200，无失败标记；${junc.reason}`);

@@ -60,9 +60,33 @@ const REQUIRED = ['mind-inject', 'mind-guard', 'mind-recall', 'mind-connect', 'm
  *  这里只对**行为最确定**的插件下断言（构造参数已知、结果唯一）；其余插件保持"不抛错 + 已注册"级。 */
 const EXPECT = {
   'mind-inject': {
-    desc: 'R0 双件应被注入（decision.messages 里应多出一条 agent-instructions 消息）',
-    check: (r) => r.lastDecision && Array.isArray(r.lastDecision.messages)
-      && r.lastDecision.messages.some((m) => m && m.source && m.source.kind === 'agent-instructions'),
+    // 2026-09-11 加**顺序契约**（补 ③，源自 openhanako 考古）：原来只断言"注入了"，
+    // **没锁内容与顺序** —— 而 v3.0 的设计是「**人格宪法先于运行宪法**」（SOUL 在前、AGENTS 在后），
+    // 顺序由 `composeMindL0Text` 里的 `['SOUL.md', 'AGENTS.md']` 数组**硬编码**决定：
+    // 调换一行即人格与行为权威倒序，**而旧断言照样打印 ✅**。这里把它钉成契约。
+    desc: 'R0 双件应被注入，且内容含 SOUL 与 AGENTS 两件、SOUL 段在 AGENTS 段之前（顺序契约）',
+    check: (r) => {
+      const msgs = (r.lastDecision && Array.isArray(r.lastDecision.messages)) ? r.lastDecision.messages : [];
+      // 2026-09-12 修：本断言原先只认 `source.kind === 'agent-instructions'`——而 2026-09-11 的
+      // 会话格式 v1 合规修复已把它换成合法形态（原 kind 携带了不存在的 `plugin` 成员、且缺 required
+      // 的 `changes`，被 v0→v1 迁移器逐成员拒收）→ 注入消息从此 shape 变了，本断言再也找不到它，
+      // host 门禁恒红（pre-commit 第③步 = 提交被卡死），而报告的证据链里恰好没有 host-check 这一项。
+      // 现两种形态都认：旧 kind 留给历史实现，现形态与现行 mind-inject.js 对齐（插件名 + form 双钉）。
+      const m = msgs.find(
+        (x) => x && x.source
+          && (x.source.kind === 'agent-instructions'
+            || (x.source.kind === 'plugin'
+              && x.source.plugin === 'dshome-mind-inject'
+              && x.source.form === 'instructions'))
+      );
+      if (!m) return false; // 未注入
+      const c = m.content;
+      const text = typeof c === 'string' ? c
+        : Array.isArray(c) ? c.map((p) => (typeof p === 'string' ? p : (p && p.text) || '')).join('\n') : '';
+      const iSoul = text.indexOf('# SOUL.md');
+      const iAgents = text.indexOf('# AGENTS.md');
+      return iSoul >= 0 && iAgents >= 0 && iSoul < iAgents;
+    },
   },
 };
 

@@ -1,4 +1,4 @@
-// dshome-mind-inject — 心智 R0 注入 host 插件（v3.0：运行宪法双件注入）。
+﻿// dshome-mind-inject — 心智 R0 注入 host 插件（v3.0：运行宪法双件注入）。
 //
 // 职责：每个 agent 会话【开始（第一步）】时，往消息流塞一条「心智 R0 运行宪法」user 消息，
 //      注入源 = mind\L0\SOUL.md + mind\L0\AGENTS.md **全文**（运行时 readFile 拼接——正文即注入源）。
@@ -49,6 +49,10 @@ export function composeMindL0Text(root) {
   try {
     const dir = join(root, 'mind', 'L0');
     const parts = [];
+    // ⚠️ **顺序是契约**（2026-09-11 加，补 openhanako 考古 ③）：SOUL（人格宪法）**先于** AGENTS（运行宪法）——
+    //    v3.0 的设计是「人格与行为分开权威、一起注入」，顺序由此数组决定。
+    //    该契约由 `scripts/verify-host-plugins.mjs` 的 `mind-inject` **顺序断言**锁住：
+    //    **调换此数组顺序 → 该断言变红**（改前先想清"人格先于行为"是否仍成立）。
     for (const name of ['SOUL.md', 'AGENTS.md']) {
       const f = join(dir, name);
       if (!existsSync(f)) continue;
@@ -129,7 +133,13 @@ export function apply(ctx) {
           writeMarker(`inject: len=${payload.length} ver=${vers} @ ${new Date().toISOString()}`);
           const l0Message = createUserMessage({
             content: [{ type: 'text', text: payload }],
-            source: { kind: 'agent-instructions', form: 'instructions', plugin: name },
+            // 2026-09-11 修（会话格式 v1 合规）：原写法 `kind:'agent-instructions'` 携带了该 kind
+            // **不存在的** `plugin` 成员，且缺 required 的 `changes` → 新版
+            // @deepseek-ai/dsh-session-format-v0-to-v1 迁移器逐成员校验直接拒收，
+            // 导致 46 个历史会话在新版 dsh 下全部「历史加载失败」。改用 plugin source
+            // 合法形态（required: kind+plugin；form 白名单含 instructions）。语义不变：
+            // source 仅作事件溯源标签，不参与任何逻辑。
+            source: { kind: 'plugin', plugin: name, form: 'instructions' },
           });
           return insertAfterClaimed(decision, messages, l0Message);
         }
