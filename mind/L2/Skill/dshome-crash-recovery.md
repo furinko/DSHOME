@@ -1,7 +1,7 @@
 ---
 name: dshome-crash-recovery
 description: DSHOME/DSH 崩溃排查+自愈——先分装配期/运行期/前端半区三层；启动失败（fail-loud boot 崩溃循环）用 marker 定位崩溃插件 → plugin-change-guard --recover / safe 模式逃生；前端「Failed to load plugins」用「__ModuleLoader__.load id == 包名」四证核对；host 半区崩=整宿主起不来、client 崩=仅 UI 缺失。触发：启动失败/起不来/崩溃循环/Failed to load plugins/半区加载失败/插件加载失败/ERR_PACKAGE_PATH_NOT_EXPORTED/重启后依旧崩。
-version: 1.0.5
+version: 1.0.6
 author: DSHOME
 license: internal
 metadata:
@@ -43,7 +43,7 @@ contract:
 2. **自愈**（由易到难）：
    - **快速回滚**：`node scripts/plugin-change-guard.mjs --recover`（按备份恢复 3 件套 package.json/pnpm-lock/cordis.patch.yml + pnpm install + 裸跑冒烟；冒烟不过提示用更早备份目录）。
    - **精准修复**：新 host 插件漏 exports → `packages/dshome/package.json` 的 `exports` 补 `"./<name>": "./lib/host/<name>.js"`（三步 checklist 见 dshome-plugin-dev §十，**exports 是最易漏的一步**）；语法/逻辑错 → 改插件本体。
-   - **逃生**：宿主还起不来时用安全模式（`scripts/safe.mjs` 只挂白名单，id 从 cordis.patch.yml 动态解析）先起来，再修坏插件。
+   - **逃生**：宿主还起不来时用安全模式（`scripts/safe.mjs` 挂白名单，id 由 `shell-app/safe-overlay.cjs` 从 **L3 产品层 + L4 profile 覆盖层并集**动态解析，共 19 个；`--print-ids` 可先自检清单）先起来，再修坏插件。
 3. **防复发验证**：修复后重启前跑 `node scripts/plugin-change-guard.mjs --preflight`（L4 形态三查 + 裸跑冒烟 + 备份安全点），通过才重启；重启后看 marker 刷新 / HTTP 200 / 对应 verify 脚本。
 
 **已知事故**：09-04 mind-recall 漏 exports → `ERR_PACKAGE_PATH_NOT_EXPORTED` → 每 ~3s 一轮 boot、崩溃循环 7+ 轮；marker 对比（mind-inject 刷新 / mind-recall 不刷新）锁定崩溃点。修复 = exports 补 1 行。
@@ -82,7 +82,7 @@ contract:
 | 工具 | 用法 | 作用 |
 |---|---|---|
 | `scripts/plugin-change-guard.mjs` | `--preflight`（改前）/ `--recover [目录]`（崩后） | 备份 3 件套 + L4 形态三查 + 裸跑冒烟 / 恢复 + install + 冒烟（指针语义防坏备份覆盖） |
-| `scripts/safe.mjs` | 崩溃逃生 | 安全模式：白名单插件 id 从 cordis.patch.yml 动态解析（加了插件无需手动同步清单；见两处硬编码数组=解析失败需排查） |
+| `scripts/safe.mjs` | 崩溃逃生 | 安全模式：白名单 id 由 `safe-overlay.cjs` 从 **L3 产品层 + L4 profile 覆盖层**动态解析（19 个；加插件无需手同步清单；`--print-ids` 自检；回归 `verify-safe-overlay.mjs` 25 断言） |
 | marker 文件 | 看 `profiles\dshome\.dsh-market\*-marker.txt` | 插件级 apply 证据；时间戳对比定位崩溃点（场景卡 A） |
 | verify 脚本 | `scripts/verify-*.mjs` | boot 后逐插件/链路验证（如 verify-boot-recall.mjs） |
 | 裸跑冒烟 | dsh CLI 随机端口 + `--no-open` | 隔离复现，**勿共享主 DSH_HOME**（dshome-diagnostics ① 规则） |
@@ -120,4 +120,4 @@ contract:
 - `packages/dshome/lib/host/` 的 self-heal.html / self-heal-guard.js / plugin-api.js——前端自救界面实现
 
 ---
-_版本：1.0.5 | 2026-09-11 | §七 关联索引去掉本机盘符（Power §四 可移植筛：出厂区不写盘符/本机路径）| 1.0.4 | 2026-09-06 | §五 v4：守护加 DOM 渲染式失败通道（.dshome-mind 知识面板排除 + [data-chat-flow] 排除），同步自 v4 代码；v3 → v4 演进记录在案_
+_版本：1.0.6 | 2026-09-11 | §一 逃生条 + §四 工具表订正：`scripts/safe.mjs` 已从「只解析 L3」升级为 L3+L4 并集（复用 `safe-overlay.cjs`，19 个 id，`--print-ids` 自检；回归 `verify-safe-overlay.mjs` 25 断言） | _版本：1.0.5 | 2026-09-11 | §七 关联索引去掉本机盘符（Power §四 可移植筛：出厂区不写盘符/本机路径）| 1.0.4 | 2026-09-06 | §五 v4：守护加 DOM 渲染式失败通道（.dshome-mind 知识面板排除 + [data-chat-flow] 排除），同步自 v4 代码；v3 → v4 演进记录在案_
