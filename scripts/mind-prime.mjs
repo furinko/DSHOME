@@ -167,7 +167,13 @@ function project() {
   }
   // 注入限长（2026-09-11）：phase 行 + 最近 3 条里程碑——里程碑按 Memory §四 逐轮 append
   // 会无限增长，全文注入会吃掉 R1 预算；真源仍全文在 project.md，此处只装配摘要。
-  const picked = [...new Set([...progLines.slice(0, 1), ...progLines.slice(-3)])];
+  // 2026-09-12 修（收工实测）：原为「先取最近 3 条 → 整体 slice(0,900)」，而本档里程碑单条常
+  //   1000+ 字 ⇒ 实测 progress 恒 900 且**末尾被拦腰切断**（tail 停在 `…· s`），倒数第 2/1 条
+  //   **完全不可见**——新写的里程碑"写了召不回"（位置对，被上游截断吃掉；同 Learn 2026-09-10 那条）。
+  //   改为**逐条限长**（每条 240 字）+ 总长兜底 ⇒ 最近 3 条都能露面。
+  const MILESTONE_CLIP = 240;
+  const picked = [...new Set([...progLines.slice(0, 1), ...progLines.slice(-3)])]
+    .map((l) => (l.length > MILESTONE_CLIP ? l.slice(0, MILESTONE_CLIP) + '…' : l));
   return { progress: picked.join('\n').slice(0, 900), todos };
 }
 
