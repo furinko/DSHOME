@@ -182,6 +182,11 @@ function startBackend() {
   // （日志表现：backend start → exit code=1 errTail 里带 port: 3099）。
   // 安全性：单实例锁保证同一时刻只有一个外壳，故 3099 的占用者必是孤儿/外部进程。
   killPortOwner(backendPort());
+  // 🔴 清掉上一轮后端的 token：**每次启动后端都会生成新 token**，沿用旧值会让存活探测
+  // 永远 401 → 外壳据此判「后端 down」→ 又去重拉后端 → 形成
+  // 「杀健康后端 → 新 token → 仍用旧 token 探测失败」的**自杀循环**
+  // （2026-09-11 实景：日志 portKill → start → auth-url-captured → retry → 无限重复）。
+  backendAuthUrl = null;
   stderrBuffer = '';
   logLine({ backend: 'start', safe: safeMode, count: restartCount });
   if (safeMode) writeSafeOverlay();
