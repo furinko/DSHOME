@@ -176,6 +176,12 @@ function startBackend() {
     logLine({ backend: 'no-spec' }); // 无法解析后端规格：只做 UI 客户端
     return;
   }
+  // 🔴 先清掉端口占用者（孤儿/外部后端）：否则新后端撞 EADDRINUSE，外壳陷入
+  // 「启动 → 崩 → 15s 后重启」的无限循环。2026-09-11 实测：退出外壳后，由
+  // dshome/shell 插件拉起的那类后端会成为**孤儿**继续占着 3099，把新起的壳彻底卡死
+  // （日志表现：backend start → exit code=1 errTail 里带 port: 3099）。
+  // 安全性：单实例锁保证同一时刻只有一个外壳，故 3099 的占用者必是孤儿/外部进程。
+  killPortOwner(backendPort());
   stderrBuffer = '';
   logLine({ backend: 'start', safe: safeMode, count: restartCount });
   if (safeMode) writeSafeOverlay();
