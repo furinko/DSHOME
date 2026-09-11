@@ -227,9 +227,15 @@ function startBackend() {
     backendAuthUrl = m[1];
     const tokenLen = (/(?:[?&]token=)([^&\s]*)/.exec(backendAuthUrl)?.[1] ?? '').length;
     logLine({ backend: 'auth-url-captured', seq: spawnSeq, tokenLen });
-    // 若此刻已判定在线，立即切到正确 URL（此前加载的是裸 URL → 401/离线页）
-    if (isOnline && window) {
-      window.loadURL(targetUrl()).catch((error) => logLine({ authUrlLoadError: String(error?.message ?? error) }));
+    // 🔴 不能写成 `if (isOnline && window)`：首次抓到 token 时 isOnline 恒为 false
+    //（鸡生蛋——探测从未成功过，于是永不加载），窗口会白等一个轮询周期才切在线页。
+    // 抓到 token 就**立刻**探一次并按结果切换。
+    if (window) {
+      void (async () => {
+        try {
+          if (await isBackendUp()) await applyBackendState(true);
+        } catch { /* 失败留给 3s 轮询兜底 */ }
+      })();
     }
   });
   backend.on('exit', (code, signal) => {
