@@ -88,6 +88,9 @@ function getOnce(target, cookie) {
 // 那会把「页面真坏了」也判绿。httpOk 返回 {ok,status,why} 供报错打点。
 async function httpOk(bootUrl) {
   const first = await getOnce(bootUrl);
+  // 首跳直接 200 = 无鉴权版本下页面**直接可用** ⇒ 也判活。这是**有意保留的兼容分支**，
+  // 不是漏洞：本判据回答「页面起没起来」，不负责断言「鉴权开着」（0.1.5-rc.2 有 token 时必走 303，
+  // 该分支不可达；将来若鉴权被摘掉，200 仍是"页面可用"的正确结论）。
   if (first.status === 200) return { ok: true, status: 200 };
   const cookie = (first.setCookie || []).map((c) => c.split(';')[0]).join('; ');
   const next = first.location ? new URL(first.location, bootUrl).toString() : bootUrl;
@@ -132,6 +135,12 @@ async function main() {
   let out = '';
   let settled = false;
 
+  // 2026-09-12 修（独立复核员 smoke-judge-reviewer 抓到 · task-1）：失败路径会把后端 stdout
+  // **尾巴**打进日志/CI，而 `out` 里含 `dsh web: http://127.0.0.1:PORT/?token=<真 token>`
+  // ⇒ 原来的 `tail(out)` 会把进程 token 明文写进日志，与 maskToken 的声明自相矛盾。
+  // 已实测复现（未修复版：明文 token ×1 / 打码 ×0），改为一律先走 maskToken 再打印。
+  const maskedTail = () => maskToken(tail(out));
+
   const finish = (ok, reason) => {
     if (settled) return;
     settled = true;
@@ -143,7 +152,7 @@ async function main() {
       console.log(`SMOKE ${ok ? 'PASS' : 'PASS (expected failure detected)'}: ${reason}`);
       process.exit(0);
     }
-    console.error(`SMOKE FAIL: ${reason}\n--- tail ---\n${tail(out)}`);
+    console.error(`SMOKE FAIL: ${reason}\n--- tail ---\n${maskedTail()}`);
     process.exit(1);
   };
 
@@ -155,7 +164,7 @@ async function main() {
   child.stdout.on('data', (d) => { out += d; });
   child.stderr.on('data', (d) => { out += d; });
   child.on('exit', (code) => {
-    if (!settled) finish(false, `后端提前退出（code=${code}）\n--- tail ---\n${tail(out)}`);
+    if (!settled) finish(false, `后端提前退出（code=${code}）\n--- tail ---\n${maskedTail()}`);
   });
 
   let booted = false;
