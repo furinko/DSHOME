@@ -175,6 +175,11 @@ for (const m of memories) {
     }
     const dups = [];
     for (const h of walk(histRoot, [], 'L3/history')) {
+      // 🔴 排除每目录索引 `_index.md`：它按设计分布在 `common/<主题>/`、`projects/<项目>/知识/<主题>/`
+      //    以及 `history/` 自身（见本文件 ④ 的说明），**天然与活区同名**，不构成「重复真源」。
+      //    2026-09-11 实测：本项唯一命中就是 `L3/history/_index.md` 与 `L3/common/_index.md` 同名——
+      //    而它们是两个不同目录各自的索引，内容不同是正常的（旧判据把它误报成"副本已失效"）。
+      if (basename(h.rel) === '_index.md') continue;
       const live = liveByName.get(basename(h.rel));
       if (!live) continue;
       let same = false;

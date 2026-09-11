@@ -17,7 +17,11 @@
 // 退出码：0 = 全通过；1 = 有插件挂载异常。
 //
 // 用法：node scripts/verify-host-plugins.mjs
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+// writeFileSync 曾漏导入（2026-09-11 升级抗崩审计发现）：`restoreMarkers()` 用它恢复
+// marker，但顶层没导入 → ReferenceError → 被该函数自己的空 `catch { /* 忽略 */ }` 吞掉
+// → **marker 保护从未生效过**。同型 bug（未定义标识符 + 空 catch 吞掉）正是本脚本存在的
+// 唯一理由，却长在它自己身上。node --check 同样查不出（语法合法）。
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
