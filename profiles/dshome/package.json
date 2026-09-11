@@ -9,6 +9,9 @@
     "@deepseek-ai/dsh-command-compact": "0.1.5-rc.2",
     "@deepseek-ai/dsh-compaction-basic": "0.1.5-rc.2",
     "@deepseek-ai/dsh-compaction-tool-result-pruner": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-experimental-agent-team": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-experimental-client-ui-agent-team": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-experimental-tool-agent-team": "0.1.5-rc.2",
     "@deepseek-ai/dsh-fs-local": "0.1.5-rc.2",
     "@deepseek-ai/dsh-persona": "0.1.5-rc.2",
     "@deepseek-ai/dsh-plan-mode": "0.1.5-rc.2",
@@ -36,11 +39,11 @@
     "@deepseek-ai/dsh-web-app": "0.1.5-rc.2",
     "@deepseek-ai/dsh-workflow-worker-thread": "0.1.5-rc.2",
     "@nanmicoder/dsh-agent-teams": "0.1.14",
-    "dsh-better-sidebar": "0.17.1",
+    "dsh-better-sidebar": "0.19.0",
     "dsh-context": "^0.43.0",
     "dsh-imagegen": "workspace:*",
     "dsh-input-traffic": "^0.2.9",
-    "dsh-status-rotator": "^0.10.0",
+    "dsh-status-rotator": "0.17.2",
     "dsh-turn-fold": "0.4.0",
     "dsh-whale-widget": "^0.2.10",
     "dshmarket": "^1.38.1",
@@ -60,7 +63,10 @@
         "dsh-whale-widget",
         "dsh-status-rotator",
         "dsh-input-traffic",
-        "dsh-context"
+        "dsh-context",
+        "dsh-better-sidebar",
+        "dsh-turn-fold",
+        "dshmarket"
       ]
     }
   }

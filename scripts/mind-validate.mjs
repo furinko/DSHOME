@@ -8,6 +8,7 @@
 //   默认：输出"问题清单"，critical 存在则 exit 1（阻塞提交）；仅 warnings 则 exit 0。
 //   --strict：警告也当成问题（exit 1）。
 import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -479,9 +480,23 @@ function publicDenylistCheck() {
     .map((r) => join(repoRoot, r)).filter((d) => existsSync(d));
   const SCAN_EXT = /\.(md|mjs|cjs|js|json|txt|ya?ml)$/i;
   const SKIP_DIR = /(^|[\\/])(node_modules|build-stage|\.git|retired|archives|dist)$/;
+  // 🔴 2026-09-11 修判据：扫的应该是「**会被推送**的文件」，而不是「路径长在仓库里」的文件。
+  //   事故：本机运行时配置 `settings.yaml`（`.gitignore:24` 忽略、`git ls-files` 查无）里的
+  //   状态轮播文案含同形词，被当"公开面出现禁词"报 critical —— 量错了对象（假阳性）。
+  //   判据改为 git 语义：`git ls-files --others --ignored --exclude-standard` 列出被忽略文件，
+  //   命中即跳过。git 不可用（脱仓/无 git）时返回空集 → 退回原行为（宁多扫，不放过真公开面）。
+  const ignored = (() => {
+    try {
+      const out = execFileSync('git', ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'],
+        { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+      return new Set(out.split('\0').filter(Boolean).map((p) => resolve(repoRoot, p)));
+    } catch { return new Set(); }
+  })();
   const hits = [];
   const scanFile = (full) => {
     if (!SCAN_EXT.test(full)) return;
+    if (ignored.has(resolve(full))) return; // 永不推送的本机文件 → 不算公开面
+
     let text = '';
     try { text = readFileSync(full, 'utf8'); } catch { return; }
     const lines = text.split('\n');

@@ -8,3 +8,16 @@
 - insert:
     - id: dsh-imagegen
       name: dsh-imagegen
+# ── 官方实验版 Agent Teams（2026-09-11 接入，主人放行）──
+# 三包都没有 dsh.bundle（dsh 装包时会警告「not a profile layer」），只能在本覆盖层手动挂。
+# 沙盒实测（D:\DSHOME-team，session 18ed91db）：九个团队工具全可用、reviewer 真建出来、
+# 任务板 task-1 走到 completed。工具包会**取代**同名的旧 subagent 控件
+# （list_agents / send_message / interrupt_agent）——这是官方设计，不是故障。
+# 临时停用：把下面这条 insert 整块注释掉即可（或只注释 tool-agent-team 那一行）。
+- insert:
+    - id: dsh-experimental-agent-team
+      name: '@deepseek-ai/dsh-experimental-agent-team'
+    - id: dsh-experimental-tool-agent-team
+      name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+    - id: dsh-experimental-client-ui-agent-team
+      name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
