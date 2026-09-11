@@ -6,12 +6,16 @@
 # 但 2026-09-11 盲评实测：**只有 ① 被 mind-guard 强制**——②③ 既无 hook 也无任何代码调用，
 # 全靠"agent 记得跑"。本 hook 让「不通过不落盘」从纪律变成**机器事实**（③ 这一半）。
 #
-# ── 做两件事 ─────────────────────────────────────────────────────────────────
-#   ① scripts/mind-validate.mjs --strict   —— 记忆层布局/出厂卫生/版本四元/概念路由… 有 critical 或 warn 即拒
-#   ② scripts/verify-host-plugins.mjs      —— host 插件「挂载面」真加载验证
+# ── 做这些事 ─────────────────────────────────────────────────────────────────
+#   ① scripts/syntax-check.mjs             —— 语法检查（= `pnpm build` 的实质内容）
+#   ② scripts/mind-validate.mjs --strict   —— 记忆层布局/出厂卫生/版本四元/概念路由… 有 critical 或 warn 即拒
+#   ③ scripts/verify-host-plugins.mjs      —— host 插件「挂载面」真加载验证
 #      （`node --check` 只查语法、查不出未定义标识符：2026-09-11 一夜之间同型 bug 两例——
 #        mind-inject.js 的 `payload.length`、mind-skill-loader.js 的 `skills.length`，
 #        两者都被 apply 的 try/catch 吞成 warn，效果面正常、挂载面全坏）
+#   ④ verify-guard-decisions --allow-partial —— 门禁判定真值表（见下）
+#   ⑤ scripts/verify-safe-overlay.mjs      —— 安全模式覆盖层「CLI == 外壳」同口径（2026-09-11 加）
+#   ⑥ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
 #
 # ── 逃生门 ───────────────────────────────────────────────────────────────────
 #   `git commit --no-verify`：仅在**明确知情**时用（例如正在修的正是校验器本身）。
@@ -30,3 +34,11 @@ node scripts/verify-host-plugins.mjs
 # 门禁判定真值表（2026-09-11 加）：autoApprove 开着时自动降级为「只跑 privacy 类用例」并明确标注，
 # 不阻塞提交（那是环境状态、不是缺陷）；关着时跑全 17 例。
 node scripts/verify-guard-decisions.mjs --allow-partial
+# ④ 安全模式覆盖层口径（L3+L4 单一实现；2026-09-11 加）。
+#    `safe.mjs` 曾是「只解析 L3」的第二实现——崩在 L4 行（agent-teams 三包 / dsh-imagegen）
+#    时逃生通道恰好兜不住；本项锁「CLI 清单 == 外壳清单」。
+node scripts/verify-safe-overlay.mjs
+# ⑤ settings.yaml 留档（私有区，幂等去重；2026-09-11 加）。
+#    它是运行时配置、不在 git 里、DSH 启动可能整份重写 → 每次提交顺手留一档。
+#    ⚠️ 备份是辅助不是门禁：失败只告警，不阻塞提交。
+node scripts/backup-settings.mjs || echo "[pre-commit] ⚠️ settings 留档失败（不阻塞提交）"

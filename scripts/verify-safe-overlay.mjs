@@ -15,10 +15,13 @@
 //   B. 参数位置：`--patch` 必须插在 `--profile` 之后、app 参数之前；已带则不重复插。
 //   C. 真实仓库布局：L3 产品层 15 行必须全部命中；四个官方覆盖行必须全部缺席；
 //      L4 若存在必须在来源里（其行可被人工注释停用，故不硬断言具体 id）。
+//   D. CLI 逃生通道：`packages/dshome/scripts/safe.mjs --print-ids` 的清单必须与外壳
+//      `collectSafeIds()` **恒等**（2026-09-11 补——该脚本曾只解析 L3，事故① 的第二实现）。
 // 退出码：0 = 全通过；1 = 有断言失败。
 //
 // 用法：node scripts/verify-safe-overlay.mjs
 import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -129,6 +132,37 @@ if (existsSync(l4)) {
 const text = so.overlayText(ids);
 check('C6 覆盖层文本对每个 id 都写 disabled: true',
   ids.every((id) => text.includes(`- id: ${id}\n  disabled: true`)));
+
+// ── D. CLI 逃生通道与外壳同口径（2026-09-11 补：safe.mjs 曾只解析 L3）──────────
+// 事故① 还有第二种实现：外壳（shell-app/main.cjs）已改走 safe-overlay.cjs，
+// 但 CLI 逃生脚本 `packages/dshome/scripts/safe.mjs` 仍只读 L3 → 崩在 L4
+// （dsh-imagegen / Agent Teams 三包）时，逃生通道恰好兜不住。
+// 现以 `--print-ids` 为契约面，断言两条通道的清单**恒等**。
+const SAFE_CLI = join(repoRoot, 'packages', 'dshome', 'scripts', 'safe.mjs');
+check('D0 逃生脚本存在', existsSync(SAFE_CLI), SAFE_CLI);
+const cliRun = spawnSync(process.execPath, [SAFE_CLI, '--print-ids'], { encoding: 'utf8', cwd: repoRoot });
+check('D1 `--print-ids` 退出码 0', cliRun.status === 0,
+  (cliRun.stderr || '').trim() || String(cliRun.error || ''));
+let cli = null;
+try { cli = JSON.parse(cliRun.stdout); } catch { /* 保持 null → D2 报失败 */ }
+check('D2 清单可解析为 JSON', !!cli && Array.isArray(cli.ids), (cliRun.stdout || '').trim().slice(0, 120));
+if (cli && Array.isArray(cli.ids)) {
+  check('D3 CLI 清单 == 外壳清单（L3+L4 同口径）', same(ids, cli.ids),
+    `外壳 ${ids.length} / CLI ${cli.ids.length}`);
+  check('D4 CLI 覆盖层对每个 id 写 disabled: true',
+    cli.ids.every((id) => String(cli.overlay || '').includes(`- id: ${id}\n  disabled: true`)));
+  if (existsSync(l4)) {
+    const l4Ids = so.idsFromPatchText(readFileSync(l4, 'utf8'));
+    const l4MissCli = l4Ids.filter((i) => !cli.ids.includes(i));
+    check('D5 L4 自有行在 CLI 清单内（事故①不得复发）', l4MissCli.length === 0,
+      '缺：' + l4MissCli.join(', '));
+    check('D6 CLI 来源含 L4 覆盖层文件',
+      (cli.sources || []).some((f) => String(f).replace(/\\/g, '/').endsWith('profiles/dshome/cordis.patch.yml')),
+      JSON.stringify(cli.sources));
+  } else {
+    console.log('ok  D5/D6 L4 覆盖层不存在 → 跳过');
+  }
+}
 
 console.log(failed ? `\nverify-safe-overlay: ${failed} 项失败` : `\nverify-safe-overlay: 全部通过（自有行 ${ids.length} 个，来源 ${sources.length} 层）`);
 process.exit(failed ? 1 : 0);
