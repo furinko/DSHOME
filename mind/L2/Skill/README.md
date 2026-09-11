@@ -1,7 +1,8 @@
 # Skill — 方法论技能库（mind\L2\Skill\）
 
-> 版本：1.1 | 2026-09-05
+> 版本：1.2 | 2026-09-11
 > 定位：L2 能力层——跨项目可复用的逻辑闭环。**双区**：出厂 `mind\L2\Skill\`（可推送）+ 私有暂存 `mind-private\L2\Skill\`（gitignore，同名私有优先）。成熟 skill 出厂，未成熟/含隐私的暂存私有区。
+> ⚠️ 下表与 `_index.md` / `Tree.md` 三处同为能力清单，**新增技能必须三处同改**——2026-09-11 巡视实测：本表曾漏登 2 个技能（verify-integrity / dshome-crash-recovery）且 3 处版本号落后；根因是 `mind-validate` 只校 Tree↔_index，本表不在门禁内。
 
 ## 使用规则（详见 L1/Power.md）
 
@@ -46,16 +47,21 @@ Step 1→N 线性操作指南（遇到 X → 做 Y → 验证 Z）
 **L3 common/projects：** 关联的记忆区文件（`L3\common\` 或 `L3\projects\<项目>\知识\`）
 
 ---
-_版本：1.0.0 | 2026-09-02 | 变更摘要_
+_版本：<x.y.z> | <YYYY-MM-DD> | 变更摘要_
 ```
 
 ## 当前技能
 
 | 技能 | 版本 | 描述 |
 |---|---|---|
+| verify-integrity | 1.2.0 | 验证可信度四则：真加载 / 反例证伪 / 不污染被测对象 / 输入缺失即响亮失败 |
 | import-artifact | 1.0.0 | 导入协议：其他设备/agent 产物即插即用 |
-| boot-recall | 1.0.2 | 上工自动召回：project+相关L3+教训+user-rules+人设卡 装配成注入上下文 |
-| dshome-diagnostics | 1.0.0 | DSHOME 后端诊断（崩/卡/闪断：先分真假+证据） |
-| dshome-plugin-dev | 1.2.0 | DSHOME/DSH 结构与 Cordis 插件开发 |
+| boot-recall | 1.0.3 | 上工自动召回：project+L3+教训+user-rules+人设卡 装配成注入上下文 |
+| dshome-diagnostics | 1.1.0 | DSHOME 诊断两层：进程层（崩/卡/闪断）+ agent 层（报错→源码链→会话日志四跳定位） |
+| dshome-crash-recovery | 1.0.5 | DSHOME/DSH 崩溃排查+自愈：三层定位 + marker 定位崩溃插件 + guard --recover/safe 逃生 |
+| dshome-plugin-dev | 1.3.0 | DSHOME/DSH 结构与运行时 Cordis 插件开发 |
 | landing-audit | 1.0.0 | 落地审计三查法（定义/接线/数据逐层查） |
 | scar-inference | 1.1.0 | 伤疤反推法/咬痕考古法（版本差/反推坑/作者画像） |
+
+---
+_版本：1.2 | 2026-09-11 | 能力表同步实际（补 2 缺登技能 + 3 处版本号）；补"三处同改"警示。改前快照 `snapshots/2026-09-11T00-55-10_README.md`_

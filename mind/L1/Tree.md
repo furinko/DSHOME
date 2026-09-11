@@ -56,7 +56,7 @@
 > 记忆层重构（2026-09-09）：三区 = `common\`（通用结晶）+ `projects\`（项目记忆）+ `history\`（归档）。检索隔离 = 物理目录（common 恒含 + projects\<当前>）。结构与规则详见 `mind\L1\Memory.md`。
 
 ### common — 通用结晶（跨项目可调取）
-> 主题目录 = `mind-private\L3\common\<主题>\`；索引 = 各主题目录下的 `_index.md`。（2026-09-11 修：原文枚举「当前：user-rules / lessons」并称有 `common\_index.md`——实测**无 lessons 目录**、**该 index 不存在**；且枚举本机运行时主题与 §projects「出厂不登记运行时条目」的隐私卫生同款冲突，故改为只给结构、不枚举。）
+> 主题目录 = `mind-private\L3\common\<主题>\`；索引 = 各主题目录下的 `_index.md`。（2026-09-11 修：原文枚举「当前：user-rules / lessons」并称有 `common\_index.md` → 改为**只给结构、不枚举**，理由=出厂不登记本机运行时主题，同 §projects 隐私卫生。⚠️ 原注记另断「实测无 lessons 目录、该 index 不存在」已删：那是**对 `mind-private\L3\` 本机私有状态的实测结论**，而私有区按设备各自演化（每设备独立，见 `Concepts.md` V4），本机实测在别的设备不成立——出厂文件只写结构与机制，**不写依赖私有区的实测事实**（同 `Invariants` #13 出厂卫生）。）
 ### projects — 项目记忆（每项目一目录，上工加载）
 > `mind-private\L3\projects\<项目>\`：导航 project.md + 记忆档案（如管线记忆.md）+ `知识\<主题>\` 项目结晶。
 > 🔴 **出厂不登记任何项目条目**（51df701 隐私卫生：出厂只给结构、不枚举本机运行时条目——含本仓库 DSHOME 自身，它也只是私有区里的一个项目档案）。
