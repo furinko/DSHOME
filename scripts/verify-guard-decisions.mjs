@@ -14,8 +14,9 @@
 // 对一组「路径 × 内容」用例跑真值表、逐条比对期望，输出偏差与通过率。
 //
 // 用法：node scripts/verify-guard-decisions.mjs     （退出码：0=全对；1=有偏差；2=前置条件不满足）
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -78,18 +79,30 @@ if (AP_BAK !== null) {
 }
 
 const mod = await import(pathToFileURL(GUARD).href);
-const captured = [];
 const ctx = {
   logger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
   on: () => {}, off: () => {}, effect: () => () => {},
-  tools: { guard: (fn) => { captured.push(fn); return () => {}; }, register: () => {} },
+  tools: { guard: () => () => {}, register: () => {} },
 };
-await mod.apply(ctx);
-const guardFn = captured[0];
-if (typeof guardFn !== 'function') {
-  console.error('[verify-guard-decisions] ❌ 未捕获到 guard 判定函数（apply 没注册成功？）');
+// ── 直调判定，不 `apply` ─────────────────────────────────────────────────────
+// 2026-09-12 实测：本脚本此前走 `await mod.apply(ctx)` 再用注册进去的 guard 函数跑用例 —— 而 `apply`
+// 会往**真实 profile** 写 `mounted:` 行、每次拒绝判定再写一行 `last-deny:` ⇒ 每次运行（含 pre-commit
+// hook 每次提交）往 20 行环里塞 1 条假挂载 + 4 条假拒绝，把真正的现场证据挤出去。"验证门禁不污染现场"
+// ⇒ 改调 mind-guard 导出的纯判定 `decide()`（marker/告警等副作用留在 `apply` 那一层）。
+// 覆盖面分工：`apply` 的注册与挂载行写入由 `verify-host-plugins.mjs` 覆盖（它有 marker 保护 + 起点基线自检）。
+const decide = mod.decide;
+if (typeof decide !== 'function') {
+  console.error('[verify-guard-decisions] ❌ mind-guard 未导出纯判定 `decide()`（判定的可测性被破坏了）');
   process.exit(1);
 }
+
+// ── 自检：本脚本有没有污染真 marker（门禁必须自证） ──────────────────────────
+// 教训（2026-09-12）：`verify-host-plugins` 的"保护现场"曾因**快照拍在破坏之后**而形同虚设——门禁的
+// 自检必须能被反证、且要比"整轮起点基线"，不能只看局部前后。判据：本脚本运行前后真 marker 逐字节
+// 不变（文件不存在也算一种稳定状态）。若变化 ⇒ 本门禁自己就是污染源。
+const MARKER = join(repoRoot, 'profiles', 'dshome', '.dsh-market', 'mind-guard-marker.txt');
+const readMarker = () => { try { return readFileSync(MARKER, 'utf8'); } catch { return null; } };
+const markerBefore = readMarker();
 
 let pass = 0;
 const fails = [];
@@ -101,8 +114,8 @@ console.log(`[verify-guard-decisions] 真值表（${ACTIVE.length} 例${autoOn ?
 for (const [label, path, content, want] of ACTIVE) {
   let got = '放', reason = '';
   try {
-    const r = guardFn({ name: 'edit', arguments: { file_path: path, new_string: content } });
-    if (r) { got = '拦'; reason = String(r).replace(/\s+/g, ' ').slice(0, 46); }
+    const r = decide({ name: 'edit', arguments: { file_path: path, new_string: content } }, ctx);
+    if (r?.reason) { got = '拦'; reason = String(r.reason).replace(/\s+/g, ' ').slice(0, 46); }
   } catch (e) {
     got = '抛错'; reason = (e && e.message) || String(e);
   }
@@ -115,4 +128,41 @@ if (fails.length) {
   console.log('[verify-guard-decisions] 偏差明细：');
   for (const f of fails) console.log(`  · ${f.label}（${f.path}）期望 ${f.want} 实际 ${f.got} —— ${f.reason}`);
 }
-process.exit(fails.length ? 1 : 0);
+
+// ── 接线探针：apply 是否真把 decide() 的 marker 写下去 ───────────────────────
+// 为什么需要它：判定改成直调 `decide()` 后，`apply → decide → writeMarker` 这条**委派**就没有断言覆盖了
+// （真值表不再经过 apply）。2026-09-12 已用"删掉委派那行"的坏副本反证：本探针会变红（`deny行=false`）。
+// ⚠️ 这里改 `DSH_HOME` **只**为了改 marker 的落点——本阶段测的是**接线**，不是判定；判定用例全部已在上面
+// 的真环境下跑完。**若把 DSH_HOME 用于判定用例**，就会连"决策输入"（路径解析 / `approvals.json`）一起搬走，
+// 变成"测另一套系统"——两者必须分开（这正是本脚本 2026-09-12 踩过的坑）。
+let wiringOk = true;
+const prevHome = process.env.DSH_HOME;
+const tempHome = mkdtempSync(join(tmpdir(), 'guard-wiring-'));
+try {
+  process.env.DSH_HOME = tempHome;
+  const cap2 = [];
+  const ctx2 = { ...ctx, tools: { guard: (fn) => { cap2.push(fn); return () => {}; }, register: () => {} } };
+  mod.apply(ctx2);
+  const p2 = join(tempHome, 'profiles', 'dshome', '.dsh-market', 'mind-guard-marker.txt');
+  const read2 = () => { try { return readFileSync(p2, 'utf8'); } catch { return ''; } };
+  const m1 = /^mounted:/m.test(read2());
+  const fn2 = cap2[0];
+  const r2 = typeof fn2 === 'function'
+    ? fn2({ name: 'edit', arguments: { file_path: 'mind/L1/Example.md', new_string: 'api_key: sk-abcdef123456' } }) // cred-ok（探针示例值，非真凭据）
+    : undefined;
+  const m2 = /^last-deny:/m.test(read2());
+  wiringOk = m1 && m2 && !!r2;
+  console.log(`  ${wiringOk ? '✅' : '❌'} 接线探针：apply→decide→marker（挂载行=${m1} 拒绝行=${m2} 拦下=${!!r2}）`);
+} finally {
+  if (prevHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prevHome;
+  try { rmSync(tempHome, { recursive: true, force: true }); } catch { /* 清临时根失败不影响判定 */ }
+}
+
+const markerAfter = readMarker();
+const selfClean = markerBefore === markerAfter;
+if (!selfClean) {
+  console.error('[verify-guard-decisions] ❌ 门禁自检失败：真 marker 在本次运行中变了（本门禁不得污染现场）');
+  console.error(`    ${MARKER}`);
+}
+console.log(`[verify-guard-decisions] 自检：真 marker 运行前后${selfClean ? '一致 ✅（零污染）' : '不一致 ❌（本门禁是污染源）'}`);
+process.exit(fails.length || !selfClean || !wiringOk ? 1 : 0);

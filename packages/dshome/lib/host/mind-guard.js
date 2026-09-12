@@ -386,50 +386,68 @@ function writeMarker(line) {
   } catch { /* 诊断标记失败不影响护栏 */ }
 }
 
+/** 只对"写/改文件"工具设闸；read 等读操作放行。 */
+const MUTATING_TOOLS = new Set(['write', 'edit', 'str_replace_editor']);
+
+/** 判定主体（**纯判定：不写 marker、不写日志**）。
+ *  为什么抽出来（2026-09-12 实测）：真值表门禁 `verify-guard-decisions.mjs` 原先走 `apply`、再拿注册进去的
+ *  guard 函数跑用例——而 `apply` 会往**真实 profile** 写 `mounted:` 行，每次拒绝判定还会再写一行 `last-deny:`
+ *  ⇒ 「验证门禁」自己就是**现场污染源**：每跑一次（含 pre-commit hook 每次提交）往 20 行环里塞
+ *  1 条假挂载 + N 条假拒绝，把真正的现场证据挤出去。判定抽成纯函数后门禁可直接调它，真 marker 零触碰。
+ *  @param exec 形如 `{ name, arguments }` 的工具调用
+ *  @returns {{ reason?: string, marker?: string, hint?: string }} 副作用（写 marker / 告警）一律由 apply 执行 */
+export function decide(exec, ctx) {
+  const tool = exec?.name;
+  const args = exec?.arguments;
+
+  // ① shell 通道：**只告警不拦**（见 SHELL_TOOLS / shellWriteHint 注释）——
+  //    工具层拦不住 shell，但至少能让"绕道写心智区"留下痕迹（marker + 日志）。
+  if (SHELL_TOOLS.has(tool)) {
+    const script = String(args?.command ?? args?.script ?? args?.cmd ?? '');
+    const hint = shellWriteHint(script);
+    if (!hint) return {};
+    return {
+      marker: `shell-write-hint: [${tool}] 「${hint}」 @ ${new Date().toISOString()}`,
+      hint,
+    };
+  }
+
+  if (!MUTATING_TOOLS.has(tool)) return {}; // 非写改工具 → 放行
+
+  const filePath = args?.file_path ?? args?.path ?? '';
+  if (!filePath) return {}; // 无路径 → 放行（保守）
+
+  const content = contentOf(args);
+  for (const g of GUARDS) {
+    const reason = g.check(filePath, content, ctx, exec);
+    if (reason) {
+      return {
+        reason, // 命中（未接入禁写/隐私红线/自我修改门禁）→ 拦截
+        marker: `last-deny: ${new Date().toISOString()} [${g.id}] ${tool} ${normalizePath(filePath)}`,
+      };
+    }
+  }
+  return {}; // 其余写入一律放行（不侵入生长空间）
+}
+
 /** 宿主插件主体（fail-open）。 */
 export function apply(ctx) {
   try {
     const root = repoRoot();
-    // 只对"写/改文件"工具设闸；read 等读操作放行。
-    const MUTATING_TOOLS = new Set(['write', 'edit', 'str_replace_editor']);
-
     // 返回值不另存：guard 经 ctx.tools.guard → layers.effect(this.ctx) 注册，**随本插件 fiber 卸载自动解绑**。
     // （旧代码把返回值写到 `ctx.dshomeGuardDisposer`：cordis 里未 provide 就写 ctx 属性必抛
     //  `cannot set property "dshomeGuardDisposer" without provide`，又被下面的 catch 接住 ——
     //  于是每次「挂载成功」都会多打一条自相矛盾的「初始化失败（护栏未生效）」告警，且该属性全仓无读者。）
     ctx.tools.guard((exec) => {
-      const tool = exec?.name;
-      const args = exec?.arguments;
-
-      // ① shell 通道：**只告警不拦**（见 SHELL_TOOLS / shellWriteHint 注释）——
-      //    工具层拦不住 shell，但至少能让"绕道写心智区"留下痕迹（marker + 日志）。
-      if (SHELL_TOOLS.has(tool)) {
-        const script = String(args?.command ?? args?.script ?? args?.cmd ?? '');
-        const hint = shellWriteHint(script);
-        if (hint) {
-          writeMarker(`shell-write-hint: [${tool}] 「${hint}」 @ ${new Date().toISOString()}`);
-          ctx.logger?.('dshome')?.warn?.(
-            `[mind-guard] shell 通道疑似写入心智区（**仅告警，已放行**）：${tool} 脚本里出现「${hint}」+ 写入类动作。` +
-            `工具层护栏拦不住 shell —— 请自行确认这次改动走了 §四 硬流程（放行 / 快照 / validate）。`
-          );
-        }
-        return undefined; // 只告警
+      const { reason, marker, hint } = decide(exec, ctx);
+      if (marker) writeMarker(marker);
+      if (hint) {
+        ctx.logger?.('dshome')?.warn?.(
+          `[mind-guard] shell 通道疑似写入心智区（**仅告警，已放行**）：${exec?.name} 脚本里出现「${hint}」+ 写入类动作。` +
+          `工具层护栏拦不住 shell —— 请自行确认这次改动走了 §四 硬流程（放行 / 快照 / validate）。`
+        );
       }
-
-      if (!MUTATING_TOOLS.has(tool)) return undefined; // 非写改工具 → 放行
-
-      const filePath = args?.file_path ?? args?.path ?? '';
-      if (!filePath) return undefined; // 无路径 → 放行（保守）
-
-      const content = contentOf(args);
-      for (const g of GUARDS) {
-        const reason = g.check(filePath, content, ctx, exec);
-        if (reason) {
-          writeMarker(`last-deny: ${new Date().toISOString()} [${g.id}] ${tool} ${normalizePath(filePath)}`);
-          return reason; // 命中（未接入禁写/隐私红线/自我修改门禁）→ 拦截
-        }
-      }
-      return undefined; // 其余写入一律放行（不侵入生长空间）
+      return reason; // 命中 → 拦截；undefined → 放行（不侵入生长空间）
     });
 
     // 记录挂载成功（解绑随插件 fiber 卸载，无需另存 disposer）。
