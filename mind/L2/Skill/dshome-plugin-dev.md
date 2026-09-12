@@ -1,7 +1,7 @@
 ---
 name: dshome-plugin-dev
 description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地四处登记（漏 package.json exports = 宿主启动崩）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
-version: 1.3.6
+version: 1.3.7
 author: DSHOME
 license: internal
 metadata:
@@ -82,6 +82,15 @@ return {
    （替换整个 occupant 会连带移除其声明的 descendant slots）。
 4. session 级槽可能通过 standard props 提供 `useSession`/`useSessions`/`useWorkspaces`/`useProjection`/input/actions。
 5. 只取真正需要的字段，**不要**复制/整段渲染 Conversation Snapshot / Session / Tool call / 整个 props 对象。
+
+**Client 视图的高度 /「整页被滚走」（2026-09-12 实测根治）**：`conversation.view` 类视图被渲染进
+`[data-conversation-scroll]`（滚动区）→ `[data-slot=conversation.session]`(display:contents) → `.wSkVaW_viewArea` → `[data-slot=conversation.view]`(display:contents) → 你的根节点。三条硬事实：
+
+- 滚动区里除了 viewArea 还有 **composer seat（输入框，`flex:none` 在流内）**；`[data-phase=active]` 时上游给 `viewArea{flex:1 0 auto;min-height:auto}`（只增不减）。⇒ 自己写 `height`/`max-height` 必然与输入框打架：**外层溢出量 ≈ 输入框高 − 你留的余量**（实测 152px→8px、260px→116px；症状 = "内部滚到边界后滚轮继续带动整块面板"）。
+- **别用 JS 写死高度**：根节点是 flex 子项时 `flex:1` = `flex-basis:0%`，**主轴尺寸由 flex-basis 决定 ⇒ `style.height` 被完全压过**（实测 inline 703px／实际 575px——这条"缓解"挂了 4 天从未生效）。兜底要写 `style.flex = '0 0 <px>px'`。
+- **正解 = 用上游官方钩子（不动 node_modules）**：根节点挂 `data-conversation-composer-overlay`（官方「轨迹」视图同款）⇒ 上游 CSS 命中后 ① `.wSkVaW_viewArea` 锁成 `flex:1 1 0;min-height:0;overflow:hidden` ② composer seat 变 `position:absolute`（脱离滚动流 ⇒ 滚动区只剩 viewArea、零溢出）③ 面板底部让位用上游写在滚动区上的 `--dsh-composer-height`（`padding-bottom: var(--dsh-composer-height,152px)`）。根节点配 `flex:1 1 0; min-height:0; overflow:hidden` 即精确填满可视高；**JS 只在上游钩子未生效时兜底**（判据：viewArea 计算 `overflow-y === 'hidden'` 即命中）。
+
+**判据**（这类问题的验收口径）：① `scrollBody.scrollHeight − clientHeight === 0`（页面级同样 0）② 内部滚动区照旧可滚 ③ 拿**上游真实 CSS + 真实 DOM 链**在隔离 Electron 隐藏窗口跑「改前复现 / 改后归零」——**"没复发"不是证据**（教训：只看"没复发"就写了"实测稳定"，从没量过那条缓解自己的产出）。
 
 ## 六、副作用与生命周期
 
@@ -193,4 +202,4 @@ node scripts\skill-version.mjs --selftest                     # 隔离临时树�
 - 组件渲染/纯逻辑可先单测（本地 node + 匹配 react），但**不要**把从外部源码反推的接口当真实契约。
 
 ---
-_版本：1.3.6 | 2026-09-12 | §十 增「版本四元 = 机器同步」：新工具 scripts\skill-version.mjs（--check/--sync/--bump --note/--selftest 10 例含 4 条反证），取代四处手工同步（09-12 实测手工改两轮） | _版本：1.3.5 | 2026-09-12 | 安全模式段补「**safe 的覆盖边界**」（实测 `--print-ids`：20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`；判"safe 会不会禁某包"一律跑 `--print-ids`，别推断）| _版本：1.3.4 | 2026-09-12 | 「自检信号」增「**插件/配置变更取证** → `profiles\dshome\.dsh-market\log.ndjson`」（市场自带事件日志：`install` / `install-blocked`（有 agent 在跑即拒绝安装）/ `hot-mount` / `boot`；"谁装了/改了 profile"先看这里）——本节此前只提 `*-marker.txt` | _版本：1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | _版本：1.3.2 | 2026-09-11 | §十 订正：`scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
+_版本：1.3.7 | 2026-09-12 | §五 增「Client 视图高度/整页被滚走」：composer-overlay 官方钩子（viewArea 锁定高 + 输入框绝对定位）+ flex-basis 压过 height（兜底写 style.flex）+ --dsh-composer-height 让位；判据 = scrollBody 零溢出 + 复刻台改前/改后 | _版本：1.3.6 | 2026-09-12 | §十 增「版本四元 = 机器同步」：新工具 scripts\skill-version.mjs（--check/--sync/--bump --note/--selftest 10 例含 4 条反证），取代四处手工同步（09-12 实测手工改两轮） | _版本：1.3.5 | 2026-09-12 | 安全模式段补「**safe 的覆盖边界**」（实测 `--print-ids`：20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`；判"safe 会不会禁某包"一律跑 `--print-ids`，别推断）| _版本：1.3.4 | 2026-09-12 | 「自检信号」增「**插件/配置变更取证** → `profiles\dshome\.dsh-market\log.ndjson`」（市场自带事件日志：`install` / `install-blocked`（有 agent 在跑即拒绝安装）/ `hot-mount` / `boot`；"谁装了/改了 profile"先看这里）——本节此前只提 `*-marker.txt` | _版本：1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | _版本：1.3.2 | 2026-09-11 | §十 订正：`scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
