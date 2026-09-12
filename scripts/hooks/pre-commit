@@ -20,6 +20,8 @@
 #   ⑧ scripts/verify-trash.mjs             —— TRASH 回收站真值表 10 例（2026-09-12 加；每例独立临时 DSH_HOME ⇒ 真仓库零触碰）
 #   ⑨ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
 #   ⑩ scripts/verify-compaction-log.mjs    —— 压缩留痕真值表 14 例（2026-09-12 加；真 cordis + 临时 DSH_HOME）
+#   ⑪ scripts/growth-audit.mjs             —— 增长面看门狗（2026-09-12 加；只有 hard 才拦：环 marker 被改坏 / 越硬线）
+#   ⑫ scripts/gate-ledger.mjs --check      —— 门禁反证台账（2026-09-12 加；棘轮：新 verify-* 零反证痕迹即拒）
 #
 # ── 逃生门 ───────────────────────────────────────────────────────────────────
 #   `git commit --no-verify`：仅在**明确知情**时用（例如正在修的正是校验器本身）。
@@ -70,3 +72,14 @@ node scripts/backup-settings.mjs || echo "[pre-commit] ⚠️ settings 留档失
 #    14 例（含 4 个反例）+ 临时 DSH_HOME ⇒ 真仓库与真日志零触碰。
 #    已过「测试的测试」：在修复前的插件快照上复跑 ⇒ B/G×2/H 段变红（10/14，exit 1）。
 node scripts/verify-compaction-log.mjs
+# ⑪ 增长面看门狗（2026-09-12 加，收编自 CH4 v1.0.4「5MB 日志轮转」一课）：实测**我们自己的记录面本来就有界**
+#    （guard / inject marker 是 `slice(-20)` 环、recall / skill-loader 单行、`snapshots` 有时间窗、
+#    `TRASH` 有回收流程），真正无界的是**第三方** `dshmarket` 写的 `.dsh-market\log.ndjson`
+#    （它没有轮转机制、我们的代码改不了它）⇒ **不造冗余轮转**，改把这些体积变成机器可见：
+#      hard = 我们自己的机制坏了（如 marker 环超行数）→ **拦**； warn = 体积增长 / 第三方面 → 只提醒。
+node scripts/growth-audit.mjs
+# ⑫ 门禁反证台账（2026-09-12 加，收编自 CH4「负例谱独立成文件」一课）：CH4 的"应当失败"用例是长期在库的
+#    文件谱；我们这边反证一直是**内联断言 + 一次性手工实验**（09-12 当天就有两例手工反证，跑完就没了）。
+#    本项把"每个 verify-* 有没有反证"做成机器台账并设**棘轮**：4 个历史门禁允许暂时为零，
+#    **新 `verify-*` 零反证痕迹即拒**。逃生标记：`// gate-ledger: reverse-cases <反证在哪>`。
+node scripts/gate-ledger.mjs --check

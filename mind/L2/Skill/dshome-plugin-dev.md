@@ -1,7 +1,7 @@
 ---
 name: dshome-plugin-dev
 description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地四处登记（漏 package.json exports = 宿主启动崩）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
-version: 1.3.5
+version: 1.3.6
 author: DSHOME
 license: internal
 metadata:
@@ -176,6 +176,15 @@ v2「只取第一个 patch 文件」只覆盖 L3（15 行）、L4 后加的行�
 **验证流程**：写完逻辑先 `node --check` 语法 → 重启宿主看 boot + marker → 跑对应 itest/verify。
 **不要**只测逻辑就收工（本次事故：itest 全绿但宿主加载链没验，上线即崩）。
 
+**版本四元 = 机器同步，别手工改四处（2026-09-12 加）**：Skill 版本写在 **frontmatter（真源）** / 文件尾 `_版本：` / `Tree.md` 清单列 / `_index.md` 表格列 —— 四处手工同步，一次漏改就是 warn（09-12 实测：两个 Skill × 四处 × 两轮全手工）。
+
+```
+node scripts\skill-version.mjs --check                        # 只报漂移（读，不改）
+node scripts\skill-version.mjs --bump <id> <x.y.z> --note "<变更摘要>"   # 改真源 + 追加文件尾记录 + 回写另两个镜像
+node scripts\skill-version.mjs --selftest                     # 隔离临时树自测（10 例，含 4 条反证）
+```
+校验仍在 `mind-validate --strict`（pre-commit ②；四元不一致即 warn、`--strict` 即拒）——**本工具只是执行器，不另立第二套判据**；`--bump` 不带 `--note` 时只改数字（会续用旧摘要，慎用）。⚠️ `--sync/--bump` 会改 mind 文件（只动版本单元格）⇒ 跑前先 `evolve-log snapshot`。
+
 ## 十一、本会话可用性检查
 
 `cordis_*` 工具（`cordis_inspect_list/query/self`、`cordis_define/run/stop/undefine`）与上述 upstream skill
@@ -184,4 +193,4 @@ v2「只取第一个 patch 文件」只覆盖 L3（15 行）、L4 后加的行�
 - 组件渲染/纯逻辑可先单测（本地 node + 匹配 react），但**不要**把从外部源码反推的接口当真实契约。
 
 ---
-_版本：1.3.5 | 2026-09-12 | 安全模式段补「**safe 的覆盖边界**」（实测 `--print-ids`：20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`；判"safe 会不会禁某包"一律跑 `--print-ids`，别推断）| _版本：1.3.4 | 2026-09-12 | 「自检信号」增「**插件/配置变更取证** → `profiles\dshome\.dsh-market\log.ndjson`」（市场自带事件日志：`install` / `install-blocked`（有 agent 在跑即拒绝安装）/ `hot-mount` / `boot`；"谁装了/改了 profile"先看这里）——本节此前只提 `*-marker.txt` | _版本：1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | _版本：1.3.2 | 2026-09-11 | §十 订正：`scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
+_版本：1.3.6 | 2026-09-12 | §十 增「版本四元 = 机器同步」：新工具 scripts\skill-version.mjs（--check/--sync/--bump --note/--selftest 10 例含 4 条反证），取代四处手工同步（09-12 实测手工改两轮） | _版本：1.3.5 | 2026-09-12 | 安全模式段补「**safe 的覆盖边界**」（实测 `--print-ids`：20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`；判"safe 会不会禁某包"一律跑 `--print-ids`，别推断）| _版本：1.3.4 | 2026-09-12 | 「自检信号」增「**插件/配置变更取证** → `profiles\dshome\.dsh-market\log.ndjson`」（市场自带事件日志：`install` / `install-blocked`（有 agent 在跑即拒绝安装）/ `hot-mount` / `boot`；"谁装了/改了 profile"先看这里）——本节此前只提 `*-marker.txt` | _版本：1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | _版本：1.3.2 | 2026-09-11 | §十 订正：`scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
