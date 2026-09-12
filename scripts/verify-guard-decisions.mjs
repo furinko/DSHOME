@@ -14,7 +14,7 @@
 // 对一组「路径 × 内容」用例跑真值表、逐条比对期望，输出偏差与通过率。
 //
 // 用法：node scripts/verify-guard-decisions.mjs     （退出码：0=全对；1=有偏差；2=前置条件不满足）
-import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -158,6 +158,70 @@ try {
   try { rmSync(tempHome, { recursive: true, force: true }); } catch { /* 清临时根失败不影响判定 */ }
 }
 
+// ── 放行额度「写成功才消费」（2026-09-12 加，回归真缺陷）───────────────────────
+// 旧实现：`isApproved()` 命中即从 approvals.json 删记录 —— 而那一问发生在**工具执行之前**，
+// 于是任何后续失败（工具层拒绝 / 磁盘错 / 中断）都会**白烧**主人在面板点的放行（09-12 实测一次）。
+// 本段真跑四步（真临时 DSH_HOME）：① 命中但不消费 ② 反证：post-execute=**failure** 不许消费
+// ③ 正例：post-execute=**success** 才消费 ④ 额度用掉后再判 → 变"拦"。
+const approveHome = mkdtempSync(join(tmpdir(), 'guard-approve-'));
+const prevHome2 = process.env.DSH_HOME;
+let approveOk = true;
+const approveLog = [];
+try {
+  process.env.DSH_HOME = approveHome;
+  mkdirSync(join(approveHome, 'mind-private', 'tasks'), { recursive: true });
+  const apFile = join(approveHome, 'mind-private', 'tasks', 'approvals.json');
+  const target = join(approveHome, 'mind', 'L1', 'Memory.md').replace(/\\/g, '/');
+  const writeAp = () => writeFileSync(apFile, JSON.stringify({
+    items: [{ id: 'ap-t1', kind: 'action', path: target, op: 'edit', status: 'approved', decidedBy: 'user' }],
+    autoApprove: { enabled: false, decidedBy: 'user' },
+  }, null, 2), 'utf8');
+  const readAp = () => JSON.parse(readFileSync(apFile, 'utf8')).items;
+
+  const guards3 = []; const postHooks = [];
+  const ctx3 = {
+    logger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
+    on: (ev, fn) => { if (ev === 'tools/post-execute') postHooks.push(fn); },
+    off: () => {}, effect: () => () => {},
+    tools: { guard: (fn) => { guards3.push(fn); return () => {}; }, register: () => {} },
+  };
+  mod.apply(ctx3);
+  const guardFn2 = guards3[0];
+  const postFn = postHooks[0];
+  const exec3 = { name: 'edit', arguments: { file_path: 'mind/L1/Memory.md', new_string: 'x' } };
+  const nextOk = async () => ({ kind: 'accept' });
+
+  writeAp();
+  const r1 = guardFn2(exec3);
+  approveOk = approveOk && !r1 && readAp().length === 1;
+  approveLog.push(`① 命中放行 → 放行=${!r1} 且记录仍在=${readAp().length === 1}（命中≠消费）`);
+  await postFn(exec3, { kind: 'failure' }, nextOk);
+  approveOk = approveOk && readAp().length === 1;
+  approveLog.push(`② post-execute=failure → 记录仍在=${readAp().length === 1}（反证：不许白烧额度）`);
+  await postFn(exec3, { kind: 'success' }, nextOk);
+  approveOk = approveOk && readAp().length === 0;
+  approveLog.push(`③ post-execute=success → 记录被消费=${readAp().length === 0}`);
+  const r2 = guardFn2(exec3);
+  approveOk = approveOk && !!r2;
+  approveLog.push(`④ 额度用掉后再判 → 拦=${!!r2}`);
+} catch (e) {
+  approveOk = false;
+  approveLog.push(`抛错：${(e && e.message) || e}`);
+} finally {
+  if (prevHome2 === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prevHome2;
+  try { rmSync(approveHome, { recursive: true, force: true }); } catch { /* 忽略 */ }
+}
+for (const l of approveLog) console.log(`  ${approveOk ? '✅' : '❌'} ${l}`);
+
+// ── 静态锁：消费必须发生在 `post-execute`，不许留在 `isApproved` 里 ─────────────
+const guardSrc = readFileSync(GUARD, 'utf8');
+const isApprovedBody = (guardSrc.match(/function isApproved\([\s\S]*?\n}/) || [''])[0];
+let staticOk = true;
+const lock = (cond, label) => { if (!cond) staticOk = false; console.log(`  ${cond ? '✅' : '❌'} ${label}`); };
+lock(isApprovedBody.length > 0 && !/writeApprovals/.test(isApprovedBody), '静态锁：isApproved() 体内不写 approvals.json（不在这里消费）');
+lock(/ctx\.on\(\s*['"]tools\/post-execute['"]/.test(guardSrc), "静态锁：apply 注册了 'tools/post-execute'");
+lock(/consumeApproved\(/.test(guardSrc), '静态锁：存在 consumeApproved()（写成功后消费）');
+
 const markerAfter = readMarker();
 const selfClean = markerBefore === markerAfter;
 if (!selfClean) {
@@ -165,4 +229,4 @@ if (!selfClean) {
   console.error(`    ${MARKER}`);
 }
 console.log(`[verify-guard-decisions] 自检：真 marker 运行前后${selfClean ? '一致 ✅（零污染）' : '不一致 ❌（本门禁是污染源）'}`);
-process.exit(fails.length || !selfClean || !wiringOk ? 1 : 0);
+process.exit(fails.length || !selfClean || !wiringOk || !approveOk || !staticOk ? 1 : 0);

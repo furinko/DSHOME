@@ -157,9 +157,14 @@ function readAutoApprove() {
     return aa && aa.enabled && aa.decidedBy === 'user' ? aa : null;
   } catch { return null; }
 }
-/** 是否已有"approved"的放行记录覆盖 目标路径+操作（一次性消费）。
- *  "每次都要问"：放行记录命中即删除，用完作废——下次改该文件需重新放行，不永久放行。
+/** 是否已有"approved"的放行记录覆盖 目标路径+操作。
+ *  **一次性**语义保留，但**消费时机改到"写成功之后"**（2026-09-12 修）：
+ *  旧实现命中即从 `approvals.json` 删除，而这一问发生在**工具真正执行之前** ⇒ 后续任何失败
+ *  （工具层拒绝 / 磁盘错 / 中断）都会**白烧**主人在面板点的那一次放行（09-12 实测一次）。
+ *  新实现：命中只记入 in-flight，等 `tools/post-execute` 报**成功**才真删（见 `consumeApproved`）。
  *  记录 path 以 "/" 结尾 → 视为目录前缀，覆盖其下所有同类文件；否则视为单文件，精确匹配。 */
+/** in-flight 放行（key = `路径|op` → 记录 id[]）：命中过、但还没等到"写成功"的额度。 */
+const approvedInFlight = new Map();
 /** 批准通道权威值：仅「心智 → 动作放行」面板点✓时写入的 decidedBy。
  *  agent 自批 / 绕过写入的批准，只要 decidedBy 非此值 → 视为伪造、不生效（L2 防"糊涂自批"）。 */
 const APPROVAL_CHANNEL_USER = 'user';
@@ -178,10 +183,26 @@ function isApproved(filePath, op) {
     (() => { const rp = normalizePath(a.path).toLowerCase(); return rp.endsWith('/') ? targets.some((t) => t.startsWith(rp)) : targets.some((t) => t === rp); })()
   );
   if (matched.length) {
-    writeApprovals(items.filter((a) => !matched.includes(a))); // 消费即删，作废该放行
-    return true;
+    const key = `${p.toLowerCase()}|${op}`;
+    const prev = approvedInFlight.get(key) || [];
+    approvedInFlight.set(key, [...new Set([...prev, ...matched.map((a) => a.id)])]);
+    return true; // ← 命中 ≠ 消费：等 `tools/post-execute` 报成功才删（2026-09-12 修）
   }
   return false;
+}
+
+/** **写成功才消费**（由 `tools/post-execute` 的成功分支调用）：删掉 in-flight 里那几条放行记录。
+ *  失败 / 拒绝 / 中断时**不调用** ⇒ 主人在面板点的那一次额度留着，可重试。
+ *  @returns 实际消费条数（0 = 本次没有待消费的额度） */
+function consumeApproved(filePath, op) {
+  const key = `${normalizePath(filePath).toLowerCase()}|${op}`;
+  const ids = approvedInFlight.get(key);
+  if (!ids || !ids.length) return 0;
+  const items = readApprovals();
+  const keep = items.filter((a) => !ids.includes(a.id));
+  if (keep.length !== items.length) writeApprovals(keep);
+  approvedInFlight.delete(key);
+  return items.length - keep.length;
 }
 /** 高危区未放行时往 approvals.json 追加一条待裁决（存完整文件路径；匹配按目录/文件区分）。 */
 /** reason 说明"改什么文件 + 改了什么内容摘要"，让面板卡片有信息（而非空洞死字符串）。 */
@@ -448,6 +469,23 @@ export function apply(ctx) {
         );
       }
       return reason; // 命中 → 拦截；undefined → 放行（不侵入生长空间）
+    });
+
+    // 放行额度**写成功才消费**（2026-09-12 修）：`tools/post-execute` 报成功才真删 approvals.json 里那条。
+    // 失败 / 拒绝 / 中断 ⇒ 额度留着 —— 主人在面板点的那一次不会被一次"未落盘的尝试"白烧。
+    ctx.on('tools/post-execute', async (exec, result, next) => {
+      // ⚠️ 不假设 `next` 一定存在：`verify-host-plugins` 会**真跑每个注册的 handler**，而它只传
+      //    两个参数（C2 反例 A 的机械化）⇒ 直接 `await next()` 会抛错并被判"挂载异常"。
+      //    hook 的最小可用签名假设：拿不到 next 就按"没有下游"处理，绝不能抛。
+      const decision = typeof next === 'function' ? await next() : undefined;
+      try {
+        const p = exec?.arguments?.file_path ?? exec?.arguments?.path ?? '';
+        if (result?.kind === 'success' && MUTATING_TOOLS.has(exec?.name) && p) {
+          const n = consumeApproved(p, 'edit'); // 高危分支统一 op='edit'（与上方 check 口径一致）
+          if (n) ctx.logger?.('dshome')?.info?.(`[mind-guard] 放行额度已消费（写成功）：${normalizePath(p)}（${n} 条）`);
+        }
+      } catch { /* 消费失败不影响执行 */ }
+      return decision;
     });
 
     // 记录挂载成功（解绑随插件 fiber 卸载，无需另存 disposer）。
