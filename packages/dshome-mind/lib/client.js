@@ -15,7 +15,13 @@ window.__ModuleLoader__.load({
 
     // ── 样式（DSHOME 品牌 + 图谱视觉）────────────────────────────────────────
     var STYLE = [
-      ".dshome-mind-root{flex:1;width:100%;min-height:0;max-height:calc(100vh - 220px);display:flex;flex-direction:column;overflow:hidden;font-size:13px;color:var(--dsw-alias-label-primary,#1a2233)}",
+      // 面板根 = viewArea 的 flex 子项：主轴（高度）由 flex-basis 决定，写死 height 无效（历史坑，
+      // 见 fitViewport 注释）。官方浮层钩子命中时上游已把 viewArea 锁成 flex:1 1 0 / overflow:hidden，
+      // 本项 flex:1 即精确填满可视高 —— 面板内部滚、外层不滚。
+      ".dshome-mind-root{flex:1 1 0;box-sizing:border-box;width:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;font-size:13px;color:var(--dsw-alias-label-primary,#1a2233)}",
+      // 钩子命中 = 输入框被上游改成绝对定位浮层（浮在面板底部之上）。上游把输入框实测高度写在
+      // 滚动区变量 --dsh-composer-height 上 → 面板底部让出这一段，内容不被浮层盖住。
+      "[data-conversation-scroll]:has([data-conversation-composer-overlay]) .dshome-mind-root{padding-bottom:var(--dsh-composer-height,152px)}",
       ".dshome-mind-header{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#e3e9f3);flex:none}",
       ".dshome-mind-title{font-size:14px;font-weight:700;letter-spacing:.2px;display:inline-flex;align-items:center;gap:6px}",
       ".dshome-mind-stat{font-size:11.5px;color:var(--dsw-alias-label-tertiary,#6b7a99);margin-left:auto;white-space:nowrap}",
@@ -999,14 +1005,23 @@ window.__ModuleLoader__.load({
     }
 
     // ── 面板挂载 ─────────────────────────────────────────────────────────────
-    // 会话区 = header + scrollBody(可视滚动容器) + composer。官方 scrollBody 内容可撑开页面
-    // （chat 整页滚是官方模式）——面板必须锁在 scrollBody 的【可视高度】内：图内部滚、
-    // 详情与图等高、页面不滚。动态测真正滚动容器（找 overflow-y auto/scroll 的祖先）。
+    // 会话区 = header + scrollBody(可视滚动容器) + composer seat（输入框，在 scrollBody 流内）。
+    // chat 视图整页滚是官方模式；面板不是——必须锁进 scrollBody 的【可视高度】，图内部滚、页面不滚。
+    //
+    // 2026-09-12 根治（沿上游官方钩子，不动 node_modules）：
+    //   面板根挂 `data-conversation-composer-overlay`（官方「轨迹」视图同款）→ 上游 CSS
+    //   `.wSkVaW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation.session]
+    //    >.wSkVaW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}` + 输入框改绝对定位浮层：
+    //   scrollBody 内容 = viewArea 一项 = 无溢出 → 整块面板不再跟着滚。
+    //
+    // ⚠️ 历史坑（本函数此前是死代码）：`flex:1` = `flex-basis:0%`，**主轴上 flex-basis 压过 height**，
+    //   所以写 `host.style.height` 从未生效 → 面板高度一直由内容/upstream 撑、整体滚无法根治。
+    //   兜底路径必须写 flex-basis（下方 `host.style.flex`）。
     function fitViewport(host) {
-      // 只认"真正可视滚动区"：overflow auto/scroll 且 clientHeight ≤ 视口的容器。
-      // 内容撑高的大容器 clientHeight 会超过视口（不是固定可视区），直接排除；
-      // 否则"最小者"会误选内容撑高容器 → 面板被撑长。
+      // 优先认官方滚动区标记；老版/异常情况下退化为"找 overflow auto/scroll 且不超视口的最近祖先"。
       function findScroller() {
+        var direct = host.closest("[data-conversation-scroll]");
+        if (direct) return direct;
         var best = null;
         var el = host.parentElement;
         while (el && el !== document.body) {
@@ -1018,15 +1033,33 @@ window.__ModuleLoader__.load({
         }
         return best;
       }
+      // 官方钩子是否真的生效：viewArea（root 的祖先）被上游锁成 overflow:hidden 即生效。
+      function overlayEngaged() {
+        var anchor = host.parentElement;           // [data-slot=conversation.view]（display:contents）
+        var viewArea = anchor && anchor.parentElement;
+        if (!viewArea) return false;
+        return getComputedStyle(viewArea).overflowY === "hidden";
+      }
       var lastSb = null;
       var ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(apply) : null;
       function apply() {
         var sb = findScroller();
+        if (sb && overlayEngaged()) {
+          // 官方分支：布局交给 CSS（flex:1 填满 viewArea），清掉兜底内联值即可
+          host.style.flex = "";
+          host.style.height = "";
+          return;
+        }
         if (sb) {
-          host.style.height = Math.max(320, sb.clientHeight - 16) + "px";
-          if (lastSb !== sb) { lastSb = sb; if (ro) { try { ro.observe(sb); } catch (err) {} } }
+          var seat = sb.querySelector("[data-composer-seat]");
+          var seatH = seat ? seat.offsetHeight : 0;   // 输入框在滚动区流内 → 必须让出这段高度
+          var h = Math.max(320, sb.clientHeight - seatH - 16);
+          host.style.flex = "0 0 " + h + "px";        // 主轴尺寸真源（height 会被 flex-basis 压掉）
+          host.style.height = "";
+          if (lastSb !== sb) { lastSb = sb; if (ro) { try { ro.observe(sb); ro.observe(seat); } catch (err) {} } }
         } else {
-          host.style.height = Math.max(380, (window.innerHeight || 900) - 260) + "px";
+          host.style.flex = "0 0 " + Math.max(380, (window.innerHeight || 900) - 260) + "px";
+          host.style.height = "";
         }
       }
       apply();
@@ -1288,7 +1321,10 @@ window.__ModuleLoader__.load({
           if (ref.current) ref.current.innerHTML = "";
         };
       }, []);
-      return react_jsx_runtime.jsx("div", { className: "dshome-mind-root", ref });
+      // data-conversation-composer-overlay = 上游官方钩子（官方「轨迹」视图同款）：命中后上游把
+      // viewArea 锁成定高（flex:1 1 0 / min-height:0 / overflow:hidden）、输入框改绝对定位浮层 →
+      // scrollBody 只装 viewArea 一项 = 无溢出，面板不再被整块滚走。详见 fitViewport 注释。
+      return react_jsx_runtime.jsx("div", { className: "dshome-mind-root", ref, "data-conversation-composer-overlay": "" });
     }
 
     // ── 独立「⏰ 定时」view React 壳（conversation.view id=cron）───────────────
@@ -1298,7 +1334,8 @@ window.__ModuleLoader__.load({
         if (ref.current) mountCron(ref.current);
         return function () { if (ref.current) ref.current.innerHTML = ""; };
       }, []);
-      return react_jsx_runtime.jsx("div", { className: "dshome-mind-root", ref });
+      // 同 MindView：挂官方浮层钩子（定时视图同样有"整体被滚走"的病，一并治）
+      return react_jsx_runtime.jsx("div", { className: "dshome-mind-root", ref, "data-conversation-composer-overlay": "" });
     }
 
     // ── 接入心智开关（conversation.input.left）───────────────────────────────
