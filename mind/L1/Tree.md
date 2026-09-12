@@ -41,8 +41,8 @@
 | import-artifact.md | 1.0.0 | 导入协议：其他设备/agent 产物即插即用 | import、导入、即插即用、artifact、蒸馏包 |
 | boot-recall.md | 1.0.3 | 上工自动召回：project.md+L3+Learn+user-rules+人设卡 装配成注入上下文 | 上工、你想不起来、有什么待办、记忆召回 |
 | dshome-diagnostics.md | 1.1.0 | DSHOME 诊断两层：进程层（崩/卡/闪断：先分真假+证据）+ agent 层（报错→源码链→会话日志取证四跳 + 离线端到端验证） | 后端重启、卡、exit1、闪断、本轮运行失败、报错文本、turn error |
-| dshome-crash-recovery.md | 1.0.6 | DSHOME/DSH 崩溃排查+自愈：三层定位（装配期/运行期/前端半区）+ marker 定位崩溃插件 + guard --recover/safe 逃生 + Failed to load plugins 四证核对 | 启动失败、起不来、崩溃循环、Failed to load plugins、半区加载失败、ERR_PACKAGE_PATH_NOT_EXPORTED |
-| dshome-plugin-dev.md | 1.3.3 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚；自有 host 插件落地**四处登记**（漏 exports = 启动崩）；安全模式 v3（覆盖层 L3+L4 并集、`--patch` 必须排在 app 参数之前）；打包缺 bundle + 包外脚本 require 实体化失效排查 | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败、启动崩溃、安全模式 |
+| dshome-crash-recovery.md | 1.0.8 | DSHOME/DSH 崩溃排查+自愈：三层定位（装配期/运行期/前端半区）+ marker 定位崩溃插件 + **市场事件日志 `log.ndjson` 变更取证** + guard --recover/safe 逃生 + Failed to load plugins 四证核对 | 启动失败、起不来、崩溃循环、Failed to load plugins、半区加载失败、ERR_PACKAGE_PATH_NOT_EXPORTED |
+| dshome-plugin-dev.md | 1.3.5 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚；自有 host 插件落地**四处登记**（漏 exports = 启动崩）；安全模式 v3（覆盖层 L3+L4 并集、`--patch` 必须排在 app 参数之前）；打包缺 bundle + 包外脚本 require 实体化失效排查；变更取证看 `.dsh-market\log.ndjson` | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败、启动崩溃、安全模式 |
 | landing-audit.md | 1.0.0 | 落地审计三查法：查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」（定义/接线/数据逐层查） | 审计、落地、三查、落到实处吗、纸面定义、空壳、接线 |
 | scar-inference.md | 1.1.0 | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古、蒸、版本差、反推坑、咬痕、伤疤、为什么在、作者画像、同源盲区 |
 

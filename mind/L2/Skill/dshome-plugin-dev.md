@@ -1,7 +1,7 @@
 ---
 name: dshome-plugin-dev
 description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地四处登记（漏 package.json exports = 宿主启动崩）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
-version: 1.3.3
+version: 1.3.5
 author: DSHOME
 license: internal
 metadata:
@@ -165,11 +165,13 @@ v2「只取第一个 patch 文件」只覆盖 L3（15 行）、L4 后加的行�
 - **回归**：`scripts/verify-safe-overlay.mjs`（**25 断言**：A 解析规则 / B 参数位置 / C 真实仓库布局 /
   D **CLI 清单 == 外壳清单**；已进 `pnpm verify` 与 `pre-commit` ⑤）——改这块前后都跑它
   （变异测试两例：`--patch` 退回拼末尾 → B1/B2 FAIL；safe.mjs 退回「只 L3」→ D3/D5 FAIL）。
+- ⚠️ **safe 的覆盖边界（2026-09-12 实测 `--print-ids`）**：清单 20 个 id **全是自有插件 + 官方实验三包 —— 第三方包一个都没禁**，其中包括**能在进程内改 profile 的插件市场 `dsh-market`**。⇒ **safe ≠ "第三方面被关掉"**（09-11 第三方包崩时 safe 同样起不来）——事故窗口里从市场装插件，等于**继续改 profile**：先 `plugin-change-guard --preflight` 留安全点。判断"safe 会不会把这个包禁掉"**一律跑 `--print-ids` 看清单，别按"应该禁了吧"推断**。
 
 **自检信号**（改完重启宿主后）：
 - 有 marker 的插件：marker 时间戳必须刷新（`profiles\dshome\.dsh-market\<name>-marker.txt`）
 - 无 marker 的插件：宿主能完整 boot（3099 + HTTP 200）
 - ⚠️「插件树能加载到前一插件」≠「本插件正常」——崩溃点用 marker/日志对比定位（崩溃插件在前的插件每轮刷新、它自己不刷新）
+- **插件 / 配置变更取证**：市场（`dshmarket`）自己的持久日志在 `profiles\dshome\.dsh-market\log.ndjson`（ndjson 一行一事件：`install` / `install-blocked`（**有 agent 在跑即拒绝安装**的并发保护，带 session id）/ `hot-mount` / `boot`，含失败原因与 pnpm 输出尾部）。**"谁装了 / 改了 profile"先看这里**——2026-09-12 补：本节此前只提 `*-marker.txt`，这本日志从没进过排查口径（于是出事时"查不到"）。
 
 **验证流程**：写完逻辑先 `node --check` 语法 → 重启宿主看 boot + marker → 跑对应 itest/verify。
 **不要**只测逻辑就收工（本次事故：itest 全绿但宿主加载链没验，上线即崩）。
@@ -182,4 +184,4 @@ v2「只取第一个 patch 文件」只覆盖 L3（15 行）、L4 后加的行�
 - 组件渲染/纯逻辑可先单测（本地 node + 匹配 react），但**不要**把从外部源码反推的接口当真实契约。
 
 ---
-_版本：1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | _版本：1.3.2 | 2026-09-11 | §十 订正：`scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
+_版本：1.3.5 | 2026-09-12 | 安全模式段补「**safe 的覆盖边界**」（实测 `--print-ids`：20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`；判"safe 会不会禁某包"一律跑 `--print-ids`，别推断）| _版本：1.3.4 | 2026-09-12 | 「自检信号」增「**插件/配置变更取证** → `profiles\dshome\.dsh-market\log.ndjson`」（市场自带事件日志：`install` / `install-blocked`（有 agent 在跑即拒绝安装）/ `hot-mount` / `boot`；"谁装了/改了 profile"先看这里）——本节此前只提 `*-marker.txt` | _版本：1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | _版本：1.3.2 | 2026-09-11 | §十 订正：`scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
