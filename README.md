@@ -48,6 +48,17 @@ pnpm install        # 装依赖（workspace 链接四包）
 pnpm run setup      # 下载 electron 二进制（pnpm 默认跳过 postinstall；此脚本用镜像加速）
 ```
 
+### 方式三：日常更新（多机同步后）
+
+在另一台机器改了依赖 / 插件版本后，回家**双击根目录的 `更新DSHOME.cmd`** 即可：
+
+1. `git pull --ff-only`（工作区有**已跟踪文件**的改动时会先拦下，不会硬拉）
+2. `pnpm install` —— **真正把另一台机器改的插件版本装到本机的那一步**（只拉 git 不 install，会安静地停在旧版本）
+3. 校验 `profiles/dshome` 的精确版本 pin 与 `node_modules` 实体是否一致（`scripts/verify-pin-vs-installed.mjs`）
+
+只想看状态、不动任何文件：`更新DSHOME.cmd check`。
+`pnpm` 本体需要更新时才用 `update-pnpm.cmd`（默认钉 10.x；跨大版本会改写 `pnpm-lock.yaml` 的 lockfileVersion，多机共用慎用）。
+
 ## 发布给他人（仅 GitHub tag 分发）
 
 各包均为 `private: true`，**不走 npm 发布**；分发载体是 GitHub 仓库 + 版本 tag：
