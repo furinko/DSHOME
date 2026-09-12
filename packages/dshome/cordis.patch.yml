@@ -56,6 +56,12 @@
     # 同 Skill 同会话只提示一次；fails-open。与 inject(纪律)/recall(记忆)/guard(护栏) 互补。
     - id: dshome-mind-skill-loader
       name: dshome/mind-skill-loader
+    # dshome-mind-compaction-log（host）：压缩留痕——订阅会话事件的 compaction/*，把此前
+    # **静默**的上下文压缩（自动阈值 0.8 / 手动 /compact / 工具结果剪枝）写成一行审计记录
+    # （mind-private\tasks\evolution\compaction-log.md，独立文件不污染 changelog）。
+    # 释放量口径 = start/end 两次 tokenMeter.measure 差值；取不到记 unknown（#14）。只追加、fail-open。
+    - id: dshome-mind-compaction-log
+      name: dshome/mind-compaction-log
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。

@@ -21,9 +21,10 @@
 // marker，但顶层没导入 → ReferenceError → 被该函数自己的空 `catch { /* 忽略 */ }` 吞掉
 // → **marker 保护从未生效过**。同型 bug（未定义标识符 + 空 catch 吞掉）正是本脚本存在的
 // 唯一理由，却长在它自己身上。node --check 同样查不出（语法合法）。
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
 const repoRoot = process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..');
 const HOST_DIR = join(repoRoot, 'packages', 'dshome', 'lib', 'host');
@@ -156,6 +157,8 @@ function fmt(args) {
 }
 
 let failed = 0;
+/** 门禁**自身**的失败（如 marker 保护未生效）——与"插件有问题"分开计数、一起拦提交。 */
+const gateSelfFailures = [];
 if (!existsSync(HOST_DIR)) {
   console.error(`[verify-host-plugins] ❌ 目录不存在: ${HOST_DIR}`);
   process.exit(1);
@@ -165,8 +168,11 @@ if (!existsSync(HOST_DIR)) {
  *  而那个 marker 是"注入确实发生过"的**现场证据** —— 本脚本不得把它冲掉。
  *  做法：跑 handler 前备份内容、跑完原样恢复（内容恢复即可；mtime 变了不影响它作为证据的语义）。 */
 const MARKET_DIR = join(repoRoot, 'profiles', 'dshome', '.dsh-market');
+/** 本脚本可能弄脏的固定落点：**即使此刻不存在也要登记**（值 null = 跑前不存在 → 跑后删除）。 */
+const KNOWN_MARKERS = ['mind-guard-marker.txt'];
 function snapshotMarkers() {
   const snap = new Map();
+  for (const f of KNOWN_MARKERS) snap.set(join(MARKET_DIR, f), null);
   try {
     for (const f of readdirSync(MARKET_DIR)) {
       if (!/marker/i.test(f)) continue;
@@ -178,9 +184,30 @@ function snapshotMarkers() {
 }
 function restoreMarkers(snap) {
   for (const [p, content] of snap) {
-    try { writeFileSync(p, content, 'utf8'); } catch { /* 忽略 */ }
+    try {
+      // 「跑前不存在」→ 跑后删掉：只有从未启动过宿主的机器才走这里（启动过必有挂载行 ⇒ content 非 null
+      //  ⇒ 走回写分支），故不会误删真实证据。
+      if (content === null) { if (existsSync(p)) rmSync(p, { force: true }); }
+      else writeFileSync(p, content, 'utf8');
+    } catch { /* 忽略 */ }
   }
 }
+/** 保护自检：跑完必须与跑前**逐字节相同**。
+ *  机制不只要能跑，还要能自证——本仓库的老病正是"机制在、接线错"（本文件自己就栽过两次）。 */
+function markerLeaks(snap) {
+  const leaks = [];
+  for (const [p, content] of snap) {
+    let now = null;
+    try { now = existsSync(p) ? readFileSync(p, 'utf8') : null; } catch { now = '<读失败>'; }
+    if (now !== content) leaks.push(basename(p));
+  }
+  return leaks;
+}
+
+// **进程起点基线**：拍在任何 apply 之前。为什么不能只比"每插件跑前/跑后"——
+//   旧线序（快照拍在 apply 之后）下，快照里已经含本次新增行 ⇒ 跑前 == 跑后 ⇒ 自检**看不见**污染。
+//   只有拿"整轮开始前"的基线比"整轮结束后"，接线错位才必然露头（终态 != 基线）。
+const MARKER_BASELINE = snapshotMarkers();
 
 console.log(`[verify-host-plugins] 真加载 host 插件（挂载清单来自 cordis.patch.yml，${PLUGINS.length} 个）`);
 // 挂载清单本身不可用 ⇒ 失败（同 mind-validate 的「输入缺失即响亮失败」原则）
@@ -220,12 +247,17 @@ for (const name of PLUGINS) {
     continue;
   }
 
+  // ③-pre 快照 marker —— **必须在 apply 之前**：
+  //   mind-guard 的 `mounted:` 行就是在 apply 里写的。旧代码把它拍在 apply **之后** ⇒ 快照已含本次
+  //   新增行 ⇒ `restoreMarkers` 把污染原样写回 ⇒ **保护从未生效**（2026-09-12 实测：每跑一次门禁
+  //   就往 profiles/dshome/.dsh-market/mind-guard-marker.txt 多塞一条假挂载行，与真启动的挂载行混在一起）。
+  const markerSnap = snapshotMarkers();
+
   // ③ apply 阶段
   try { await mod.apply(makeCtx(record)); } catch (e) { thrown = e; }
 
   // ④ handler 阶段：**真跑一次** —— C2 的反例 A（把 isMindConnected 改恒 false，注入永远早退）
   //    只有这一步才抓得到：原版 mock 把 handler 丢掉，那个坏守卫从未被执行过一次。
-  const markerSnap = snapshotMarkers();
   for (const { ev, handler } of record.handlers) {
     try {
       const decision = { kind: 'enter', messages: [] };
@@ -272,5 +304,110 @@ for (const name of PLUGINS) {
   }
 }
 
-console.log(`[verify-host-plugins] ${failed === 0 ? '✅ 全部通过' : `❌ ${failed} 个插件挂载异常`}（退出码 ${failed === 0 ? 0 : 1}）`);
-process.exit(failed === 0 ? 0 : 1);
+// 门禁自检：整轮跑完，marker 必须与**进程起点基线**逐字节一致。
+//   露头条件：① 快照线序错位（拍在 apply 之后 → 恢复把污染写回）；② 恢复写入失败；③ 有插件在 apply 里
+//   写 marker 却没人保护。任一发生 → 护栏现场证据被门禁自己污染（本就是"机制在、接线错"的老病）。
+markerLeaks(MARKER_BASELINE).forEach((f) => gateSelfFailures.push(`marker 未回到起点基线（${f}）→ 保护接线错位/写入失败，会污染护栏现场证据`));
+
+// ── 包路径解析探针（2026-09-12 加 · 真实事故）────────────────────────────────
+// 上面的加载段按**文件路径** import（`lib/host/<x>.js`），**绕过了 package exports**：
+// 2026-09-12 实景——compaction-log 插件漏登 `packages/dshome/package.json` 的 `exports`，
+// 本脚本照样全绿；可重启宿主后 cordis 按**包子路径** `dshome/mind-compaction-log` 加载时，
+// ESM 直接拒收（`ERR_PACKAGE_PATH_NOT_EXPORTED`）→ 插件一行没跑、后端 boot 后必死，
+// 连崩 3 次撞外壳熔断 + 模态窗阻塞主进程 → 界面掉线，靠外部救援才恢复。
+// 探针只 `resolve` 不执行（零副作用），把「启动才崩」提前成「提交前就红」。
+function probePackageExports() {
+  const profilePkg = join(repoRoot, 'profiles', 'dshome', 'package.json');
+  if (!existsSync(profilePkg)) {
+    // fail-closed：缺 profile 就无法验证包解析面，不静默跳过（Invariants #14）。
+    return { checked: 0, failures: [`${profilePkg} 不存在——无法验证包解析面（fail-closed）`] };
+  }
+  let req;
+  try { req = createRequire(profilePkg); }
+  catch (e) { return { checked: 0, failures: [`createRequire(${profilePkg}) 失败：${e.message}`] }; }
+  const failures = [];
+  let checked = 0;
+  for (const p of PLUGINS) {
+    const spec = `dshome/${p}`;
+    try { req.resolve(spec); checked += 1; }
+    catch (e) { failures.push(`${spec} → ${e.code || e.message}`); }
+  }
+  return { checked, failures };
+}
+
+// ── ctx 服务访问对齐探针（2026-09-12 加 · 同一天第二个真实事故）──────────────
+// 事故：mind-compaction-log 写 `ctx.tokenMeter?.measure?.()`，但 inject 只有 ['fs']。
+//   cordis 4.0.2 的服务解析（reflect/get）**沿祖先 fiber 链找 store**：命中即返回（不校验 inject）；
+//   若提供方在**兄弟分支**（token-meter 属 base 补丁树）则走 inject 检查 → 不在 inject 里就抛
+//   `cannot get property "X" without inject`。该异常被插件自己的 try/catch 吞成 null ⇒
+//   审计行「释放 token」恒记 `unknown` —— **真 bug 伪装成「框架没给能力」**，白纸黑字骗了一轮。
+//   修法：`ctx.get('X')`（cordis 明写的「不要求 inject 的读取通道」）。
+// 口径：去注释 + 去字符串后匹配 `(?<![\w$.])ctx.<ident>`（`wctx.`/`sctx.` 不算）；
+//   声明面 = 模块级 inject + 文件里所有 `ctx.inject([...])` 子作用域的 inject（取并集，避免子 ctx 误报）；
+//   `ctx.get(...)` 合规不报。当前全树应**零命中**；将来新增服务访问若没声明，提交前即红。
+const CORDIS_INTRINSICS = new Set([
+  'logger', 'fiber', 'reflect', 'registry', 'events', 'root', 'baseUrl',
+  'on', 'off', 'once', 'emit', 'parallel', 'serial', 'bail', 'waterfall',
+  'effect', 'get', 'set', 'provide', 'plugin', 'inject', 'extend', 'isolate',
+  'intercept', 'scope', 'start', 'stop', 'dispose', 'then', 'config',
+]);
+/** 例外（`文件:属性` → 理由）。当前仅 1 条；加条目前必须写清「为什么不用 inject」。
+ *  probe8 实验（仓库外，同版 cordis）：**祖先 fiber 提供**的服务属性访问可用；**兄弟分支**提供
+ *  的必抛 `without inject`。plugin-store 的 `snapshot(ctx)` 是**接 ctx 参数**的共享函数：
+ *  loader 由插件树加载器自身提供，而插件树正是它创建的 ⇒ loader 是本插件 fiber 的**祖先**
+ *  （同理 token-meter 属 base 补丁树，是**兄弟** → 必须 inject / 走 ctx.get）。 */
+const ALLOW_WITHOUT_INJECT = new Map([
+  ['plugin-store.js:loader', 'loader 由插件树加载器自身提供 = 祖先 fiber（插件树由它创建）；该文件的 snapshot(ctx) 是接参共享函数'],
+]);
+
+function probeContextServiceAccess() {
+  const files = readdirSync(HOST_DIR).filter((f) => f.endsWith('.js'));
+  const failures = [];
+  const seen = new Set();
+  let scanned = 0;
+  let accesses = 0;
+  for (const file of files) {
+    const src = readFileSync(join(HOST_DIR, file), 'utf8');
+    const noComments = src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    const code = noComments
+      .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+      .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+      .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+    const declared = new Set();
+    for (const m of noComments.matchAll(/inject\s*[:=]\s*\[([^\]]*)\]/g)) {
+      for (const s of m[1].matchAll(/'([^']+)'|"([^"]+)"/g)) declared.add(s[1] ?? s[2]);
+    }
+    for (const m of code.matchAll(/(?<![\w$.])ctx\.([A-Za-z_$][\w$]*)/g)) {
+      const prop = m[1];
+      if (prop.startsWith('_') || CORDIS_INTRINSICS.has(prop)) continue;
+      accesses += 1;
+      if (declared.has(prop) || ALLOW_WITHOUT_INJECT.has(`${file}:${prop}`)) continue;
+      const key = `${file}:${prop}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      failures.push(`${file}: ctx.${prop} 未在任何 inject 中声明 → cordis 会抛 \`without inject\`（补 inject，或改用 ctx.get('${prop}')）`);
+    }
+    scanned += 1;
+  }
+  return { scanned, accesses, failures };
+}
+
+const probe = probePackageExports();
+if (probe.failures.length === 0) {
+  console.log(`  ✅ 包路径解析：${probe.checked} 个 dshome/* 子路径全部可解析（package.json exports 齐全）`);
+} else {
+  for (const f of probe.failures) console.log(`  ❌ 包路径解析失败：${f}`);
+  console.log('      修法：packages/dshome/package.json 的 exports 补 "./<name>": "./lib/host/<name>.js"');
+}
+
+const svc = probeContextServiceAccess();
+if (svc.failures.length === 0) {
+  console.log(`  ✅ ctx 服务访问：${svc.scanned} 个插件 / ${svc.accesses} 处属性访问全部已声明 inject（或走 ctx.get）`);
+} else {
+  for (const f of svc.failures) console.log(`  ❌ ${f}`);
+}
+
+const totalFailed = failed + probe.failures.length + svc.failures.length + gateSelfFailures.length;
+for (const f of gateSelfFailures) console.log(`  ❌ 门禁自检失败：${f}`);
+console.log(`[verify-host-plugins] ${totalFailed === 0 ? '✅ 全部通过' : `❌ ${totalFailed} 项异常（挂载异常 ${failed} + 包解析失败 ${probe.failures.length} + 服务访问失配 ${svc.failures.length} + 门禁自检 ${gateSelfFailures.length}）`}（退出码 ${totalFailed === 0 ? 0 : 1}）`);
+process.exit(totalFailed === 0 ? 0 : 1);

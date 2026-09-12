@@ -19,6 +19,7 @@
 #   ⑦ scripts/verify-payload.mjs           —— payload 新鲜度 / 毒树 / 私有面（2026-09-12 加：打包快照不许带旧代码）
 #   ⑧ scripts/verify-trash.mjs             —— TRASH 回收站真值表 10 例（2026-09-12 加；每例独立临时 DSH_HOME ⇒ 真仓库零触碰）
 #   ⑨ scripts/backup-settings.mjs          —— settings.yaml 留档（私有区；**非阻塞**，见下）
+#   ⑩ scripts/verify-compaction-log.mjs    —— 压缩留痕真值表 14 例（2026-09-12 加；真 cordis + 临时 DSH_HOME）
 #
 # ── 逃生门 ───────────────────────────────────────────────────────────────────
 #   `git commit --no-verify`：仅在**明确知情**时用（例如正在修的正是校验器本身）。
@@ -63,3 +64,9 @@ node scripts/verify-trash.mjs
 #    它是运行时配置、不在 git 里、DSH 启动可能整份重写 → 每次提交顺手留一档。
 #    ⚠️ 备份是辅助不是门禁：失败只告警，不阻塞提交。
 node scripts/backup-settings.mjs || echo "[pre-commit] ⚠️ settings 留档失败（不阻塞提交）"
+# ⑩ 压缩留痕真值表（2026-09-12 加）：新落的 host 插件 `mind-compaction-log` 靠事件流写审计行，
+#    而它的**第一版验证脚本用假 ctx**——假 ctx 正好绕过 cordis 的 inject 门（同一 bug 在测试里永远
+#    看不见，9/9 绿、线上全是 `unknown`）。本项真跑 cordis：真 provide / 真 inject / 真事件发射，
+#    14 例（含 4 个反例）+ 临时 DSH_HOME ⇒ 真仓库与真日志零触碰。
+#    已过「测试的测试」：在修复前的插件快照上复跑 ⇒ B/G×2/H 段变红（10/14，exit 1）。
+node scripts/verify-compaction-log.mjs

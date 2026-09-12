@@ -393,7 +393,11 @@ export function apply(ctx) {
     // 只对"写/改文件"工具设闸；read 等读操作放行。
     const MUTATING_TOOLS = new Set(['write', 'edit', 'str_replace_editor']);
 
-    const disposer = ctx.tools.guard((exec) => {
+    // 返回值不另存：guard 经 ctx.tools.guard → layers.effect(this.ctx) 注册，**随本插件 fiber 卸载自动解绑**。
+    // （旧代码把返回值写到 `ctx.dshomeGuardDisposer`：cordis 里未 provide 就写 ctx 属性必抛
+    //  `cannot set property "dshomeGuardDisposer" without provide`，又被下面的 catch 接住 ——
+    //  于是每次「挂载成功」都会多打一条自相矛盾的「初始化失败（护栏未生效）」告警，且该属性全仓无读者。）
+    ctx.tools.guard((exec) => {
       const tool = exec?.name;
       const args = exec?.arguments;
 
@@ -428,7 +432,7 @@ export function apply(ctx) {
       return undefined; // 其余写入一律放行（不侵入生长空间）
     });
 
-    // 记录挂载成功 + 暴露 disposer 供卸载。
+    // 记录挂载成功（解绑随插件 fiber 卸载，无需另存 disposer）。
     mountInfo = `mounted: ${new Date().toISOString()} | autoApprove=${readAutoApprove() ? 'ON' : 'off'}`
       + ` | mutatingTools=${[...MUTATING_TOOLS].join('/')} | root=${root}`;
     writeMarker(mountInfo);
@@ -436,7 +440,6 @@ export function apply(ctx) {
       'dshome-mind-guard: 护栏已挂载（隐私红线 + 自我修改门禁）@ root=%s',
       root
     );
-    ctx.dshomeGuardDisposer = disposer;
   } catch (error) {
     ctx.logger?.('dshome').warn('dshome-mind-guard: 初始化失败（护栏未生效，勿因此中断）: %O', error);
   }

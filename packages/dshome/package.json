@@ -18,7 +18,8 @@
     "./plugin-manager": "./lib/host/plugin-manager.js",
     "./desktop": "./lib/host/desktop.js",
     "./package.json": "./package.json",
-    "./mind-skill-loader": "./lib/host/mind-skill-loader.js"
+    "./mind-skill-loader": "./lib/host/mind-skill-loader.js",
+    "./mind-compaction-log": "./lib/host/mind-compaction-log.js"
   },
   "dsh": {
     "bundle": {

@@ -3,7 +3,7 @@
 //
 // ── 为什么需要它（真实事故）──────────────────────────────────────────────────
 // 主人报「后端崩了没报错框、安全模式打不开」，查出两处硬伤，都是**纯逻辑、单测可锁**的：
-//   ① 覆盖层只取「找到的第一个 patch 文件」→ 只覆盖 L3 产品层 15 行；L4 覆盖层里
+//   ① 覆盖层只取「找到的第一个 patch 文件」→ 只覆盖 L3 产品层 16 行；L4 覆盖层里
 //      后加的 `dsh-imagegen` / Agent Teams 三个实验包**不在禁用范围**（dump-config 实测）。
 //   ② 安全模式的 `--patch` 被拼在 app 参数（`--no-open`/`--port`）**之后** → dsh 0.1.5
 //      直接判 `unknown option '--patch'`（实测）→ 后端根本起不来，安全模式反成崩溃源。
@@ -13,7 +13,7 @@
 //   A. 解析规则：insert 块内的行算自有；insert 之外的「覆盖官方行」（webserver /
 //      llm-deepseek…）**绝不能被禁**（禁了会把宿主一起打死）；任何位置的 dshome* 兜底收。
 //   B. 参数位置：`--patch` 必须插在 `--profile` 之后、app 参数之前；已带则不重复插。
-//   C. 真实仓库布局：L3 产品层 15 行必须全部命中；四个官方覆盖行必须全部缺席；
+//   C. 真实仓库布局：L3 产品层 16 行必须全部命中；四个官方覆盖行必须全部缺席；
 //      L4 若存在必须在来源里（其行可被人工注释停用，故不硬断言具体 id）。
 //   D. CLI 逃生通道：`packages/dshome/scripts/safe.mjs --print-ids` 的清单必须与外壳
 //      `collectSafeIds()` **恒等**（2026-09-11 补——该脚本曾只解析 L3，事故① 的第二实现）。
@@ -104,10 +104,10 @@ const L3_IDS = [
   'dshome-core', 'dshome-shell', 'dshome-theme', 'dshome-palette', 'dshome-notify',
   'dshome-plugin-manager', 'dshome-plugin-center', 'dshome-assistant-identity',
   'dshome-mind', 'dshome-mind-inject', 'dshome-mind-guard', 'dshome-mind-recall',
-  'dshome-mind-connect', 'dshome-mind-skill-loader', 'dshome-desktop',
+  'dshome-mind-connect', 'dshome-mind-skill-loader', 'dshome-mind-compaction-log', 'dshome-desktop',
 ];
 const missing = L3_IDS.filter((i) => !ids.includes(i));
-check('C1 L3 产品层 15 个自有插件全部命中', missing.length === 0, '缺：' + missing.join(', '));
+check('C1 L3 产品层 16 个自有插件全部命中', missing.length === 0, '缺：' + missing.join(', '));
 const OFFICIAL = ['web-runtime', 'webserver', 'llm-deepseek', 'ui-brand-official'];
 const leaked = ids.filter((i) => OFFICIAL.includes(i));
 check('C2 官方覆盖行一个都没被误禁', leaked.length === 0, '泄漏：' + leaked.join(', '));

@@ -1,7 +1,7 @@
 ---
 name: dshome-plugin-dev
-description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地三步（exports 注册易漏）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
-version: 1.3.2
+description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地四处登记（漏 package.json exports = 宿主启动崩）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
+version: 1.3.3
 author: DSHOME
 license: internal
 metadata:
@@ -126,18 +126,29 @@ Host `harness.handle('method', handler)`，Client `await host.call('method', arg
 
 **包外脚本 require（2026-09-08 实测）**：DShome 插件若 `require('../../../scripts/x')` 依赖**仓库根 scripts** 的共享脚本——开发时 junction 指向 `packages/<pkg>`、向上到仓库根（能跑）；安装实体化后 junction 被压成实体目录、向上到 `profiles/dshome`（无 scripts）→ `MODULE_NOT_FOUND` 后端崩。**一律改用 `require(path.join(repoRoot(),'scripts',x))` 动态 require**（`repoRoot()`=`DSH_HOME` 优先，dev=仓库根/安装=安装目录，两处 scripts 均在）；`smoke`（dev）与"实体布局 probe"双验。
 
-## 十、DSHOME 自有 host 插件落地（三步 checklist + 安全模式）
+## 十、DSHOME 自有 host 插件落地（**四处登记** checklist + 安全模式）
 
 > 2026-09-04 血泪教训：开发 mind-recall host 插件时漏了 exports 注册，宿主启动崩溃循环 7+ 轮；
-> 且安全模式静态清单漏 mind 系插件，崩溃时逃生通道形同虚设。以下三步**缺一不可**。
+> 且安全模式静态清单漏 mind 系插件，崩溃时逃生通道形同虚设。
+> **2026-09-12 复发（同一个病，我犯的）**：compaction-log 插件登记了 ①③④、**漏了 exports（②）**——
+> 12:42 重启后端 boot 后必死，连崩 3 次撞外壳熔断（`MAX_CONSECUTIVE_FAILS=3`）→ 模态窗阻塞主进程 →
+> **3099 掉线**，靠外部救援方（Hermes）补一行 exports + WMI 重拉才恢复。
+> ⚠️ **本次最关键的一课**：这条 checklist 早就写在这里、描述还进过我的上工召回，**而我一次没读就动手**——
+> 「规则建了、动作没接上」。落新 host 插件前**先读本节**，别凭印象。
 
-**任何新 host 插件（`packages/dshome/lib/host/<name>.js`）上线必须三步齐：**
+**任何新 host 插件（`packages/dshome/lib/host/<name>.js`）上线必须四处齐：**
 
 1. [ ] **插件文件**：`packages/dshome/lib/host/<name>.js`，`export const name` 与 patch 的 id 一致、格式同既有插件（mind-inject 为模板）
 2. [ ] **`package.json` exports**：`packages/dshome/package.json` 的 `exports` 补
-      `"./<name>": "./lib/host/<name>.js"` ← **最容易漏的一步**（漏了 → `ERR_PACKAGE_PATH_NOT_EXPORTED` → 宿主启动即死）
-3. [ ] **cordis.patch.yml 注册**：insert 块加 `- id: dshome-<name>` / `name: dshome/<name>` 条目
-      （还要同步 `settings.yaml` 的 `include:` 启用条目——参考 dshome-mind-inject 行）
+      `"./<name>": "./lib/host/<name>.js"` ← 🔴 **唯一致命的一步**：漏了 → `ERR_PACKAGE_PATH_NOT_EXPORTED`，
+      cordis 按**包子路径**加载时 ESM 直接拒收，**插件一行代码都不跑，后端 boot 后必死**。
+      ⚠️ **盲区**：按**文件路径** import 的测试（本仓 itest、`verify-host-plugins` 的加载段）**绕过了 exports** →
+      漏登记时它们照样绿。2026-09-12 起 `verify-host-plugins` 增「包路径解析探针」专堵这一面。
+3. [ ] **cordis.patch.yml 注册**：`packages/dshome/cordis.patch.yml` 的 insert 块加
+      `- id: dshome-<name>` / `name: dshome/<name>` 条目
+      （本机实测另有 `settings.yaml` 的 `include:` 启用条目——参考 dshome-mind-inject 行；落地后确认它在）
+4. [ ] **`plugin-store.js` DESC_CN**：`packages/dshome/lib/host/plugin-store.js` 的插件描述表加
+      `'dshome/<name>': '<一句话>'`（插件管理面板的名称来源；不影响启动，漏了面板上是空描述）
 
 **安全模式（v3，2026-09-11 实测重写）**：覆盖层 = **L3 产品层 + L4 profile 覆盖层的并集**——
 `packages/dshome/shell-app/safe-overlay.cjs` 收「`insert` 块内的自有行」+「任何位置的 `dshome*` 行」；
@@ -171,4 +182,4 @@ v2「只取第一个 patch 文件」只覆盖 L3（15 行）、L4 后加的行�
 - 组件渲染/纯逻辑可先单测（本地 node + 匹配 react），但**不要**把从外部源码反推的接口当真实契约。
 
 ---
-_版本：1.3.2 | 2026-09-11 | §十 订正：`scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
+_版本：1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | _版本：1.3.2 | 2026-09-11 | §十 订正：`scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
