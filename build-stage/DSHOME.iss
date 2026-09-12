@@ -44,7 +44,12 @@ RestartIfNeededByRun=no
 ; ⚠️ 注意：Inno 字符串里 `\n` 是换行转义，掩码不能写成 "profiles\node_modules"（实测失效，
 ; 毒树被打进包）。这里用「基线名掩码 node_modules.stale-*」（不含反斜杠，按文件名匹配，
 ; 必然生效）排除隔离备份；前斜杠写法为兼容性兜底。
-Source: "payload\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "node_modules.stale-*;profiles/node_modules;profiles/node_modules.stale-*"
+; 2026-09-12 增：开发态工具不进装机版——`更新DSHOME.cmd`（拉取 + pnpm install）与 `update-pnpm.cmd`
+; 都只认开发态布局：装机版既没有 .git，node 也不在 %LOCALAPPDATA% 的 dshome-dev 目录下（而在 {app}
+; 的 runtime 目录里）⇒ 使用者一跑必退、提示还是误导。装机版的升级路径是「下载新版安装包覆盖安装」，
+; 故排除这两个；中文名用 `*DSHOME.cmd` 文件名掩码匹配（不含反斜杠，规避 Inno 反斜杠转义坑，
+; 也不误伤 setup-dev.cmd / 开发启动.cmd）。
+Source: "payload\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "node_modules.stale-*;profiles/node_modules;profiles/node_modules.stale-*;update-pnpm.cmd;*DSHOME.cmd"
 
 [Icons]
 ; 开始菜单两项受 startmenuicon 勾选控制（默认勾选）；桌面项受 desktopicon 控制
