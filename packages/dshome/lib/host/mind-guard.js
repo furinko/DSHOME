@@ -395,17 +395,27 @@ let mountInfo = '';
 /** 诊断 marker（**追加式**，2026-09-11 改）：原来是「mounted 行 + 覆盖式 deny 行」→
  *  **拒绝历史只留最后一次**，且每次启动把上一条 deny 冲掉（C1 指摘：拒绝历史不可审计）。
  *  现在按时间累积、保留最近 20 行；挂载行也进同一流（它标识"这一轮进程"）。 */
-function writeMarker(line) {
+/** 环状写入（最近 20 条）。 */
+function writeRing(fileName, line) {
   try {
     const dir = join(repoRoot(), 'profiles', 'dshome', '.dsh-market');
     mkdirSync(dir, { recursive: true });
-    const file = join(dir, 'mind-guard-marker.txt');
+    const file = join(dir, fileName);
     let prev = '';
     try { prev = readFileSync(file, 'utf8'); } catch { /* 首次写 */ }
     const lines = [...prev.split('\n').filter(Boolean), line].slice(-20);
     writeFileSync(file, lines.join('\n') + '\n', 'utf8');
   } catch { /* 诊断标记失败不影响护栏 */ }
 }
+
+/** 护栏**证据**（`mounted` / `last-deny`）→ `mind-guard-marker.txt`。 */
+function writeMarker(line) { writeRing('mind-guard-marker.txt', line); }
+
+/** 提示类（`shell-write-hint`）→ **独立环** `mind-guard-hints.txt`（2026-09-12 加）。
+ *  为什么分环：提示噪声大（我自己跑 pwsh，命令文本里带上心智区路径 + 写动词就会命中），
+ *  与证据同环时会把 `mounted` / `last-deny` **挤出 20 行窗口**——实景：一次会话之后
+ *  证据环里只剩 1 条 `mounted`，提示占了多数。分环后各自保留最近 20 条。 */
+function writeHint(line) { writeRing('mind-guard-hints.txt', line); }
 
 /** 只对"写/改文件"工具设闸；read 等读操作放行。 */
 const MUTATING_TOOLS = new Set(['write', 'edit', 'str_replace_editor']);
@@ -461,7 +471,8 @@ export function apply(ctx) {
     //  于是每次「挂载成功」都会多打一条自相矛盾的「初始化失败（护栏未生效）」告警，且该属性全仓无读者。）
     ctx.tools.guard((exec) => {
       const { reason, marker, hint } = decide(exec, ctx);
-      if (marker) writeMarker(marker);
+      // 分环：提示（shell-write-hint）走 `mind-guard-hints.txt`，证据（mounted/last-deny）走 marker。
+      if (marker) (hint ? writeHint : writeMarker)(marker);
       if (hint) {
         ctx.logger?.('dshome')?.warn?.(
           `[mind-guard] shell 通道疑似写入心智区（**仅告警，已放行**）：${exec?.name} 脚本里出现「${hint}」+ 写入类动作。` +

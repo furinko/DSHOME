@@ -168,8 +168,10 @@ if (!existsSync(HOST_DIR)) {
  *  而那个 marker 是"注入确实发生过"的**现场证据** —— 本脚本不得把它冲掉。
  *  做法：跑 handler 前备份内容、跑完原样恢复（内容恢复即可；mtime 变了不影响它作为证据的语义）。 */
 const MARKET_DIR = join(repoRoot, 'profiles', 'dshome', '.dsh-market');
-/** 本脚本可能弄脏的固定落点：**即使此刻不存在也要登记**（值 null = 跑前不存在 → 跑后删除）。 */
-const KNOWN_MARKERS = ['mind-guard-marker.txt'];
+/** 本脚本可能弄脏的固定落点：**即使此刻不存在也要登记**（值 null = 跑前不存在 → 跑后删除）。
+ *  ⚠️ `mind-guard-hints.txt` 必须**显式登记**：它名字里没有 "marker"，不在下面 `/marker/i` 的兜底扫描里
+ *  （2026-09-12 分环时同步加，否则新环会被本门禁写脏且永不恢复）。 */
+const KNOWN_MARKERS = ['mind-guard-marker.txt', 'mind-guard-hints.txt'];
 function snapshotMarkers() {
   const snap = new Map();
   for (const f of KNOWN_MARKERS) snap.set(join(MARKET_DIR, f), null);

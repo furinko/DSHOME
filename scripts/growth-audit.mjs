@@ -29,7 +29,7 @@ function checks(root) {
   const cap = (p) => { try { return { count: readdirSync(p).length, bytes: readdirSync(p).reduce((a, f) => a + (size(join(p, f)) || 0), 0) }; } catch { return null; } };
 
   // ① 我们自己的 marker：环必须封顶（环坏了 = hard）
-  const rings = { 'mind-guard-marker.txt': 20, 'mind-inject-marker.txt': 20, 'mind-recall-marker.txt': 5, 'mind-skill-loader-marker.txt': 5 };
+  const rings = { 'mind-guard-marker.txt': 20, 'mind-guard-hints.txt': 20, 'mind-inject-marker.txt': 20, 'mind-recall-marker.txt': 5, 'mind-skill-loader-marker.txt': 5 };
   for (const [name, max] of Object.entries(rings)) {
     const p = join(market, name);
     const n = lines(p);
