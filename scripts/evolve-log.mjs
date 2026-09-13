@@ -280,8 +280,13 @@ const verdictIcon = (v) => (v === '有效' ? '✅' : v === '恶化' ? '🔻' : '
 // 现在改为：按对象名（或首个标识词）在 snapshots\ 里找**真实快照文件**，找不到就写 —（诚实留空，不编路径）。
 function snapshotRef(objName) {
   const base = String(objName).split('[')[0].trim();
-  const safe = base.replace(/[\\/:*?"<>|]/g, '_');
-  const token = (base.split(/[^a-zA-Z0-9_.-]+/).filter((s) => s.length >= 4)[0] || '');
+  // 2026-09-13 修（假锚）：**匹配用 basename，与 snapshot 落盘口径（<ts>_<name>）对齐**。
+  //   旧实现拿全路径做 safe（`mind/L1/Ritual.md` → `mind_L1_Ritual.md`）⇒ 永不命中快照名；
+  //   回退 token 取"首个 ≥4 片段"又得到 `mind` ⇒ 撞上目录里 `*_mind-*.js` 的旧快照，
+  //   写出**看似有据、实则无关**的锚点（比留空"—"更坏）。实测：带路径对象名 7/7 失效（4 假锚 + 3 留空）。
+  const leaf = base.split(/[\\/]/).pop() || base;
+  const safe = leaf.replace(/[\\/:*?"<>|]/g, '_');
+  const token = (leaf.split(/[^a-zA-Z0-9_.-]+/).filter((s) => s.length >= 4)[0] || '');
   try {
     const files = readdirSync(SNAP).sort(); // 时间戳前缀 → 升序即时间序
     const hit = [...files].reverse().find((f) => f.includes(safe))
