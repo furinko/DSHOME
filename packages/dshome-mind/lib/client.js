@@ -455,6 +455,25 @@ window.__ModuleLoader__.load({
     function renderCron(govEl, reload) {
       govEl.innerHTML = "";
       govEl.appendChild(el("div", "dshome-mind-gov-head", "⏰ 定时任务 — cron 自治：到点自动拉起 agent 会话执行。对话里说『每天 9 点做 X』我帮你加"));
+      // ── 出厂处方入口（2026-09-14）──────────────────────────────────────────
+      // 切法：机制/处方出厂、**实例私有且默认关**——出厂不含任务，点了才按当前工作区建。
+      // 文案必须写明代价（会花 token + 会改你自己的 mind-private），**点击＝同意**。
+      var seedCard = el("div", "dshome-mind-gov-card");
+      seedCard.appendChild(el("div", "dshome-mind-gov-reason", "🧩 出厂处方：自主维护（每日·维护+巡检）+ 自主内化（每周）。出厂**不含任务实例、默认关**——点下面的按钮，按你的工作区建这两条（会花 token，并会改你自己的 mind-private）。"));
+      var seedBtn = el("button", "dshome-mind-gov-ok", "🧩 建默认自治任务");
+      var seedOut = el("div", "dshome-mind-gov-reason", "");
+      seedCard.appendChild(seedBtn); seedCard.appendChild(seedOut);
+      govEl.appendChild(seedCard);
+      seedBtn.addEventListener("click", function () {
+        seedBtn.disabled = true; seedOut.textContent = "正在创建…";
+        postJSON("/api/mind/cron/seed", {}).then(function (r) {
+          seedOut.textContent = (r && r.ok)
+            ? ("✅ 新建 " + (r.created || 0) + " 条 · 已存在跳过 " + (r.skipped || 0) + " 条 · 工作区 " + (r.projectKey || "?"))
+            : ("⚠️ " + ((r && r.error) || "创建失败"));
+          setTimeout(reload, 400);
+        }).catch(function (e) { seedOut.textContent = "⚠️ " + (e.message || e); })
+          .then(function () { seedBtn.disabled = false; });
+      });
       Promise.all([
         fetch("/api/mind/cron").then(function (r) { return r.json(); }),
         loadModelInfo(), // 模型清单与任务列表并行取，卡片上就能标出「已不在清单」

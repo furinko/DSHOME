@@ -7,6 +7,8 @@
 const fs = require('fs');
 const path = require('path');
 const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cron.cjs');
+// 出厂自治「处方」（2026-09-14）：机制/处方出厂、实例私有、默认关——见文件头注释。
+const { resolveRecipes, projectKeyOf } = require('./cron-recipes.cjs');
 // L3 检索共享库（§十 权威排序单一实现——F3：index.cjs 与 mind-prime 共用 tokenize/jaccard/fmValue/confidenceRank）
 // 用 repoRoot()（DSH_HOME 优先）定位而非相对 __dirname：发布后 dshome-mind 被实体化到
 // profiles\dshome\node_modules\dshome-mind\lib，`../../../scripts` 会指向 profiles\dshome\scripts
@@ -972,6 +974,32 @@ function makeMindRoutes() {
           if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
           const out = cron.add({ id: b?.id, cron: b?.cron, prompt: b?.prompt, cwd: b?.cwd, once: !!b?.once, catchUp: !!b?.catchUp, timezone: b?.timezone, preset: b?.preset, ...(b && b.model !== undefined && b.model !== null && b.model !== '' ? { model: b.model } : {}) });
           json(res, out.ok ? 200 : 400, out);
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
+      // 出厂处方 → 私有实例（2026-09-14）：**默认关**，只有被调用时才建；幂等（已存在即跳过）。
+      // 点击＝同意：自治会花 token、并会改使用者自己的 mind-private（见 cron-recipes.cjs 头注释）。
+      kind: 'exact',
+      path: `${API_PREFIX}/cron/seed`,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          const b = await readJsonBody(req).catch(() => ({}));
+          const cron = getCronInstance();
+          if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
+          const cwd = (b && typeof b.cwd === 'string' && b.cwd) ? b.cwd : repoRoot();
+          const projectKey = (b && typeof b.projectKey === 'string' && b.projectKey) ? b.projectKey : projectKeyOf(cwd);
+          const existing = new Set((cron.tasks || []).map((t) => t.id));
+          const results = [];
+          for (const r of resolveRecipes({ cwd, projectKey })) {
+            if (existing.has(r.id)) { results.push({ id: r.id, title: r.title, ok: false, skipped: 'exists' }); continue; }
+            const out = cron.add({ id: r.id, cron: r.cron, prompt: r.prompt, cwd, catchUp: true, preset: 'standard' });
+            results.push({ id: r.id, title: r.title, ...out });
+          }
+          const created = results.filter((x) => x.ok).length;
+          json(res, 200, { ok: true, cwd, projectKey, created, skipped: results.filter((x) => x.skipped).length, results });
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },

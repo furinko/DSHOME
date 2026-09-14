@@ -52,6 +52,7 @@ const SAFE = new Set([
   'scripts/mind-boot-recall-itest.mjs',
   'scripts/mind-skill-loader-itest.mjs',
   'scripts/mind-cron-serialize-itest.mjs',
+  'scripts/mind-cron-recipes-itest.mjs',
 ]);
 
 function toRel(p) {
