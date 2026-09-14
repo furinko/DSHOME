@@ -41,6 +41,14 @@ set "ELECTRON=node_modules\electron\dist\electron.exe"
 set "PIN_SCRIPT=scripts\verify-pin-vs-installed.mjs"
 rem core.quotepath=false keeps CJK file names readable in the git output.
 set "GIT=git -c core.quotepath=false"
+rem Prepend the bundled node dir so CHILD processes can resolve "node":
+rem `pnpm install` runs the prepare lifecycle in a child shell, and pnpm does
+rem NOT add node to that child's PATH by itself (pnpm 10.34.5 -> the child
+rem reports "'node' is not recognized as an internal or external command").
+rem setup-dev.cmd, the dev-start cmd and launcher.cs all prepend it; this
+rem script did not, so any install whose prepare hook had to actually run
+rem died with exit 1 even though node_modules was already up to date.
+set "PATH=%NODE_DIR%;%PATH%"
 
 echo.
 echo  [DSHOME] update checkout
@@ -52,16 +60,28 @@ where git >nul 2>nul
 if errorlevel 1 goto :no_git
 if not exist "%NODE_EXE%" goto :no_node
 if not exist "%PNPM_CMD%" goto :no_node
+rem Machine-checked proof that the prepend above actually took effect: the
+rem file check alone only proves node.exe exists, not that a child process
+rem can find it by the bare name the prepare hook uses.
+where node >nul 2>nul
+if errorlevel 1 goto :no_node
 if not exist "%ELECTRON%" goto :no_electron
 echo        git / node / pnpm / electron: ok
 
 echo  [2/5] Checking the git working tree ...
 set "DIRTY="
-rem NOTE: cmd re-parses the command inside for /f, and a key=value argument
-rem like "-c core.quotepath=false" gets mangled there (the "=" reads as an
-rem assignment, the key half is dropped, and git receives a stray "false"
-rem subcommand). So this probe uses bare git: --flag=value is safe, key=value is not.
-for /f "delims=" %%s in ('git status --porcelain --untracked-files=no') do set "DIRTY=1"
+rem NOTE: cmd re-parses whatever sits inside for /f, and some arguments do not
+rem survive that. Measured 2026-09-14 with a probe .cmd (so PowerShell quoting
+rem is not a factor): inside for /f, 'git status --porcelain
+rem --untracked-files=no' handed git a broken argv -- git printed "unknown
+rem option: --untracked-files" plus its TOP-LEVEL usage, i.e. the
+rem "status --porcelain" half never arrived -- and for /f read zero lines, so
+rem DIRTY stayed empty and this check reported "clean" on a dirty tree.
+rem It is NOT a general "=" problem: '--max-count=1' survives, and so does the
+rem short form. Use -uno (same meaning as --untracked-files=no), which is
+rem measured to work, and treat any future argument added here as unproven
+rem until it has been run once inside this script.
+for /f "delims=" %%s in ('git status --porcelain -uno') do set "DIRTY=1"
 if not defined DIRTY goto :tree_clean
 echo        [warn] uncommitted changes in TRACKED files:
 %GIT% status --short --untracked-files=no

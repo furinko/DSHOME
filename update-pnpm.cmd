@@ -30,6 +30,11 @@ set "PNPM_CMD=%NODE_DIR%\pnpm.cmd"
 rem Default is the China mirror; on failure the script retries the official registry.
 set "REGISTRY=https://registry.npmmirror.com"
 set "FALLBACK_REGISTRY=https://registry.npmjs.org"
+rem Keep child processes able to resolve "node" by bare name (same fix as the
+rem update-checkout script). npm/pnpm are called by absolute path here, so this
+rem is preventive today -- but the day a lifecycle script needs node, a missing
+rem PATH entry would fail exactly the same silent way.
+set "PATH=%NODE_DIR%;%PATH%"
 
 set "EXITCODE=0"
 set "MODE=update"
