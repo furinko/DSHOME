@@ -3,7 +3,7 @@
 // 前，先快照旧版 + 记一条理由——进化有据可查、可回滚。
 //
 // 用法：
-//   node scripts/evolve-log.mjs snapshot <path> "<理由>"                    # 快照旧版 → evolution/snapshots/<ts>_<name>
+//   node scripts/evolve-log.mjs snapshot <path> "<理由>"                    # 快照旧版 → evolution/snapshots/<ts>_<tag>_<name>
 //   node scripts/evolve-log.mjs log "<信号>|<对象>|<为什么改>|<改了啥>"        # 首个字段=KNOWN_METRIC 则绑定主信号+记基线
 //   node scripts/evolve-log.mjs log "<对象>|<为什么改>|<改了啥>"              # 无信号（legacy-unbound）
 //   node scripts/evolve-log.mjs effect <对象> auto                          # 机器判定单个（读信号基线比对）
@@ -58,6 +58,15 @@ const LOG = join(EVO, 'changelog.md');
 const BATCH_DIR = join(EVO, 'batches'); // 写前记账：多文件批次 journal（2026-09-11）
 const METRICS = join(EVO, 'metrics.json');
 const ts = () => new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+// 快照名的**路径短哈希**（2026-09-14 修同名覆盖；用户放行后实施）。
+// 病灶（当日实测）：`snapshot`/`batch` 的快照名是 `<ts>_<basename>`，3 个 `_index.md` 在同一秒
+//   批量快照 → **互相覆盖只活最后 1 个**，而命令照样打 4 行「已快照」= 回执 4 条、产物 2 个。
+//   同型风险：任何"同一秒批量操作同名文件"的场景（多目录同名 `_index.md`/`README.md`/`project.md`）。
+// 口径：哈希取**绝对路径**（斜杠归一 + 小写）→ 同一文件每次得同一 tag、不同文件必不同 tag；
+//   tag 放在 ts 与 basename **之间**，故 `endsWith('_'+basename)` / ts 前缀排序等旧匹配口径全部保持不变；
+//   老快照（无 tag）在 basename 未被别的路径共享时照旧可见（归属判据见下面 rollback 段）。
+const pathTag = (p) => createHash('sha1').update(resolve(p).replace(/\\/g, '/').toLowerCase()).digest('hex').slice(0, 8);
 
 // ── 条目级账本（2026-09-12 加，借灵枢 `evolution.py` 的 ledger.md 形状）──────────────
 // 与**文件级** snapshot 的分工：snapshot 记「整个文件改前版本」；本账本记「**某个锚点小节的原文**」——
@@ -289,7 +298,15 @@ function snapshotRef(objName) {
   const token = (leaf.split(/[^a-zA-Z0-9_.-]+/).filter((s) => s.length >= 4)[0] || '');
   try {
     const files = readdirSync(SNAP).sort(); // 时间戳前缀 → 升序即时间序
-    const hit = [...files].reverse().find((f) => f.includes(safe))
+    // 2026-09-14：对象名带路径且能落到**真实文件**时，先用路径 tag 精确锚定——否则同名不同路径
+    //   （多目录 `_index.md`）会锚到别人的快照（看似有据、实则无关；同 09-13「假锚」教训）。
+    //   裸对象名（指标 / 信号名）tag 必不命中 → 自动落回下面 basename / token 兜底，行为不变。
+    const abs = resolve(repoRoot, base);
+    const tagHit = existsSync(abs)
+      ? [...files].reverse().find((f) => f.includes(`_${pathTag(abs)}_`))
+      : null;
+    const hit = tagHit
+      || [...files].reverse().find((f) => f.includes(safe))
       || (token ? [...files].reverse().find((f) => f.includes(token)) : null);
     return hit ? `snapshots/${hit}` : '—';
   } catch { return '—'; }
@@ -311,10 +328,11 @@ if (cmd === 'snapshot') {
   if (!existsSync(p)) { console.error('[evolve-log] 不存在:', p); process.exit(1); }
   const name = basename(p).replace(/[\\/:*?"<>|]/g, '_');
   const t = ts();
-  const dst = join(SNAP, `${t}_${name}`);
+  const snapFile = `${t}_${pathTag(p)}_${name}`;   // 2026-09-14：加 tag 防同名覆盖
+  const dst = join(SNAP, snapFile);
   writeFileSync(dst, readFileSync(p, 'utf8'));
   const reason = (rest[1] || '').trim();
-  if (reason) appendFileSync(LOG, `| ${t.slice(0, 10)} | ↳快照:${basename(p)} | ${reason} | 快照旧版 | snapshots/${t}_${name} |\n`);
+  if (reason) appendFileSync(LOG, `| ${t.slice(0, 10)} | ↳快照:${basename(p)} | ${reason} | 快照旧版 | snapshots/${snapFile} |\n`);
   console.log(`[evolve-log] 已快照 → ${dst}${reason ? '（理由:' + reason + '）' : ''}`);
 } else if (cmd === 'rollback') {
   // ── 回滚（2026-09-11 新增；此前「无 rollback 子命令」= 号称可回滚实则手工拷回）──
@@ -339,12 +357,27 @@ if (cmd === 'snapshot') {
     console.error(`[evolve-log] 未找到 ${basename(p)} 的快照（snapshots/ 下无 *_${name}）→ 无法回滚（快照只对 snapshot 过的文件可用）`);
     process.exit(1);
   }
+  // 2026-09-14（同名快照修复的配套）：basename 匹配对**同名不同路径**（多目录的 `_index.md` 等）会同时命中，
+  //   而 pick 取排序最后一个 ⇒ **会退错文件**。判据：候选里若出现**别的路径 tag** = 同名已被证明共享
+  //   ⇒ 只用本路径 tag 的；修复前的老快照（无 tag）无法归属，**如实排除并打印**（宁少不错——文件仍在
+  //   snapshots/ 里，可手工取）。无 foreign tag 时与旧版完全一致（历史回滚点一个不少）。
+  const TAGGED_RE = /^\d{4}-\d{2}-\d{2}T[\d-]+_[0-9a-f]{8}_/;
+  const tag = pathTag(p);
+  const own = snaps.filter((f) => TAGGED_RE.test(f) && f.includes(`_${tag}_`));
+  const foreign = snaps.filter((f) => TAGGED_RE.test(f) && !f.includes(`_${tag}_`));
+  const unknown = snaps.filter((f) => !TAGGED_RE.test(f));
+  const pool = foreign.length ? (own.length ? own : unknown) : snaps;
+  if (!pool.length) {
+    console.error(`[evolve-log] ${basename(p)} 没有可归属的快照（同名的其它路径 ${foreign.length} 个、归属不明的老快照 ${unknown.length} 个）→ 请从 snapshots/ 手工取`);
+    process.exit(1);
+  }
   if (listOnly) {
     console.log(`[evolve-log] ${basename(p)} 的快照（新→旧）：`);
-    for (const f of [...snaps].reverse()) console.log(`  ${f.slice(0, 19)}  snapshots/${f}`);
+    if (foreign.length) console.log(`  （已排除：同名的其它路径 tag ${foreign.length} 个 + 无法归属的老快照 ${unknown.length} 个，避免退错文件）`);
+    for (const f of [...pool].reverse()) console.log(`  ${f.slice(0, 19)}  snapshots/${f}`);
     process.exit(0);
   }
-  const pick = stamp ? snaps.filter((f) => f.startsWith(stamp)).pop() : snaps[snaps.length - 1];
+  const pick = stamp ? pool.filter((f) => f.startsWith(stamp)).pop() : pool[pool.length - 1];
   if (!pick) {
     console.error(`[evolve-log] 无匹配时间戳「${stamp}」的快照 → 用 rollback --list ${target0} 看可用快照`);
     process.exit(1);
@@ -353,7 +386,7 @@ if (cmd === 'snapshot') {
     console.error(`[evolve-log] 目标文件当前不存在: ${p}（快照仍在 snapshots/${pick}，可手工恢复）`);
     process.exit(1);
   }
-  const before = `${ts()}_${name}`;
+  const before = `${ts()}_${pathTag(p)}_${name}`;   // 2026-09-14：加 tag 防同名覆盖（回滚前留档也是快照，同病）
   writeFileSync(join(SNAP, before), readFileSync(p, 'utf8'));   // ① 回滚前留档当前版本
   writeFileSync(p, readFileSync(join(SNAP, pick), 'utf8'));      // ② 恢复目标快照
   appendFileSync(LOG, `| ${ts().slice(0, 10)} | ↳回滚:${basename(p)} | 回滚到 snapshots/${pick} | 已恢复（回滚前版本留档 snapshots/${before}） | snapshots/${before} |\n`);
@@ -380,7 +413,7 @@ if (cmd === 'snapshot') {
     const abs = resolve(repoRoot, rel);
     if (!existsSync(abs)) { console.warn(`  ⚠️ 跳过（不存在）: ${rel}`); continue; }
     const nm = basename(abs).replace(/[\\/:*?"<>|]/g, '_');
-    const snapFile = `${startedAt}_${nm}`;
+    const snapFile = `${startedAt}_${pathTag(abs)}_${nm}`;   // 2026-09-14：加 tag 防同名覆盖（batch 同病，且是同秒批量 ⇒ 必撞）
     writeFileSync(join(SNAP, snapFile), readFileSync(abs, 'utf8'));
     entries.push({ path: rel.replace(/\\/g, '/'), snapshot: snapFile, mtime: statSync(abs).mtime.toISOString() });
     console.log(`  📸 ${rel} → snapshots/${snapFile}`);
