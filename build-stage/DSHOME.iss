@@ -1,11 +1,11 @@
 ; DSHOME Setup Script — Inno Setup 7（全量自包含安装包，含 node_modules 与自带 node 运行时）
-; 构建：ISCC.exe DSHOME.iss  →  build-stage\DSHOME-setup-0.3.3.exe
+; 构建：ISCC.exe DSHOME.iss  →  build-stage\DSHOME-setup-0.3.4.exe
 ; ISSUE-003 修复（2026-09-01）：
 ;   ① [Files] Excludes 排除 profiles\node_modules（dsh 首启自愈重建为 junction，不得随包分发）
 ;   ② 启动入口 exe 化：快捷方式/装后启动直接指向 {app}\DSHOME.exe（布局无关启动器，无控制台闪烁）
 ;   ③ Uninstallable=yes + CreateUninstallRegKey=no：生成卸载 exe（unins000.exe）但零注册表残留
 #define MyAppName "DSHOME"
-#define MyAppVersion "0.3.3"
+#define MyAppVersion "0.3.4"
 #define MyAppPublisher "furinko"
 ; 启动入口：DSHOME.exe（scripts\launcher.cs 编译的布局无关启动器，逻辑同 开发启动.cmd；
 ; Electron 壳在 <home>\packages\dshome\shell-app，后端由壳拉起/守护）
@@ -41,15 +41,20 @@ RestartIfNeededByRun=no
 ; Excludes：profiles\node_modules 是 dsh 首启自愈生成的 junction 集合，7z/Inno 均不保留
 ; junction 语义——随包分发必被实体化 → ensureSymlink 自检失败（ISSUE-003）。打包前应先跑
 ; `node scripts\verify-payload.mjs --fix` 隔离 payload 中的实体树，此处排除为双保险。
-; ⚠️ 注意：Inno 字符串里 `\n` 是换行转义，掩码不能写成 "profiles\node_modules"（实测失效，
-; 毒树被打进包）。这里用「基线名掩码 node_modules.stale-*」（不含反斜杠，按文件名匹配，
-; 必然生效）排除隔离备份；前斜杠写法为兼容性兜底。
+; ⚠️ 两条实测坑（2026-09-14 补正——此前"必然生效"的断言是错的）：
+;   ① Inno 字符串里 `\n` 是换行转义，掩码不能写成 "profiles\node_modules"（实测失效，毒树被打进包）；
+;   ② **本参数的分隔符只能是逗号或空格——写成【分号】会让整串被当成"一个"模式，本行所有规则全部哑火。**
+;      最小复现（本机 Inno 7.1.0，同源三组对照）：`update-pnpm.cmd;*DSHOME.cmd`（分号）→ 3 文件全进包；
+;      `update-pnpm.cmd,*DSHOME.cmd`（逗号）→ 仅剩 keep.cmd；单模式 `update-pnpm.cmd` → 该文件被排掉。
+;      ⇒ v0.3.3 及更早的包是在本行「排除全哑」状态下发出去的（毒树实际靠 verify-payload 前置门禁拦截，
+;      Excludes 从未兜住过底）。**改本行前请先跑一遍最小复现，别再信"写了就生效"。**
+;   掩码按**文件名**匹配（不含反斜杠的 `node_modules.stale-*`、`*DSHOME.cmd` 才可靠；带路径的写法匹配不到文件名）。
 ; 2026-09-12 增：开发态工具不进装机版——`更新DSHOME.cmd`（拉取 + pnpm install）与 `update-pnpm.cmd`
 ; 都只认开发态布局：装机版既没有 .git，node 也不在 %LOCALAPPDATA% 的 dshome-dev 目录下（而在 {app}
 ; 的 runtime 目录里）⇒ 使用者一跑必退、提示还是误导。装机版的升级路径是「下载新版安装包覆盖安装」，
 ; 故排除这两个；中文名用 `*DSHOME.cmd` 文件名掩码匹配（不含反斜杠，规避 Inno 反斜杠转义坑，
 ; 也不误伤 setup-dev.cmd / 开发启动.cmd）。
-Source: "payload\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "node_modules.stale-*;profiles/node_modules;profiles/node_modules.stale-*;update-pnpm.cmd;*DSHOME.cmd"
+Source: "payload\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "node_modules.stale-*,profiles/node_modules,profiles/node_modules.stale-*,update-pnpm.cmd,*DSHOME.cmd"
 
 [Icons]
 ; 开始菜单两项受 startmenuicon 勾选控制（默认勾选）；桌面项受 desktopicon 控制
