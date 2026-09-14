@@ -45,6 +45,7 @@
 | dshome-plugin-dev.md | 1.3.8 | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS code.host/code.client，生命周期/修复/回滚；自有 host 插件落地**四处登记**（漏 exports = 启动崩）；安全模式 v3（覆盖层 L3+L4 并集、`--patch` 必须排在 app 参数之前）；打包缺 bundle + 包外脚本 require 实体化失效排查；变更取证看 `.dsh-market\log.ndjson` | 做/改插件、cordis、slot、`is not declared`、`host.call` 失败、启动崩溃、安全模式 |
 | landing-audit.md | 1.0.0 | 落地审计三查法：查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」（定义/接线/数据逐层查） | 审计、落地、三查、落到实处吗、纸面定义、空壳、接线 |
 | scar-inference.md | 1.1.0 | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古、蒸、版本差、反推坑、咬痕、伤疤、为什么在、作者画像、同源盲区 |
+| required-action-wiring.md | 1.0.0 | 必需动作接线三判据：唯一权威落点 / 没跑就硬失败（不许 WARN 后 exit 0）/ 设备侧可自检（配套「回执≠产物」） | 静默失败、只 WARN、退出码 0、装了没生效、必须发生的动作、就绪判定、接线 |
 
 ### Exp 清单（工具手册）
 | 文件 | 版本 | 描述 | 触发关键词 |
