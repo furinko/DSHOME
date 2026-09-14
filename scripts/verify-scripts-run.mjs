@@ -51,6 +51,7 @@ const SAFE = new Set([
   'scripts/verify-upstream-contract.mjs',
   'scripts/mind-boot-recall-itest.mjs',
   'scripts/mind-skill-loader-itest.mjs',
+  'scripts/mind-cron-serialize-itest.mjs',
 ]);
 
 function toRel(p) {

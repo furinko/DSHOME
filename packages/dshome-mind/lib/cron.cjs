@@ -96,6 +96,20 @@ async function executeTask(hostCtx, task) {
   }
 }
 
+// ── 串行闸：自治会话同时只跑一个（2026-09-14 加，用户放行）───────────────────
+// 病灶（当日实测）：`catchUpMissed()` 用一次 for 循环把**所有错过点**几乎同时 executeTask
+//   —— 2026-09-14 09:07:25 实测 self-clean(.045s) / self-feed(.126s) 相差 80ms ⇒ 多个自治
+//   会话并发跑（一个 12 分钟、一个 22 分钟），期间并发写同一批文件（evolve-log 账本、
+//   各 `_index.md`、`Tree.md`）。croner 的 `protect` 只防「同一 job 自我重叠」，跨任务无效；
+//   executeTask 在 followup 后立即返回，也拦不住「会话还在慢慢跑」。
+// 口径：同一进程内**同时只跑一个自治会话**；到点却忙 → 入队，等当前自治会话 turn/end
+//   或 session/disposed 后依序补跑（不丢、不并发）。
+// 加法槽：复用现成的会话事件面 `sessions.on('session/event')`（写法同 `dshome/lib/host/notify.js`），
+//   不新增机制、不动宿主。
+// 失败面（fail-open）：拿不到 sessions 服务 / 事件丢失 ⇒ `BUSY_MAX_MS` 兜底强制放闸，
+//   最坏降级成旧行为（并发不保证），但**绝不把队列卡死**。
+const BUSY_MAX_MS = 45 * 60 * 1000; // 单会话占闸上限（防 turn/end 事件丢失）
+
 // ── 任务存储 ────────────────────────────────────────────────────────────────
 function loadCron() {
   try { return JSON.parse(fs.readFileSync(CRON_FILE(), 'utf8')).tasks || []; }
@@ -112,11 +126,118 @@ class DshCron {
     this.hostCtx = hostCtx;
     this.jobs = new Map();
     this.tasks = loadCron();
+    this.active = new Map(); // sessionId|'pending:<uuid>' -> { id: 任务 id, since: ms }（占闸中的自治会话）
+    this.queue = []; // [{ id, reason, at }]（到点却忙 → 排队，放闸后依序补跑）
+    this.watching = false; // 串行闸是否真的接上了 sessions 事件
   }
   start() {
     for (const t of this.tasks) this.schedule(t);
+    this.watchSessions(); // 必须先接事件，再 catchUp —— 否则补跑建出的会话漏听 turn/end（闸卡死）
     this.catchUpMissed(); // 重启时补跑关机期间错过的任务
     this.timer = setInterval(() => this.reload(), 60000); // 每分钟扫新任务/改动
+  }
+  /** 订阅会话事件：自治会话结束 → 放闸 + 依序补跑队列。 */
+  watchSessions() {
+    if (typeof this.hostCtx?.inject !== 'function') {
+      console.warn('[dshome-cron] 上下文无 inject：串行闸降级（退回旧行为，不保证不并发）');
+      return;
+    }
+    try {
+      this.hostCtx.inject(['sessions'], (sctx) => {
+        const offEvent = sctx.on('session/event', (session, event) => {
+          if (event?.type !== 'turn/end') return;
+          this.release(String(session?.header?.id));
+        });
+        const offDisposed = sctx.on('session/disposed', (session) => this.release(String(session?.header?.id)));
+        this.watching = true;
+        this._stopWatch = () => { try { offEvent?.(); offDisposed?.(); } catch { /* dispose 期忽略 */ } };
+      });
+    } catch (e) {
+      console.warn('[dshome-cron] sessions 订阅失败：串行闸降级（' + (e?.message ?? e) + '）');
+    }
+  }
+  /** 闸：有活着的自治会话 → 入队；否则立刻跑。 */
+  trigger(task, reason) {
+    // 降级面（诚实优先）：拿不到 sessions 事件 ⇒ 无法知道会话什么时候结束，
+    //   **不能入队**——否则队列永远等不到放闸（实测反例：只入队不补跑，任务静默延迟）。
+    //   此时退回旧行为（不串行、但一定跑），并只提醒一次。
+    if (this.watching !== true) {
+      if (this._warnedDegrade !== true) {
+        this._warnedDegrade = true;
+        console.warn('[dshome-cron] 串行闸未接上（sessions 不可用）：退回旧行为 —— 不保证不并发，但不会入队卡死');
+      }
+      this.run(task, reason + '+unserialized');
+      return;
+    }
+    // 去重（两条都要）：① 已在队列里 → 不重复入队 ② 这个任务正跑着又来一次 tick
+    //   → 跳过（等价 croner protect 的语义，否则「每分钟型」任务会在长会话期间堆成 N 条队列，
+    //   放闸后连跑 N 次）。跳过只记日志，静默即违规（Invariants #14）。
+    if (this.queue.some((q) => q.id === task.id)) {
+      console.log('[dshome-cron]', task.id, 'skip:already-queued', `(reason=${reason})`);
+      return;
+    }
+    if ([...this.active.values()].some((v) => v.id === task.id)) {
+      console.log('[dshome-cron]', task.id, 'skip:already-running', `(reason=${reason})`);
+      return;
+    }
+    if (this.isBusy()) {
+      this.queue.push({ id: task.id, reason, at: Date.now() });
+      console.log('[dshome-cron]', task.id, 'queued:busy', `(reason=${reason}, 队列=${this.queue.length})`);
+      return;
+    }
+    this.run(task, reason);
+  }
+  isBusy() {
+    const now = Date.now();
+    for (const [sid, v] of this.active) {
+      if (now - v.since > BUSY_MAX_MS) {
+        this.active.delete(sid);
+        console.warn('[dshome-cron] 占闸超时释放（疑似 turn/end 丢失）:', sid, v.id);
+      }
+    }
+    return this.active.size > 0;
+  }
+  release(sessionId) {
+    if (!this.active.has(sessionId)) return; // 非自治会话（用户会话/子代理）—— 不管
+    this.active.delete(sessionId);
+    console.log('[dshome-cron] release', sessionId, `(剩 ${this.active.size} 个在跑)`);
+    this.drain();
+  }
+  /** 放闸即补跑：队列里的任务依序跑，跑一个又占住闸，天然串行。 */
+  drain() {
+    while (!this.isBusy() && this.queue.length) {
+      const next = this.queue.shift();
+      const task = this.tasks.find((t) => t.id === next.id);
+      if (!task || task.enabled === false) { console.log('[dshome-cron] queue drop', next.id, '（已删/已停用）'); continue; }
+      this.run(task, next.reason + '+queued');
+    }
+  }
+  /** 真正拉会话：**同步占闸**（防同一 tick 双发），成功后换成真实 sessionId。 */
+  run(task, reason) {
+    const token = 'pending:' + randomUUID();
+    this.active.set(token, { id: task.id, since: Date.now() });
+    executeTask(this.hostCtx, task).then((r) => {
+      this.active.delete(token);
+      console.log('[dshome-cron]', task.id, r.status, r.error || `session=${r.sessionId || ''}`, `(reason=${reason})`);
+      if (r.status === 'created') {
+        // 只在闸接上时才占闸（降级面不跟踪，免得 active 永久积累没人放闸）
+        if (this.watching === true) this.active.set(String(r.sessionId), { id: task.id, since: Date.now() }); // 交棒给真实会话
+        // 记录实际触发时间（供 missed 补跑判定）
+        task.lastRunAt = new Date().toISOString();
+        saveCron(this.tasks);
+        // 一次性任务：跑完自动移除 + 停表
+        if (task.once) {
+          this.unschedule(task.id);
+          this.tasks = this.tasks.filter((x) => x.id !== task.id);
+          saveCron(this.tasks);
+        }
+      }
+      if (!this.isBusy()) this.drain(); // 没占上闸（failed）/ 一次性已移除 → 别让队列干等
+    }).catch((e) => {
+      this.active.delete(token);
+      console.error('[dshome-cron] execute error', e);
+      if (!this.isBusy()) this.drain();
+    });
   }
   schedule(task) {
     this.unschedule(task.id);
@@ -125,20 +246,7 @@ class DshCron {
     try {
       const tz = typeof task.timezone === 'string' ? { timezone: task.timezone } : {};
       const job = new Cron(task.cron, { protect: true, ...tz }, () => {
-        executeTask(this.hostCtx, task).then((r) => {
-          console.log('[dshome-cron]', task.id, r.status, r.error || `session=${r.sessionId || ''}`);
-          // 记录实际触发时间（供 missed 补跑判定）
-          if (r.status === 'created') {
-            task.lastRunAt = new Date().toISOString();
-            saveCron(this.tasks);
-          }
-          // 一次性任务：跑完自动移除 + 停表
-          if (task.once && r.status === 'created') {
-            this.unschedule(task.id);
-            this.tasks = this.tasks.filter((x) => x.id !== task.id);
-            saveCron(this.tasks);
-          }
-        }).catch((e) => console.error('[dshome-cron] execute error', e));
+        this.trigger(task, 'tick'); // 串行闸：忙则入队，不并发（见文件头「串行闸」）
       });
       this.jobs.set(task.id, job);
       return true;
@@ -155,11 +263,8 @@ class DshCron {
       const next = job.nextRun(new Date(t.lastRunAt));
       if (next && next < new Date()) {
         console.log('[dshome-cron] catch-up missed:', t.id, '->', next.toISOString());
-        executeTask(this.hostCtx, t).then((r) => {
-          console.log('[dshome-cron] catch-up', t.id, r.status);
-          t.lastRunAt = new Date().toISOString();
-          saveCron(this.tasks);
-        }).catch((e) => console.error('[dshome-cron] catch-up error', e));
+        // 串行闸：错过的多个任务不再一起发（原病灶就是这里并发），逐一到队、放闸依序跑
+        this.trigger(t, 'catch-up');
       }
     }
   }
@@ -170,11 +275,17 @@ class DshCron {
   reload() {
     this.tasks = loadCron();
     for (const t of this.tasks) if (!this.jobs.has(t.id)) this.schedule(t);
+    this.drain(); // 每分钟兜底：占闸超时（turn/end 事件丢失）被 isBusy() 剪掉后，队列靠这里继续跑
   }
   clear() {
     for (const j of this.jobs.values()) j.stop();
     this.jobs.clear();
     if (this.timer) clearInterval(this.timer);
+    try { this._stopWatch?.(); } catch { /* ignore */ }
+    this._stopWatch = null;
+    this.watching = false;
+    this.active.clear();
+    this.queue = [];
   }
   // ── 面板管理：增/删/启停/列表 ──────────────────────────────────────────────
   nextRunFor(id) {
@@ -182,7 +293,13 @@ class DshCron {
     return job ? (job.nextRun() ? job.nextRun().toISOString() : null) : null;
   }
   list() {
-    return this.tasks.map((t) => ({ ...t, enabled: t.enabled !== false, nextRun: this.nextRunFor(t.id) }));
+    return this.tasks.map((t) => ({
+      ...t,
+      enabled: t.enabled !== false,
+      nextRun: this.nextRunFor(t.id),
+      running: this.active.size > 0 && [...this.active.values()].some((v) => v.id === t.id),
+      queued: this.queue.some((q) => q.id === t.id),
+    }));
   }
   add(task) {
     const id = task.id || ('cron-' + require('crypto').randomUUID().slice(0, 8));
