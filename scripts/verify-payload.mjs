@@ -208,6 +208,26 @@ function iconStatus() {
   return { ok: true, say: true, msg: 'PASS: payload electron.exe 内嵌图标 = DSHOME' };
 }
 
+// ── electron 包完整性（postinstall 产物，2026-09-14 加）───────────────────────
+// electron 包有两个由 **postinstall 生成**的产物：`dist\`（二进制，含 electron.exe）与 `path.txt`（入口名）。
+// 2026-09-12 在 payload 内跑 `CI=true pnpm install --frozen-lockfile` 重排依赖树时，**pnpm 不执行依赖安装脚本**，
+// 当时只补了空的 `dist`、**漏了同源的 `path.txt`** ⇒ 装机版 `require('electron')` 落入
+// `electron/index.js:40-49` 的 `downloadElectron()`（同步 spawnSync，先打印 "Downloading Electron binary..."），
+// 离线环境**首启永久卡死**（实测 150s+ 后端未监听；补上这 15 字节文件后 15s 就绪）。
+// 反例（变红方法）：把 `build-stage\payload\node_modules\electron\path.txt` 改名 ⇒ 本脚本应当 FAIL 且 exit 1；
+// 改回再跑 ⇒ PASS。`stage-payload` / `verify-payload` 其余各项都不遍历 node_modules，这是唯一看得见它的门禁。
+function electronBundleStatus() {
+  const pkgDir = join(payloadDir, 'node_modules', 'electron');
+  if (!existsSync(pkgDir)) return { ok: true, warn: true, msg: 'payload 无 node_modules/electron（纯内容快照？跳过完整性校验）' };
+  const missing = [];
+  if (!existsSync(join(pkgDir, 'path.txt'))) missing.push('path.txt');
+  if (!existsSync(join(pkgDir, 'dist', 'electron.exe'))) missing.push('dist\\electron.exe');
+  if (missing.length) {
+    return { ok: false, msg: `payload 的 electron 包缺 postinstall 产物：${missing.join('、')}——装机版 require('electron') 会走同步下载分支，离线首启卡死。修法：从源 copy 同名文件到 payload\\node_modules\\electron\\（见 L3 dshome-build/release.md「payload postinstall 产物盲区」）` };
+  }
+  return { ok: true, say: true, msg: 'PASS: payload electron 包完整（path.txt + dist\\electron.exe）' };
+}
+
 function staleBackupWarn() {
   if (!existsSync(profilesDir)) return;
   for (const e of readdirSync(profilesDir)) {
@@ -218,7 +238,7 @@ function staleBackupWarn() {
 }
 
 function statuses() {
-  return [agentsStatus(), poisonStatus(), versionStatus(), contentDriftStatus(), privateLeakStatus(), iconStatus()];
+  return [agentsStatus(), poisonStatus(), versionStatus(), contentDriftStatus(), privateLeakStatus(), iconStatus(), electronBundleStatus()];
 }
 
 function main() {
