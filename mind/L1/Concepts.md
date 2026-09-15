@@ -1,6 +1,6 @@
 # Concepts.md — 心智概念注册表（L1 契约）
 
-> 版本：1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | B3 首启自举闭环（上工无档即建档）+ V4 跨设备立场（主线档各设备独立，不做合并）
+> 版本：1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | B3 首启自举闭环（上工无档即建档）+ V4 跨设备立场（主线档各设备独立，不做合并）
 > 定位：这是"某一概念的**权威源/入口在哪**"的**挂号处**。系统要查询/流转一个概念，只在本表查一次；
 > 加载：按需（查询层，L1 参考文档）——概念权威源/路由表，按需查
 > 其他文档（AGENTS.md、Skill、记忆）**引用本表**，**不得各自重复定义**同一概念的权威源。
@@ -16,10 +16,10 @@
 | memory | 记忆层三区：`L3\common\<主题>\`（通用）+ `L3\projects\<项目>\知识\<主题>\`（专属）+ 各目录 `_index` | 教训/偏好/跨会话记忆 | `/api/mind/search` + `/api/mind/dup-check` | kind / importance / scope / topic / project / tags |
 | skill | `mind\L2\Skill\<id>.md` + `_index` | 怎么做/能力/流程/积木 | 关键词触发加载 | name / version / triggers / inputs / outputs |
 
-> 📌 **todo/progress 权威源 = 体系主线档（跨设备语义）**：`L3\projects\DSHOME\project.md` 是**心智体系自身**的运行档
+> 📌 **todo/progress 权威源 = 体系主线档（跨设备语义）**：`mind-private\L3\projects\DSHOME\project.md` 是**心智体系自身**的运行档
 > （每台设备的智能体都维护同语义的一份：记录心智本体的进度/待办），**不是**任何本机业务项目档。
 > 用户业务项目（各自独立目录）在 `L3\projects\<项目>\project.md`，**不入 todo API**。
-> **新设备首启自举（B3 闭环 2026-09-05）**：`mind-prime` 上工召回时若无 `L3\projects\DSHOME\project.md` → **当场按 `mind\L1\Memory.md` §四 模板初始化一份**（含「进度状态」表 + 「下一步」`- [ ]` 列表，标题不带序号前缀），再装配——不等收工（收工 step1 假定档已存在，鸡生蛋由此解开）；mind-prime 无档时目前容错返回空，初始化动作由智能体在首会话开场补做。
+> **新设备首启自举（B3 闭环 2026-09-05）**：`mind-prime` 上工召回时若无 `mind-private\L3\projects\DSHOME\project.md` → **当场按 `mind\L1\Memory.md` §四 模板初始化一份**（含「进度状态」表 + 「下一步」`- [ ]` 列表，标题不带序号前缀），再装配——不等收工（收工 step1 假定档已存在，鸡生蛋由此解开）；mind-prime 无档时目前容错返回空，初始化动作由智能体在首会话开场补做。
 > **跨设备立场（V4 2026-09-05）**：主线档**每设备独立演化、不跨设备自动同步**——出厂区（mind\）经 git 多设备同步（规则/技能/本文）；私有区（mind-private\）有意本机私有（gitignore），各设备的心智进度/待办各自为政（上班的公司机 vs 家里的个人机进度不同是**设计预期**，不是 bug）。心智本体跨设备延续靠"任务带走/结论蒸馏后 git 同步出厂规则"，不靠主线档合并；**不做双机主线档 diff/合并机制**（业务项目档同）。
 
 > 📌 **suggestion 权威源 = 动作放行记录（实况对齐 2026-09-05）**：suggestion 概念落地为护栏的动作放行机制
@@ -59,7 +59,7 @@
 
 - **依据唯一**：判断某概念的权威源/入口，只在本表查一次；其它文档引用本表，不重复定义。
 - **薄契约 + 开放正文**：只把"系统要判断/查询/流转"的字段结构化；`status` / `priority` 等用**开放标签，不设死枚举**；正文自由。
-- **改契约流程**：增删概念 / 调整权威源属"自我类文件"改动 → 走 `AGENTS.md` §五 硬流程：**用户放行 → 快照 → `mind-validate.mjs` 通过 → 失败回滚**。
+- **改契约流程**：增删概念 / 调整权威源属"自我类文件"改动 → 走 `AGENTS.md` §四 硬流程：**用户放行 → 快照 → `mind-validate.mjs` 通过 → 失败回滚**。
 
 ---
-_版本：1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | v1.2（suggestion 对齐 approvals）→ B3 首启自举 + V4 跨设备立场_
+_版本：1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | v1.2（suggestion 对齐 approvals）→ B3 首启自举 + V4 跨设备立场_

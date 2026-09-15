@@ -1,6 +1,6 @@
 # HUB.md — 知识网络之心
 
-> 版本：1.7 | 2026-09-11 | 机制名表述统一 | 1.6 | 2026-09-09 | 记忆层重构：L3 三区表（common/projects/history）替代 L3/index+Project 行；知识流动路径同步 | 1.5 | 2026-09-06 | 注入层对齐 R0：注入层=「dshome-mind-inject 运行时读 SOUL.md + AGENTS.md 双件全文注入（R0 人格宪法+运行宪法，正文=注入源，无手写摘要）+ dshome-mind-recall 动态召回」；强制层读取动作化（AGENTS §八 知识地图）
+> 版本：1.8 | 2026-09-15 | 规则层订正批次：L42 强制层清单**五处路径前缀补全**（`L1/Learn.md` 实为私有区 `mind-private\L1\Learn.md`） | 1.7 | 2026-09-11 | 机制名表述统一 | 1.6 | 2026-09-09 | 记忆层重构：L3 三区表（common/projects/history）替代 L3/index+Project 行；知识流动路径同步 | 1.5 | 2026-09-06 | 注入层对齐 R0：注入层=「dshome-mind-inject 运行时读 SOUL.md + AGENTS.md 双件全文注入（R0 人格宪法+运行宪法，正文=注入源，无手写摘要）+ dshome-mind-recall 动态召回」；强制层读取动作化（AGENTS §八 知识地图）
 > 加载：M 元层——维护/审计/新设备时读；不参与运行时注入（注入=R0 SOUL+AGENTS）
 > 定位：L1 中枢——心智基座的设计理念、加载规则、跨层红线
 
@@ -39,7 +39,7 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 `dshome-mind-inject` 运行时读 `mind\L0\SOUL.md`（人格宪法）+ `mind\L0\AGENTS.md`（运行宪法）**双件全文**注入（正文=唯一注入源）+ `dshome-mind-recall` 注动态召回；R2 触发读取动作见 AGENTS §八 知识地图。
 
 ### 强制层（每次上工必须加载）
-`L1/Tree.md`（有什么）+ `L1/Power.md`（怎么用 Skill/Exp）+ `L1/Memory.md`（怎么存 L3）+ `L1/Learn.md`（教训）+ `L1/Invariants.md`（确定性内核）。
+`mind\L1\Tree.md`（有什么）+ `mind\L1\Power.md`（怎么用 Skill/Exp）+ `mind\L1\Memory.md`（怎么存 L3）+ `mind-private\L1\Learn.md`（教训）+ `mind\L1\Invariants.md`（确定性内核）。
 
 ### 查询层（按需）
 L2 Skill/Exp 关键词触发；L3 记忆区（common/projects/history）按需 grep/read；L1 参考文档（Concepts / Design-Philosophy / Dream / Ritual / Wisdom）按需查。
