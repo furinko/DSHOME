@@ -15,7 +15,8 @@
     "prepare": "node scripts/install-hooks.mjs",
     "publish": "pnpm -r publish",
     "setup": "node scripts/install-electron.mjs",
-    "patch:icon": "node scripts/patch-electron-icon.mjs"
+    "patch:icon": "node scripts/patch-electron-icon.mjs",
+    "patch:web": "node scripts/patch-web-assets.mjs"
   },
   "dependencies": {
     "dshome": "workspace:*"

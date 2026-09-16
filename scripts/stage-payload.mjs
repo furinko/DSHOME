@@ -217,5 +217,18 @@ if (process.platform !== 'win32') {
   changed.push('PATCH node_modules/electron/dist/electron.exe (taskbar icon)');
 }
 
+// ---- Web 前端 bundle 补丁（2026-09-16）----------------------------------------
+// 界面把正文里单个 `~` 当删除线（remark-gfm 的 singleTilde 默认 true，且被 minifier 折死成恒真）：
+// `1.3~2 倍` 会显示成 `1.32 倍`，并把配对区间整段划掉。补丁 = 该默认值 true→false（等长替换，
+// 单个 `~` 不再成对；`~~双波浪线~~` 照旧可用）。与 electron 图标同纪律：打完立即复核，失败即中止发版
+// （宁可打包失败，不可发出会把 `~` 误渲染成删除线的包）。
+const webPatcher = join(here, 'patch-web-assets.mjs');
+const w1 = spawnSync(process.execPath, [webPatcher, '--root', dst], { stdio: 'inherit' });
+if (w1.status !== 0) {
+  console.error('[stage] FATAL: Web 前端 singleTilde 补丁失败——装机版会把单个 ~ 渲染成删除线，已中止');
+  process.exit(1);
+}
+changed.push('PATCH node_modules/@deepseek-ai/dsh-web-frontend/dist/assets (singleTilde→false)');
+
 console.log(`[stage] 处理完成：copy=${copied} file(s)`);
 for (const c of changed) console.log('[stage] ' + c);

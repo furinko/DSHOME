@@ -800,6 +800,9 @@ window.__ModuleLoader__.load({
       { id: "L3H", label: "L3 历史", color: "#f59e0b" },
       { id: "TR", label: "TRASH", color: "#64748b" },
       { id: "TK", label: "任务缓冲", color: "#ec4899" },
+      // 未知层登记（2026-09-16 修）：后端 index.cjs 对**非标路径**的文件打 OT 层（首例＝mind-private\backup\web-assets\PATCH-NOTES.md），
+      // 客户端漏登记 ⇒ layoutGraph 不给它排位置 ⇒ 节点循环读 p.x 抛 TypeError，整块图谱白屏、其后的节点全部不画。
+      { id: "OT", label: "其他（非标路径）", color: "#64748b" },
     ];
     var CANVAS_W = 1240;
     var NODE_H = 36;
@@ -937,6 +940,7 @@ window.__ModuleLoader__.load({
       var nodeEls = {};
       graph.nodes.forEach(function (n) {
         var p = laid.pos[n.id];
+        if (!p) return; // 兜底（2026-09-16）：层不在 LAYER_ORDER 里时宁可少画这一个点，也绝不许整块面板炸
         var g = svgEl("g", { class: "dshome-mind-graph-node", transform: "translate(" + p.x + "," + p.y + ")" });
         var priv = n.zone === "private";
         // 卡片底
