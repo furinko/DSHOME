@@ -16,7 +16,7 @@
 | `dshome-plugin-dev` | DSHOME/DSH 结构与运行时 Cordis 插件开发：写码前先 `cordis_inspect` 读真实接口，纯 JS `code.host`/`code.client`，生命周期/修复/回滚；自有 host 插件落地**四处登记**（漏 `exports` = 宿主启动崩）；安全模式 v3（L3+L4 覆盖层、`--patch` 必须排在 app 参数之前） | 做/改插件 / cordis / slot / `is not declared` / `host.call` 失败 / 启动崩溃 / 安全模式 | 目标能力 → 平台归属 + 已读真实接口 + 插件源码 + 修复判断 | cordis-plugin-development (upstream) · mind/L1/Power | 1.3.8 |
 | `landing-audit` | 落地审计三查法：查「文档说有 ≠ 机制真在跑 ≠ 数据真达标」（定义/接线/数据逐层查） | 审计 / 落地 / 三查 / 落到实处吗 / 纸面定义 / 空壳 / 接线 | 被质疑概念/机制 → 三查证据链 + 每层 verdict(有/无/半) + 病灶定位 | mind/L1/Design-Philosophy · mind/L1/Memory · mind/L1/Power | 1.0.0 |
 | `scar-inference` | 伤疤反推法/咬痕考古法：不蒸整体蒸版本差，不读架构图读咬痕 | 考古 / 蒸 / 版本差 / 反推坑 / 咬痕 / 伤疤 / 为什么在 / 作者画像 / 同源盲区 | 新旧产物 → 咬痕分布图(伤疤→约束) + 同作者不变量 + 跨版本镜像，每证标 A/B/C | mind/L1/Memory · mind/L1/Power | 1.1.0 |
-| `required-action-wiring` | 必需动作接线三判据：①唯一权威落点（不活在可选链里）②没跑就硬失败（不许 WARN 后 exit 0）③设备侧可自检；配套「回执≠产物」 | 静默失败 / 只 WARN / 退出码 0 / 装了没生效 / 必须发生的动作 / 就绪判定 / 补丁没生效 / 接线 | 必需动作+挂载链 → 三判据逐条 verdict + 静默跳过路径清单 + 改造动作 | verify-integrity · landing-audit | 1.0.0 |
+| `required-action-wiring` | 必需动作接线三判据：①唯一权威落点（不活在可选链里）②没跑就硬失败（不许 WARN 后 exit 0）③设备侧可自检；配套「回执≠产物」 | 静默失败 / 只 WARN / 退出码 0 / 装了没生效 / 必须发生的动作 / 就绪判定 / 补丁没生效 / 接线 | 必需动作+挂载链 → 三判据逐条 verdict + 静默跳过路径清单 + 改造动作 | verify-integrity · landing-audit | 1.1.0 |
 
 ## 怎么用（组合约定）
 
@@ -31,4 +31,4 @@
 
 ---
 
-_版本：1.5 | 2026-09-14 | 新增 `required-action-wiring` 1.0.0（必需动作接线三判据：唯一权威落点 / 没跑就硬失败 / 设备侧可自检）| _版本：1.4 | 2026-09-12 | 同步 `dshome-crash-recovery` 1.0.7→1.0.8、`dshome-plugin-dev` 1.3.4→1.3.5（两卡同补「**safe 的覆盖边界**」：实测 `--print-ids` 20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`）| _版本：1.3 | 2026-09-12 | 同步 `dshome-crash-recovery` 1.0.6→1.0.7（§四 工具表加「市场事件日志 `log.ndjson`」一行）、`dshome-plugin-dev` 1.3.3→1.3.4（自检信号补「插件/配置变更取证」）| _版本：1.2 | 2026-09-12 | `dshome-plugin-dev` 1.3.2→1.3.3（§十 三步→四处登记；compaction-log 漏 exports 判例）| 1.1 | 2026-09-11 | 收工同步：`dshome-plugin-dev` 1.3.2、`dshome-crash-recovery` 1.0.6（逃生脚本 `safe.mjs` 已改 L3+L4 并集口径）| 1.0 | 2026-09-02 | 能力积木化起步（Bricks 式索引）_
+_版本：1.6 | 2026-09-17 | 同步 `required-action-wiring` 1.0.0→1.1.0（补判例「端口回 200 ≠ 就绪」：近似判据会抢在初始化完成前放行消费者）| _版本：1.5 | 2026-09-14 | 新增 `required-action-wiring` 1.0.0（必需动作接线三判据：唯一权威落点 / 没跑就硬失败 / 设备侧可自检）| _版本：1.4 | 2026-09-12 | 同步 `dshome-crash-recovery` 1.0.7→1.0.8、`dshome-plugin-dev` 1.3.4→1.3.5（两卡同补「**safe 的覆盖边界**」：实测 `--print-ids` 20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`）| _版本：1.3 | 2026-09-12 | 同步 `dshome-crash-recovery` 1.0.6→1.0.7（§四 工具表加「市场事件日志 `log.ndjson`」一行）、`dshome-plugin-dev` 1.3.3→1.3.4（自检信号补「插件/配置变更取证」）| _版本：1.2 | 2026-09-12 | `dshome-plugin-dev` 1.3.2→1.3.3（§十 三步→四处登记；compaction-log 漏 exports 判例）| 1.1 | 2026-09-11 | 收工同步：`dshome-plugin-dev` 1.3.2、`dshome-crash-recovery` 1.0.6（逃生脚本 `safe.mjs` 已改 L3+L4 并集口径）| 1.0 | 2026-09-02 | 能力积木化起步（Bricks 式索引）_
