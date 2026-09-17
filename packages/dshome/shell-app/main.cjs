@@ -16,6 +16,7 @@ const fs = require('node:fs');
 const updater = require('./updater.cjs');
 const safeOverlay = require('./safe-overlay.cjs');
 const readiness = require('./readiness.cjs');
+const autostart = require('./autostart.cjs');
 
 // ---- 配置 ----
 const DEFAULT_PORT = 3099;
@@ -685,9 +686,44 @@ async function manualCheckUpdate() {
   }
 }
 
+/** 本机开机自启的登记参数（为什么不能靠 Electron 默认值：见 autostart.cjs 顶部实测事故）。 */
+function loginItemOptions() {
+  const spec = resolveBackendSpec();
+  return autostart.loginItemOptions({
+    specKind: spec?.kind ?? null,
+    instDir: spec?.instDir ?? '',
+    exeExists: (p) => fs.existsSync(p),
+    execPath: process.execPath,
+    appDir: __dirname,
+  });
+}
+
+/** 按**同一组** path/args 读回自启状态。
+ *  🔴 Electron 文档明确：set 时传了 path/args，get 时也必须传同样的，否则读的是"默认口径"、
+ *  永远显示 ✗（旧写法正是这样：托盘 ✓/✗ 与真实登记对不上）。 */
+function loginItemEnabled() {
+  const opts = loginItemOptions();
+  try { return app.getLoginItemSettings({ path: opts.path, args: opts.args }).openAtLogin === true; }
+  catch (e) { logLine({ autoStart: 'read-error', error: String(e?.message ?? e) }); return false; }
+}
+
+/** 启动自愈：老的错误登记（裸 electron.exe + 空参，登录只会起 Electron 欢迎页）发现就清掉；
+ *  若状态文件记过"想开机自启"，顺手按正确命令重登（保意图、不留坏值）。2026-09-17 实测事故。 */
+function migrateLegacyLoginItem() {
+  try {
+    const legacy = app.getLoginItemSettings().openAtLogin; // 默认口径 = process.execPath + 空 args
+    if (!legacy || loginItemEnabled()) return;
+    const opts = loginItemOptions();
+    const wanted = state().autoStart === true;
+    app.setLoginItemSettings({ openAtLogin: false }); // 同一值名 ⇒ 删掉坏值
+    if (wanted) app.setLoginItemSettings({ openAtLogin: true, path: opts.path, args: opts.args });
+    logLine({ autoStart: 'legacy-migrated', rewrote: wanted, cmd: autostart.commandLine(opts) });
+  } catch (e) { logLine({ autoStart: 'migrate-error', error: String(e?.message ?? e) }); }
+}
+
 function rebuildTrayMenu() {
   if (!tray) return;
-  const openAtLogin = app.getLoginItemSettings().openAtLogin;
+  const openAtLogin = loginItemEnabled();
   const status = isOnline ? '后端：运行中' : '后端：未连接';
   const menu = Menu.buildFromTemplate([
     { label: 'DSHOME', enabled: false },
@@ -702,8 +738,30 @@ function rebuildTrayMenu() {
     {
       label: `开机自启 ${openAtLogin ? '✓' : '✗'}`,
       click: () => {
-        const next = !app.getLoginItemSettings().openAtLogin;
-        app.setLoginItemSettings({ openAtLogin: next });
+        const opts = loginItemOptions();
+        const next = !loginItemEnabled();
+        try {
+          app.setLoginItemSettings({ openAtLogin: next, path: opts.path, args: opts.args });
+        } catch (e) {
+          logLine({ autoStart: 'set-error', want: next, error: String(e?.message ?? e) });
+        }
+        // 🔴 读回自检：登记＝写注册表，不读回就只是"相信"。不一致要**响亮**（弹窗 + 日志），
+        //    绝不静默——静默失败正是这次"开了自启却起不来"的形态。
+        const after = loginItemEnabled();
+        if (after !== next) {
+          logLine({ autoStart: 'verify-failed', want: next, got: after, cmd: autostart.commandLine(opts) });
+          try {
+            dialog.showMessageBoxSync(window, {
+              type: 'error', title: 'DSHOME 开机自启',
+              message: `开机自启${next ? '登记' : '取消'}失败（期望 ${next}，读回 ${after}）。`,
+              detail: `登记命令：${autostart.commandLine(opts)}\n`
+                + '登录时要执行的必须是上面这条；若只写了 electron.exe，登录会开出 Electron 欢迎页而不是 DSHOME。',
+              buttons: ['确定'], noLink: true,
+            });
+          } catch { /* 弹窗失败不阻塞 */ }
+        } else {
+          logLine({ autoStart: next ? 'on' : 'off', cmd: autostart.commandLine(opts) });
+        }
         saveState({ autoStart: next });
         rebuildTrayMenu();
       },
@@ -812,6 +870,7 @@ if (!gotLock) {
   app.on('second-instance', () => showWindow());
   app.whenReady().then(() => {
     quitting = false;
+    migrateLegacyLoginItem(); // 清掉老的"裸 electron.exe"自启登记（见 autostart.cjs 顶部）
     createWindow();
     createTray();
     startNotifyListener();
