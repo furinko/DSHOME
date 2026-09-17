@@ -49,6 +49,7 @@ const SAFE = new Set([
   'scripts/verify-boot-recall.mjs',
   'scripts/verify-guard-decisions.mjs',
   'scripts/verify-host-plugins.mjs',
+  'scripts/verify-l1-versions.mjs',
   'scripts/verify-payload.mjs',
   'scripts/verify-safe-overlay.mjs',
   'scripts/verify-shell-autostart.mjs',

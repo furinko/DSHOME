@@ -92,3 +92,21 @@ node scripts/gate-ledger.mjs --check
 #    `HINDSIGHT_NO_METRICS=1`：门禁**不得**改被测对象的指标（不 bump / 不落基线 / 不写 changelog）。
 #    逃生门：规则或语料大改时 `git commit --no-verify`，或先手工 `--update-baseline` 重建后提交。
 HINDSIGHT_NO_METRICS=1 node scripts/search-regression.mjs
+# ⑭ 补齐链外门禁（2026-09-17 加 · 待办「门禁强制力」：原来 5 道 `verify-*` **根本不在链上** ⇒
+#    绿提交可与红门禁并存）。本次把能绿的都挂进来，并逐个核过真实退出码：
+#      · verify-upstream-contract —— 上游具名导出/槽位/官方行 id 是否还在。**挂链前先修了尺子**：
+#        `settingsNamespace` 上游（0.1.5-rc.2）**从未导出**，而 `upstream.js:65` 早已用 `optionalFn`
+#        兜底 + 同值退回 ⇒ 原脚本把它列进"必需"导致**恒红**（这正是它一直挂不上链的卡点）。现改为
+#        "可选导出 + 断言我们的兜底存在"，并附**可执行反例**（去掉 upstream.js 的 optionalFn ⇒ 必红）。
+#      · verify-l1-versions —— 新门禁：改 L1 规则正文**必须提版本**（`Ritual §四` 事务流程）。
+#        判据＝staged 内容 vs HEAD 内容（无台账）；自带 `--selftest` 5 条可执行反例。同日实测漏项：
+#        `Ritual`/`Power` 各改两次正文、两次都忘 +0.1（`mind-validate` 只管 L2 Skill 四元 ⇒ 盲区）。
+#      · verify-pin-vs-installed —— profile 精确 pin ↔ node_modules 实体（治"git 同步了、依赖没同步"）。
+#      · verify-boot-recall —— 上工召回注入链存在性（行为验收另跑 `mind-boot-recall-itest.mjs`）。
+#      · verify-shell-readiness / verify-shell-autostart —— 外壳两道（就绪判据 / 开机自启登记口径，2026-09-17 建）。
+node scripts/verify-upstream-contract.mjs
+node scripts/verify-l1-versions.mjs
+node scripts/verify-pin-vs-installed.mjs
+node scripts/verify-boot-recall.mjs
+node scripts/verify-shell-readiness.mjs
+node scripts/verify-shell-autostart.mjs

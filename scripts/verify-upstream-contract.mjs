@@ -33,12 +33,22 @@ const pass = (section, item, detail) => results.push({ ok: true, section, item, 
 
 // ── §A 具名导出：我们依赖的官方导出是否还在 ────────────────────────────────
 // 与 packages/dshome/lib/host/upstream.js 保持一致；cron.cjs 另有两处 require。
+// **必需**导出：缺失即失配。
 const NEEDED_EXPORTS = [
   ['@deepseek-ai/dsh-llm', 'createUserMessage', 'R0 宪法注入 / 上工召回 / Skill 卡注入'],
-  ['@deepseek-ai/dsh-settings', 'settingsNamespace', 'notify / plugin-manager 设置总线'],
   ['@deepseek-ai/schemastery', 'default', '设置 schema 构造器 z'],
   ['@deepseek-ai/dsh-agent', 'installModelSelection', 'cron 定时任务的模型选择'],
   ['@deepseek-ai/dsh-llm', 'createMessage', 'cron 定时任务构造消息'],
+];
+// **可选**导出（2026-09-17 修尺子）：上游**从未导出**、而我们早就按"有则用、无则同值兜底"处理的面。
+// 判据因此不是"它必须存在"，而是"**我们的兜底必须存在**"——`upstream.js` 用
+// `optionalFn(spec, name)` 解析它，并在缺省时退回同值（`settingsNamespace()` 只做格式校验、原样返回字符串）。
+// 🔴 这组自带**可执行反例**：把 `upstream.js` 里那行 `optionalFn(...)` 去掉/改名 ⇒ 本项必须变红
+//    （否则"已兜底"就是空头声明）。`settingsNamespace` 在 0.1.5-rc.2 实测**不存在**——本脚本原把它
+//    列进"必需"⇒ 恒红 ⇒ 无法挂进 pre-commit（待办「门禁强制力」的那个直接卡点）。
+const OPTIONAL_EXPORTS = [
+  ['@deepseek-ai/dsh-settings', 'settingsNamespace', 'notify / plugin-manager 设置总线',
+   join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'upstream.js')],
 ];
 
 for (const [spec, name, why] of NEEDED_EXPORTS) {
@@ -49,6 +59,23 @@ for (const [spec, name, why] of NEEDED_EXPORTS) {
     else pass('A 具名导出', `${spec}#${name}`, `在（${typeof v}）`);
   } catch (e) {
     fail('A 具名导出', `${spec}#${name}`, `包本身导入失败：${e?.message ?? e}（用途：${why}）`);
+  }
+}
+
+for (const [spec, name, why, fallbackFile] of OPTIONAL_EXPORTS) {
+  let present = false;
+  try {
+    const mod = await import(spec);
+    present = (name === 'default' ? mod.default : mod[name]) !== undefined;
+  } catch { /* 包导入失败 → 视作缺失，改走"兜底是否存在"判据 */ }
+  let hasFallback = false;
+  try { hasFallback = readFileSync(fallbackFile, 'utf8').includes(`optionalFn('${spec}', '${name}')`); } catch { /* 读不到 = 无兜底 */ }
+  if (hasFallback) {
+    pass('A 具名导出（可选）', `${spec}#${name}`,
+      present ? '上游在导出（仍走 optionalFn 容错）' : `上游未导出，但 upstream.js 有 optionalFn 兜底（用途：${why}）`);
+  } else {
+    fail('A 具名导出（可选）', `${spec}#${name}`,
+      `既无上游导出、也读不到 optionalFn 兜底 ⇒「${why}」会静默失效（兜底文件：${fallbackFile}）`);
   }
 }
 
