@@ -76,7 +76,7 @@
 
 **刹车**：`mind\L0/L1` 规则、护栏/插件代码、运行时注册、git 提交**仍等放行**。
 
-**不照抄记忆契约**（L2 是"事实"，L3 是"声称"）：不设 `source`/`verified`（**能否跑通即证明**）、不设 `importance`（触发靠 triggers，不靠排序）、不新增 `related`（`contract.deps` 已够）。只保留三条：**dup-check 查重**、**`project` 字段隔离**（通用工具不标）、**增量覆写 + TRASH 不删只移**。
+**不照抄记忆契约**（L2 是"事实"，L3 是"声称"）：不设 `source`/`verified`（**能否跑通即证明**）、不设 `importance`（触发靠 triggers，不靠排序）、不新增 `related`（`contract.deps` 已够）。只保留三条：**dup-check 查重**、**`project` 归属标注**（隔离靠**物理目录**：`L3\common\` 恒含 + `L3\projects\<项目>\知识\` 仅当前项目——见 `Memory §一:17`/§十；`project` 字段只作内容归属，**不再承担隔离**；通用工具不标）、**增量覆写 + TRASH 不删只移**。
 
 **跨设备（对齐 `mind\L1\Concepts.md` V4 立场）**：私有区**有意本机私有、不跨设备同步**（设计预期，非 bug）；换设备靠本节的**落点结构照规则重建**，产物搬运走 `import-artifact`。**不引入同步/合并机制。**
 
