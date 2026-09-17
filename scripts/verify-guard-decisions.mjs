@@ -195,15 +195,29 @@ try {
   const r1 = guardFn2(exec3);
   approveOk = approveOk && !r1 && readAp().length === 1;
   approveLog.push(`① 命中放行 → 放行=${!r1} 且记录仍在=${readAp().length === 1}（命中≠消费）`);
-  await postFn(exec3, { kind: 'failure' }, nextOk);
+  await postFn(exec3, { isError: true }, nextOk);
   approveOk = approveOk && readAp().length === 1;
-  approveLog.push(`② post-execute=failure → 记录仍在=${readAp().length === 1}（反证：不许白烧额度）`);
-  await postFn(exec3, { kind: 'success' }, nextOk);
+  approveLog.push(`② post-execute 失败（isError:true）→ 记录仍在=${readAp().length === 1}（反证：不许白烧额度）`);
+  await postFn(exec3, { isError: false }, nextOk);
   approveOk = approveOk && readAp().length === 0;
-  approveLog.push(`③ post-execute=success → 记录被消费=${readAp().length === 0}`);
+  approveLog.push(`③ post-execute 成功（isError:false）→ 记录被消费=${readAp().length === 0}`);
   const r2 = guardFn2(exec3);
   approveOk = approveOk && !!r2;
   approveLog.push(`④ 额度用掉后再判 → 拦=${!!r2}`);
+  // 🔴 判据贴上游真实契约：`ToolExecutionResult` = `{isError:false}` / `{isError:true}`，**没有 `kind`**。
+  //    2026-09-17 实测事故：实现曾写 `result?.kind === 'success'` ⇒ 真跑恒不等、`consumeApproved`
+  //    永不执行；而**本探针当时也用同一个假形状** ⇒ 门禁恒绿、生产恒坏（09-14 首次观察到）。
+  //    ⑤ 就是锁这条：自造形状不得被当成功（先真判一次入 in-flight，再喂假形状）。
+  writeAp();
+  guardFn2(exec3);
+  await postFn(exec3, { kind: 'success' }, nextOk);
+  approveOk = approveOk && readAp().length === 1;
+  approveLog.push(`⑤ 反例·{kind:'success'}（自造形状）→ 记录仍在=${readAp().length === 1}（只认真实契约）`);
+  // ⑥ 反例：缺 file_path 不得抛、也不消费
+  writeAp();
+  await postFn({ name: 'edit', arguments: {} }, { isError: false }, nextOk);
+  approveOk = approveOk && readAp().length === 1;
+  approveLog.push(`⑥ 反例·缺 file_path → 不消费且不抛=${readAp().length === 1}`);
 } catch (e) {
   approveOk = false;
   approveLog.push(`抛错：${(e && e.message) || e}`);

@@ -490,8 +490,14 @@ export function apply(ctx) {
       //    hook 的最小可用签名假设：拿不到 next 就按"没有下游"处理，绝不能抛。
       const decision = typeof next === 'function' ? await next() : undefined;
       try {
+        // 🔴 判据必须贴上游**真实契约**：`ToolExecutionResult` = `{isError:false}`（成功）/
+        //   `{isError:true}`（失败），见 `@deepseek-ai/dsh-tools` 的 `ToolExecutionSuccess/Failure`
+        //   —— 结果里**没有 `kind` 字段**。2026-09-17 实测事故：这里原写 `result?.kind === 'success'`，
+        //   真跑时**恒不等** ⇒ `consumeApproved` 永不执行 ⇒ 放行额度永不消费、对该文件永久放行
+        //   （09-14 首次观察到；今天它把 ④ 门禁判红、堵住了所有人的提交）。当时本门禁自己的探针
+        //   也用同一个假形状 `{kind:'success'}`，所以探针恒绿——桩与实现共享了同一个错误假设。
         const p = exec?.arguments?.file_path ?? exec?.arguments?.path ?? '';
-        if (result?.kind === 'success' && MUTATING_TOOLS.has(exec?.name) && p) {
+        if (result?.isError === false && MUTATING_TOOLS.has(exec?.name) && p) {
           const n = consumeApproved(p, 'edit'); // 高危分支统一 op='edit'（与上方 check 口径一致）
           if (n) ctx.logger?.('dshome')?.info?.(`[mind-guard] 放行额度已消费（写成功）：${normalizePath(p)}（${n} 条）`);
         }
