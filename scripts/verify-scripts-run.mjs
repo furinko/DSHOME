@@ -37,12 +37,15 @@ const repoRoot = process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.
 const CRASH = /ReferenceError|TypeError|is not defined|before initialization|Cannot find module|ERR_MODULE_NOT_FOUND|ERR_REQUIRE_ESM/;
 
 // 无参=只读/自检（可安全真跑）
+// ⚠️ 2026-09-17：`search-regression.mjs` 已**移出**本白名单 —— 它既**有副作用**（bump `search-hit`），
+//   又用**语义化退出码**（1=真退化 / 2=需重建），而本脚本只把「崩溃特征」当失败（非零码记为 ok）。
+//   结果：它在此处**每次提交白跑一遍并 +9**（实测累积 343），却从来没拦过任何东西。
+//   现改由 `.git/hooks/pre-commit` **显式调用**（带 `HINDSIGHT_NO_METRICS=1` 求无副作用 + 认退出码）。
 const SAFE = new Set([
   'scripts/evolve-log.mjs',
   'scripts/mind-audit.mjs',
   'scripts/mind-validate.mjs',
   'scripts/syntax-check.mjs',
-  'scripts/search-regression.mjs',
   'scripts/verify-boot-recall.mjs',
   'scripts/verify-guard-decisions.mjs',
   'scripts/verify-host-plugins.mjs',
