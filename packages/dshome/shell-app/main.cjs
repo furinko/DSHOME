@@ -15,6 +15,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const updater = require('./updater.cjs');
 const safeOverlay = require('./safe-overlay.cjs');
+const readiness = require('./readiness.cjs');
 
 // ---- 配置 ----
 const DEFAULT_PORT = 3099;
@@ -52,6 +53,12 @@ function targetUrl() {
 }
 function backendPort() {
   return Number(process.env.DSHOME_PORT || DEFAULT_PORT);
+}
+/** 本进程是否自己拉起过后端：只有这种情况 dsh 才会把 `dsh web:` 行打进 stdout。
+ *  外部/孤儿后端（壳只当 UI 客户端）永远拿不到那行 → 沿用历史判据（探活 200 即在线）；
+ *  那些后端早就把插件树挂完了，不存在「首屏半就绪」问题。 */
+function spawnsBackend() {
+  return backendSpawnSeq > 0;
 }
 
 // ---- 后端规格解析 ----
@@ -121,6 +128,15 @@ let isOnline = false;
 let offlineStreak = 0; // 连续探活失败计数（防抖：够 OFFLINE_REQUIRED 次才认定离线）
 let pollTimer = null;
 let quitting = false;
+// ---- 就绪判据状态（2026-09-17；判据本体在 readiness.cjs，可单测）----
+/** 探活「连续成功」的起点（ms）：用于「等 `dsh web:` 行」的兜底计时；探活失败即清空。 */
+let probeUpSince = null;
+/** 当前在线是靠哪种判据上来的（'probe' | 'auth-url' | 'fallback-timeout'）。 */
+let onlineReadyKind = null;
+/** 本后端进程是否已因 URL 行迟到补过一次重载（防同一个 token 反复重载）。 */
+let reloadedForAuthUrl = false;
+/** 「等到树挂完」只告警一次，避免每 3s 刷屏。 */
+let waitingLogged = false;
 
 // 后端管理
 let backend = null;
@@ -218,6 +234,10 @@ function startBackend() {
   // 「杀健康后端 → 新 token → 仍用旧 token 探测失败」的**自杀循环**
   // （2026-09-11 实景：日志 portKill → start → auth-url-captured → retry → 无限重复）。
   backendAuthUrl = null;
+  // 新后端 = 新的就绪倒计时与新的 token：兜底计时/补重载标记必须一起复位
+  probeUpSince = null;
+  reloadedForAuthUrl = false;
+  waitingLogged = false;
   stderrBuffer = '';
   stderrFull = '';
   logLine({ backend: 'start', safe: safeMode, count: restartCount, crashStreak });
@@ -273,7 +293,18 @@ function startBackend() {
     if (window) {
       void (async () => {
         try {
-          if (await isBackendUp()) await applyBackendState(true);
+          if (!(await isBackendUp())) return;
+          // 🔴 这行 URL = 后端 `loader.await()` 完成 = 整棵插件树挂完（dsh-web-app 在
+          // settled 之后才 announceReady），是**权威就绪信号**：此刻 loadURL 拿到的
+          // `window.__DSH_BOOT__` 才是完整花名册，工作区面才不会空（readiness.cjs 顶部）。
+          await applyBackendState(true, 'auth-url');
+          // 若刚才已靠兜底超时提前上线过（那份首屏可能是半就绪的残缺界面），
+          // 在这里补一次重载——等价于替主人按了一次 F5。每个后端进程只补一次。
+          if (readiness.shouldReloadOnAuthUrl({ isOnline, readyKind: onlineReadyKind, reloaded: reloadedForAuthUrl })) {
+            reloadedForAuthUrl = true;
+            logLine({ reloadForAuthUrl: true, reason: 'online-before-tree-settled' });
+            await window.loadURL(targetUrl());
+          }
         } catch { /* 失败留给 3s 轮询兜底 */ }
       })();
     }
@@ -519,11 +550,13 @@ async function isBackendUp() {
   }
 }
 
-async function applyBackendState(nowUp) {
+async function applyBackendState(nowUp, readyKind = null) {
   if (nowUp) offlineStreak = 0; // 探到后端在线：清零失败计数，防抖通道恢复正常
+  if (nowUp && readyKind !== null) onlineReadyKind = readyKind;
   if (nowUp === isOnline) return; // nothing changed
   isOnline = nowUp;
-  logLine({ state: isOnline ? 'online' : 'offline', url: targetUrl() });
+  if (!isOnline) onlineReadyKind = null;
+  logLine({ state: isOnline ? 'online' : 'offline', ready: onlineReadyKind ?? undefined, url: targetUrl() });
   try {
     if (isOnline) await window.loadURL(targetUrl());
     else await window.loadFile(OFFLINE_FILE, { query: { url: targetUrl() } });
@@ -551,8 +584,28 @@ function startPolling() {
       const up = await isBackendUp();
       if (up) {
         offlineStreak = 0;
-        await applyBackendState(true);
+        if (probeUpSince === null) probeUpSince = Date.now();
+        // 🔴 在线判据（2026-09-17 修）：探活 200 只说明 HTTP 服务起来了，不代表插件树挂完。
+        // 壳自己拉起的后端必须等到 stdout 的 `dsh web:` 行才 loadURL，否则首屏落在半就绪
+        // host 上——浏览器花名册残缺 / 工作区 follow 流终局失败 → 「什么工作区都没有」。
+        // 兜底：等满 readiness.DEFAULT_FALLBACK_MS 仍没那行（上游改格式）就退回历史行为。
+        const decision = readiness.decideOnline({
+          probeUp: true,
+          ownsBackend: spawnsBackend(),
+          hasAuthUrl: backendAuthUrl !== null,
+          probeUpSince,
+          now: Date.now(),
+        });
+        if (decision.online) {
+          waitingLogged = false;
+          await applyBackendState(true, decision.ready);
+        } else if (!waitingLogged) {
+          waitingLogged = true; // 只记一次，别每 3s 刷屏
+          logLine({ readiness: decision.ready, waitedMs: Date.now() - probeUpSince });
+        }
       } else {
+        probeUpSince = null;
+        waitingLogged = false;
         // 防抖：单次/个别瞬态假失败不回离线页；连续 OFFLINE_REQUIRED 次才真正切离线。
         offlineStreak += 1;
         if (offlineStreak < OFFLINE_REQUIRED) return;
@@ -696,12 +749,22 @@ async function loadInitial() {
   logLine({ stage: 'loadInitial', target: targetUrl() });
   let up = false;
   try { up = await isBackendUp(); } catch (e) { logLine({ loadInitialError: String(e?.message ?? e) }); }
-  if (!up) {
+  probeUpSince = up ? Date.now() : null;
+  const spec = resolveBackendSpec();
+  if (!up && spec) {
     // 后端没在跑：壳负责拉起（零外部依赖）
-    const spec = resolveBackendSpec();
-    if (spec) startBackend();
+    startBackend();
   }
-  isOnline = up;
+  // 与 3s 轮询同一套判据：探活 200 ≠ 插件树挂完（见 readiness.cjs 顶部）。启动瞬间就探到
+  // 200 的只可能是「外部/孤儿后端」（壳没 spawn 过 → spawnsBackend() 为 false → 直接在线），
+  // 那些后端早已挂完树，所以这条分支不会把正常启动拖进等待。
+  const decision = readiness.decideOnline({
+    probeUp: up, ownsBackend: spawnsBackend(), hasAuthUrl: backendAuthUrl !== null,
+    probeUpSince, now: Date.now(),
+  });
+  isOnline = decision.online;
+  onlineReadyKind = decision.online ? decision.ready : null;
+  if (!decision.online && up) logLine({ readiness: decision.ready, waitedMs: 0 });
   try {
     if (isOnline) await window.loadURL(targetUrl());
     else await window.loadFile(OFFLINE_FILE, { query: { url: targetUrl() } });

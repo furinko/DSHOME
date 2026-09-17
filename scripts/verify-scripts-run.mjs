@@ -48,6 +48,7 @@ const SAFE = new Set([
   'scripts/verify-host-plugins.mjs',
   'scripts/verify-payload.mjs',
   'scripts/verify-safe-overlay.mjs',
+  'scripts/verify-shell-readiness.mjs',
   'scripts/verify-upstream-contract.mjs',
   'scripts/mind-boot-recall-itest.mjs',
   'scripts/mind-skill-loader-itest.mjs',
