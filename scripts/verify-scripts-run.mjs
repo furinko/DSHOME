@@ -60,6 +60,9 @@ const SAFE = new Set([
   'scripts/mind-cron-serialize-itest.mjs',
   'scripts/mind-cron-runs-itest.mjs',
   'scripts/mind-cron-recipes-itest.mjs',
+  // 视觉自检工具（2026-09-18 加）：无参只打用法 + exit 2 ⇒ 属于"usage 退出不算失败"那一类，
+  // 挂白名单只是为了每次提交都真跑一次"它至少能起来"（它自身要带目标文件才有实际动作）。
+  'scripts/shot.mjs',
 ]);
 
 function toRel(p) {
