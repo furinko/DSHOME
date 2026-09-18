@@ -110,3 +110,9 @@ node scripts/verify-pin-vs-installed.mjs
 node scripts/verify-boot-recall.mjs
 node scripts/verify-shell-readiness.mjs
 node scripts/verify-shell-autostart.mjs
+# ⑮ Skill 版本五元（2026-09-17 加）：`skill-version --check` 此前**不在任何链上**——而 Skill 版本
+#    写在五处（frontmatter / 文件尾 / `Tree.md` / `_index.md` / **`Skill\README.md` 能力表**），
+#    全靠手工同步。README 那一处**两次漏登/落后**（09-11 漏 2 个技能 + 3 处版本；09-17 又漂 4 处），
+#    根因就是"不在门禁面内"。本次把它接为第 5 元并挂链；`--selftest` 13 项（含 3 条 README 反例：
+#    打坏版本 / 删行 / sync 复一致）可执行。
+node scripts/skill-version.mjs --check

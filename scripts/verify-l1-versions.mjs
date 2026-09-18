@@ -31,11 +31,17 @@ const repoRoot = process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.
 const L1_DIR = 'mind/L1/';
 
 const HEAD_RE = /^>\s*版本：\s*([0-9]+(?:\.[0-9]+)*)/m;
-const FOOT_RE = /^_版本：\s*([0-9]+(?:\.[0-9]+)*)/m;
+const FOOT_RE = /^_版本：\s*([0-9]+(?:\.[0-9]+)*)/gm;
 
-/** 取头/尾版本号（缺则为 null）。 */
+/** 取头/尾版本号（缺则为 null）。
+ *  🔴 尾版本取**最后一个**匹配，不取第一个：正文里可能内嵌"版本行模板"（`Memory.md` 的 §模板
+ *    就含 `_版本：vX | 日期 | 本轮摘要_`，实文件尾在千行之后）。取第一个会**认错尾行** ⇒ 假 warn。
+ *     反例（`--selftest` ⑥）：正文放一个 `_版本：1.0 …_` 占位、真尾是 1.1 ⇒ 必须读出 1.1。 */
 function versionsOf(text) {
-  return { head: HEAD_RE.exec(text)?.[1] ?? null, foot: FOOT_RE.exec(text)?.[1] ?? null };
+  const head = HEAD_RE.exec(text)?.[1] ?? null;
+  const all = [...String(text ?? '').matchAll(FOOT_RE)];
+  const foot = all.length > 0 ? all[all.length - 1][1] : null;
+  return { head, foot };
 }
 const norm = (t) => String(t ?? '').replace(/\r\n/g, '\n');
 
@@ -92,7 +98,15 @@ function selftest() {
   const r6 = judgeL1VersionChange(base, base.replace('- 原文', '- 改了正文'));
   if (r6.ok) { bad += 1; console.error('FAIL ⑥ judge 对「改正文不提版本」返回了绿 ⇒ 判据退化'); }
   else console.log('ok   ⑥ 判据未退化（改正文不提版本 ⇒ 红）');
-  console.log(bad ? `\nverify-l1-versions --selftest: ${bad} 项失败` : '\nverify-l1-versions --selftest: 全部通过（5 反例 + 1 退化检查）');
+  // ⑦ 尾版本必须取**最后一个**：正文里内嵌模板占位（Memory.md §模板那种）不得冒充真尾行
+  const withTemplate = [
+    '> 版本：1.0 | 2026-01-01 | 初版', '', '## 模板', '_版本：vX | 日期 | 本轮摘要_', '', '',
+    '_版本：1.2 | 2026-03-03 | 真尾_',
+  ].join('\n');
+  const v7 = versionsOf(withTemplate);
+  if (v7.foot === '1.2') console.log('ok   ⑦ 尾版本取最后一个匹配（模板占位不冒充真尾）');
+  else { bad += 1; console.error(`FAIL ⑦ 尾版本取错：得到 ${v7.foot}（期望 1.2）—— 正文模板占位会遮住真尾行`); }
+  console.log(bad ? `\nverify-l1-versions --selftest: ${bad} 项失败` : '\nverify-l1-versions --selftest: 全部通过（5 反例 + 1 退化检查 + 1 尾行取值检查 = 7 项）');
   process.exit(bad ? 1 : 0);
 }
 

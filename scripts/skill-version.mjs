@@ -34,6 +34,7 @@ function paths(root) {
     skillDir: join(r, 'mind', 'L2', 'Skill'),
     tree: join(r, 'mind', 'L1', 'Tree.md'),
     index: join(r, 'mind', 'L2', 'Skill', '_index.md'),
+    readme: join(r, 'mind', 'L2', 'Skill', 'README.md'),
   };
 }
 
@@ -67,7 +68,18 @@ function indexVersion(indexPath, id) {
   return (last.match(VER) || [])[0] || null;
 }
 
-/** 一个 Skill 的四元快照。 */
+/** README 能力表里该技能行的**第 2 格** = 版本。README 表用**裸 id**（无 `_index` 那种反引号）。
+ *  为什么它是必要镜像（2026-09-17）：该表**曾两次漏登/落后**（09-11 漏 2 个技能 + 3 处版本落后、
+ *  09-17 又漂 4 处），根因就是"它不在任何门禁面内"。 */
+function readmeVersion(readmePath, id) {
+  if (!existsSync(readmePath)) return null;
+  const line = readFileSync(readmePath, 'utf8').split('\n')
+    .find((l) => (l.split('|')[1] || '').trim() === id);
+  if (!line) return null;
+  return ((line.split('|')[2] || '').match(VER) || [])[0] || null;
+}
+
+/** 一个 Skill 的**五元**快照（2026-09-17 加 README 表为第 5 个镜像）。 */
 function snapshot(root, s) {
   const p = paths(root);
   const md = readFileSync(s.file, 'utf8');
@@ -78,18 +90,21 @@ function snapshot(root, s) {
     foot: footVersion(md),
     tree: treeVersion(p.tree, s.rel),
     index: indexVersion(p.index, s.id),
+    readme: readmeVersion(p.readme, s.id),
   };
 }
 
 const uniq = (xs) => [...new Set(xs.filter((v) => v))];
 
-/** 报告漂移；返回漂移列表（空 = 四元一致）。 */
+/** 报告漂移；返回漂移列表（空 = 五元一致）。
+ *  README 表**缺该技能行**同样算漂移（`readme === null`）——这正是历史两次"漏登"的形态；
+ *  反例：把 README 里某行删掉 ⇒ check 必红（不能因为"读不到"就放过）。 */
 export function check(root) {
   const out = [];
   for (const s of listSkills(paths(root))) {
     const v = snapshot(root, s);
-    const set = uniq([v.fm, v.foot, v.tree, v.index]);
-    if (set.length > 1 || !v.fm) out.push(v);
+    const set = uniq([v.fm, v.foot, v.tree, v.index, v.readme]);
+    if (set.length > 1 || !v.fm || v.readme === null) out.push(v);
   }
   return out;
 }
@@ -139,6 +154,23 @@ function writeMirrors(root, s, ver, { footer = true } = {}) {
       return cells.join('|');
     });
     if (hit) { writeFileSync(p.index, out.join('\n'), 'utf8'); changes.push(`_index.md ${indexVersion(p.index, s.id)}→${ver}`); }
+  }
+  // ④ README.md 能力表：该行**第 2 格**（2026-09-17 加；该表此前不在任何门禁面内）
+  if (existsSync(p.readme)) {
+    const oldReadme = readmeVersion(p.readme, s.id);
+    const lines = readFileSync(p.readme, 'utf8').split('\n');
+    let hit = false;
+    const out = lines.map((l) => {
+      if (hit) return l;
+      const cells = l.split('|');
+      if ((cells[1] || '').trim() !== s.id) return l;
+      const old = (cells[2] || '').trim();
+      if (!(new RegExp(`^${VER}$`)).test(old)) return l;
+      hit = true;
+      cells[2] = ` ${ver} `;
+      return cells.join('|');
+    });
+    if (hit) { writeFileSync(p.readme, out.join('\n'), 'utf8'); changes.push(`README.md ${oldReadme || '无'}→${ver}`); }
   }
   return changes;
 }
@@ -196,6 +228,8 @@ function selftest() {
       '| 文件 | 版本 | 描述 | 触发 |\n|---|---|---|---|\n| fake-skill.md | 1.0.0 | 假技能 | 无 |\n', 'utf8');
     writeFileSync(join(dir, '_index.md'),
       '| Skill | 描述 | 触发 | 产出 | 依赖 | 版本 |\n|---|---|---|---|---|---|\n| `fake-skill` | 假 | 无 | 无 | 无 | 1.0.0 |\n', 'utf8');
+    writeFileSync(join(dir, 'README.md'),
+      '| 技能 | 版本 | 描述 |\n|---|---|---|\n| fake-skill | 1.0.0 | 假技能 |\n', 'utf8');
 
     assert(check(root).length === 0, 'A 起点四元一致（check 无漂移）');
     // 反证 1：打坏一个镜像 → check 必红
@@ -224,6 +258,15 @@ function selftest() {
       && new RegExp('_版本：3\\.0\\.0 \\| \\d{4}-\\d{2}-\\d{2} \\| 测试摘要XYZ \\| _版本：2\\.0\\.0').test(md3),
       'H --bump --note 追加新记录且保留旧记录');
     assert(check(root).length === 0, 'I --note 后四元仍一致');
+    // 反证 5（2026-09-17 加）：README 表＝第 5 元 —— 打坏它、或删掉该行，都必须让 check **变红**。
+    //   放在这里（版本已到 3.0.0）而不是更早：反例必须打在**当前真实状态**上，否则替换不中＝假绿。
+    writeFileSync(join(dir, 'README.md'),
+      readFileSync(join(dir, 'README.md'), 'utf8').replace('| 3.0.0 |', '| 0.0.1 |'), 'utf8');
+    assert(check(root).length === 1, 'J README 版本打坏 → check 变红（第 5 元真在生效）');
+    sync(root, 'fake-skill');
+    assert(check(root).length === 0, 'K --sync 后五元复一致');
+    writeFileSync(join(dir, 'README.md'), '| 技能 | 版本 | 描述 |\n|---|---|---|\n', 'utf8');
+    assert(check(root).length === 1, 'L README 缺该技能行 → check 变红（"漏登"不许放过）');
     // 反证 3：真源缺失 → 拒绝回写
     writeFileSync(join(dir, 'fake-skill.md'), readFileSync(join(dir, 'fake-skill.md'), 'utf8').replace(/^version:.*$/m, 'x: y'), 'utf8');
     let threw = false;
@@ -246,8 +289,8 @@ function main() {
   if (args.includes('--selftest')) process.exit(selftest() ? 0 : 1);
   if (args.includes('--check')) {
     const drift = check(root);
-    if (!drift.length) { console.log('skill-version: 全部 Skill 版本四元一致 ✅'); process.exit(0); }
-    for (const d of drift) console.error(`  ❌ ${d.id}: frontmatter=${d.fm || '无'} 文件尾=${d.foot || '无'} Tree=${d.tree || '无'} _index=${d.index || '无'}`);
+    if (!drift.length) { console.log('skill-version: 全部 Skill 版本**五元**一致 ✅（frontmatter · 文件尾 · Tree · _index · README）'); process.exit(0); }
+    for (const d of drift) console.error(`  ❌ ${d.id}: frontmatter=${d.fm || '无'} 文件尾=${d.foot || '无'} Tree=${d.tree || '无'} _index=${d.index || '无'} README=${d.readme || '缺行'}`);
     console.error(`skill-version: ${drift.length} 个 Skill 漂移（用 --sync <id> 或 --bump <id> <x.y.z> 修）`);
     process.exit(1);
   }
