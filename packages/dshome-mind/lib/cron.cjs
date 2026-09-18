@@ -14,6 +14,36 @@ function repoRoot() {
 }
 const CRON_FILE = () => path.join(repoRoot(), 'mind-private', 'tasks', 'cron.json');
 
+/** 自治 run 结果台账（JSONL·**追加不覆盖**）：`mind-private/tasks/cron-runs.jsonl`。
+ *  为什么需要（2026-09-12 三参照物清单 P0-①）：`run()` 过去拿「会话被创建」当成功 ⇒ 自治会话
+ *  真跑挂了也照样写 `lastRunAt`，09-09/09-10 连崩两天无人知。台账让"跑了但没成"变成可查事实。 */
+const CRON_RUNS_FILE = () => path.join(repoRoot(), 'mind-private', 'tasks', 'cron-runs.jsonl');
+
+/** `turn/end` 的 `reason.kind` → 运行结果。形状取自上游 `dsh-session` 的 `TurnEndReasonMap`
+ *  （`completed` / `error` / `max-tokens` / `aborted` / `blocked` / `interrupted`…），
+ *  仓内先例＝`packages/dshome/lib/host/notify.js:96`（读的也是 `event.data.reason?.kind`）。
+ *  🔴 反例（写不出反例＝没验过）：形状再变也**不许静默**——未知/缺失 reason 落 `unknown`，
+ *     绝不当作 ok；`error`/`max-tokens` 等一律非 ok。 */
+function outcomeOfTurnEnd(event) {
+  const kind = event?.data?.reason?.kind;
+  if (kind === 'completed') return { status: 'ok' };
+  if (kind === undefined) return { status: 'unknown', errorCode: 'no-reason-kind' };
+  return { status: 'error', errorCode: String(kind) };
+}
+
+/** 追加一条 run 记录。台账写坏不抛（不能反过来影响自治），但**响亮告警**。 */
+function appendCronRun(rec) {
+  try {
+    const f = CRON_RUNS_FILE();
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.appendFileSync(f, JSON.stringify(rec) + '\n');
+    return true;
+  } catch (e) {
+    console.warn('[dshome-cron] run 台账写入失败（自治本身不受影响）:', e?.message ?? e);
+    return false;
+  }
+}
+
 // ── 任务级模型 → 完整 selection 对象 {provider, model} ─────────────────────
 // 系统提示的 {{model}} 取自 selection.model，而 selection 契约要求 {provider, model}
 // 一对（见 dsh-agent installModelSelection 取 selected.provider/selected.model，
@@ -146,7 +176,17 @@ class DshCron {
       this.hostCtx.inject(['sessions'], (sctx) => {
         const offEvent = sctx.on('session/event', (session, event) => {
           if (event?.type !== 'turn/end') return;
-          this.release(String(session?.header?.id));
+          const sid = String(session?.header?.id);
+          // 🔴 先取任务身份再 release（release 会把这个 sid 从 active 里删掉）。
+          //    只在"这条会话是我们拉起的自治会话"时记账 ⇒ 用户会话/子代理的 turn/end 不污染台账。
+          const at = this.active.get(sid);
+          if (at) {
+            this.recordRun(at.id, {
+              sessionId: sid, ...outcomeOfTurnEnd(event),
+              durationMs: Date.now() - at.since, source: 'turn-end',
+            });
+          }
+          this.release(sid);
         });
         const offDisposed = sctx.on('session/disposed', (session) => this.release(String(session?.header?.id)));
         this.watching = true;
@@ -193,6 +233,12 @@ class DshCron {
       if (now - v.since > BUSY_MAX_MS) {
         this.active.delete(sid);
         console.warn('[dshome-cron] 占闸超时释放（疑似 turn/end 丢失）:', sid, v.id);
+        // 超时同样落台账（P0-①）：这条会话**从没回过 turn/end**，属于"跑了但没结果"，不许静默。
+        this.recordRun(v.id, {
+          sessionId: sid, status: 'timeout',
+          errorCode: `no-turn-end>${Math.round(BUSY_MAX_MS / 60000)}min`,
+          durationMs: now - v.since, source: 'busy-timeout',
+        });
       }
     }
     return this.active.size > 0;
@@ -211,6 +257,28 @@ class DshCron {
       if (!task || task.enabled === false) { console.log('[dshome-cron] queue drop', next.id, '（已删/已停用）'); continue; }
       this.run(task, next.reason + '+queued');
     }
+  }
+  /** 记一次自治 run 的**真实结果**：JSONL 台账 + 任务上的 `lastResult` + 非成功时**响亮告警**。
+   *  `lastRunAt` 语义保持不变（= 触发时刻，供 missed 补跑判定）——本函数补的是"**成没成**"，
+   *  而不是改"跑没跑过"（改它会引来持续失败时的补跑风暴）。 */
+  recordRun(taskId, info) {
+    const rec = { ts: new Date().toISOString(), taskId, ...info };
+    appendCronRun(rec);
+    const task = this.tasks.find((t) => t.id === taskId);
+    if (task) {
+      task.lastResult = {
+        at: rec.ts, status: rec.status,
+        ...(rec.errorCode !== undefined ? { errorCode: rec.errorCode } : {}),
+        ...(rec.sessionId !== undefined ? { sessionId: rec.sessionId } : {}),
+      };
+      saveCron(this.tasks);
+    }
+    if (rec.status !== 'ok') {
+      console.error(`[dshome-cron] ❗自治 run 非成功：task=${taskId} status=${rec.status}`
+        + `${rec.errorCode !== undefined ? ' code=' + rec.errorCode : ''}`
+        + ` session=${rec.sessionId ?? '—'}（不再静默；台账 mind-private/tasks/cron-runs.jsonl）`);
+    }
+    return rec;
   }
   /** 真正拉会话：**同步占闸**（防同一 tick 双发），成功后换成真实 sessionId。 */
   run(task, reason) {
@@ -231,11 +299,19 @@ class DshCron {
           this.tasks = this.tasks.filter((x) => x.id !== task.id);
           saveCron(this.tasks);
         }
+      } else {
+        // 🔴 executeTask 自己就失败了（agents 服务不可用 / preset 挂载抛错…）：**不再只打一行日志**
+        //    —— 过去这行日志闪过就没了，任务照样算"跑过"（P0-① 的病根）。
+        this.recordRun(task.id, {
+          status: 'error', errorCode: String(r.error ?? r.status ?? 'unknown'), source: 'create',
+        });
       }
       if (!this.isBusy()) this.drain(); // 没占上闸（failed）/ 一次性已移除 → 别让队列干等
     }).catch((e) => {
       this.active.delete(token);
       console.error('[dshome-cron] execute error', e);
+      // 拉会话这一步就抛了：同样落台账（P0-①：不许只在控制台一闪而过）
+      this.recordRun(task.id, { status: 'error', errorCode: String(e?.message ?? e), source: 'create-throw' });
       if (!this.isBusy()) this.drain();
     });
   }
@@ -353,4 +429,4 @@ let __instance = null;
 function setCronInstance(i) { __instance = i; }
 function getCronInstance() { return __instance; }
 
-module.exports = { DshCron, loadCron, saveCron, executeTask, normalizeModel, CRON_FILE, setCronInstance, getCronInstance };
+module.exports = { DshCron, loadCron, saveCron, executeTask, normalizeModel, CRON_FILE, CRON_RUNS_FILE, outcomeOfTurnEnd, appendCronRun, setCronInstance, getCronInstance };
