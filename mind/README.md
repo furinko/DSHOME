@@ -10,8 +10,8 @@
 | L0 | 我是谁？怎么活？ | SOUL（人格）+ AGENTS（纪律）+ TOOL（工具） |
 | L1 | 能做什么？怎么做？怎么存？ | HUB（中枢·运行时总纲）+ Wisdom（思维）+ Tree（索引）+ Power（能力手册）+ Memory（归档规则）+ Learn（痕迹）+ Dream（灵感）+ Ritual（行为规程）+ Invariants（确定性内核）+ Concepts（契约）+ Design-Philosophy（生长哲学） |
 | L2 | 某类问题怎么解决？ | Skill（方法论）+ Exp（工具手册） |
-| L3 | 踩过的坑去哪查？被替代的去了哪？ | index（结晶知识）+ history（时间胶囊） |
-| Project | 现在在做什么？ | 行动锚点（与知识网络平级） |
+| L3 | 踩过的坑去哪查？被替代的去了哪？ | `common`（通用结晶）+ `projects`（项目记忆 + `知识\<主题>\`）+ `history`（时间胶囊）——三区**物理隔离**，见 `L1\Memory.md` §一/§十 |
+| L3\projects | 现在在做什么？ | 项目记忆层：导航 `project.md` + 记忆档案 + `知识\<主题>\`（**原顶层 `Project\` 层已于 2026-09-09 并入 `L3\`**，见 `L1\Memory.md` §四） |
 | TRASH | 废弃的放哪？ | 不删只移，可恢复 |
 
 ## 二、三层加载模型
