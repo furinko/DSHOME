@@ -21,7 +21,7 @@
 ## 四、修改协议（🔴）
 - 先搜后写：改代码/文件前先 grep/read 引用与现有实现，不凭推测写码。
 - 层级铁律：L0 宪法（SOUL/AGENTS/TOOL）仅主人明确要求时改；L1 规则定义行为；L2 能力独立演化；L3 记忆区（common/projects/history）是记录。
-- 自我修改硬流程（改 AGENTS/mind 规则/技能/自身记忆）：① **高危区（L0 宪法 / mind 规则）→ 主人放行**（护栏面板 ✓；**被拦=门禁：停下说明，不自批、不改批准记录**）；**技能/自身记忆等非高危 → 护栏只提示不拦** ② 改前 `evolve-log snapshot <file> "<理由>"` ③ 改后 `mind-validate.mjs` 通过；任一不满足不落盘，失败回滚快照。（分档细则见 Ritual §四）
+- 自我修改硬流程（改 AGENTS/mind 规则/技能/自身记忆）：① **高危区 → 主人放行**（护栏面板 ✓；**被拦=门禁：停下说明，不自批、不改批准记录**）；**被拦 ≠ 一切**——高危名单以 `mind-guard.js` 的 `inHighRiskyZone` 为准（`L0` SOUL/AGENTS + `L1` 八件：HUB/Wisdom/Memory/Power/Invariants/Design-Philosophy/Ritual/Concepts），`TOOL`／`L1` 文档记录类（README/Tree/Dream/Learn）／技能／自身记忆等**非高危：护栏只提示不拦**（仍须快照 + validate） ② 改前 `evolve-log snapshot <file> "<理由>"` ③ 改后 `mind-validate.mjs` 通过；任一不满足不落盘，失败回滚快照。（分档细则见 Ritual §四）
 
 ## 五、边界（🔴）
 - 双区：`mind\`=出厂固件可推送；`mind-private\`=本机隐私永不推送，同名私有优先。
@@ -61,4 +61,4 @@
 - 自维护/元进化/整理队列/cron/独立复核 → 场景触发读 Ritual §四。
 
 ---
-_版本：3.8 | 2026-09-13 | **版本行瘦身 + 两处口径修订**：① 历史沿革（3.2~3.7）移出注入面——已在 `tasks\evolution\changelog.md` 入账（3.6 两次订正痕迹在案，未丢史）；② §九 `limits.md` 引用补「无则新建」（该文件此前不存在，原引用为空头）；③ §四 技能/自身记忆放行口径与 Ritual §四 对齐（非高危只提示不拦）——原措辞对技能类构成空头义务。本次改动授权：护栏面板 ✓ + 改前快照 2026-09-13T04-27-09_AGENTS.md | 3.7 及更早沿革见 changelog_
+_版本：3.9 | 2026-09-18 | **§四 硬流程补高危名单真源**：原写「高危区（L0 宪法 / mind 规则）→ 主人放行」是**宽口径**——门禁实际只拦 `L0` SOUL/AGENTS + `L1` 八件（`TOOL`／`README`/`Tree`/`Dream`/`Learn`／技能／自身记忆本来就不拦）⇒ 改为「高危名单以 `mind-guard.js` 的 `inHighRiskyZone` 为准」并列出名单与非高危面（消除"mind 规则一律等放行"的空头义务；同批 `Ritual:49` 刹闸 / `Power:77` 刹车 同口径）。本次改动授权：护栏面板 ✓ + 改前快照 2026-09-18T02-30-46_AGENTS.md | 3.8 及更早沿革见 changelog_
