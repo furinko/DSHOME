@@ -176,21 +176,29 @@ const PRIVATE_PAYLOAD_NAMES = [
   '.credentials.yaml', 'settings.yaml', '.anonymous-user-id', '.dshw-size.json', '.dshw-usage.json',
   'mind-private', 'sessions', 'storages', 'attachments', '.agent-snapshot', '.dsh-market', '私有暂存区',
 ];
+// 过程性垃圾（备份 / 临时 / 提交消息 / 构建日志）——**payload 顶层不得有**：它们**会随安装包发给使用者**。
+//   2026-09-18 实测漏网：我把提交消息写在**仓库根**，`stage-payload` 照抄进 `payload\tmp-commit-msg.txt`
+//   （会随包出货），而旧判据只认 `*.bak` 且**只 WARN**（exit 0 不拦）⇒ 没拦住。
+//   与 `contentDriftStatus` 同口径：**会随包发出去的东西**一律 FAIL，不是"建议删除"。
+//   只扫**顶层**（`node_modules` 等不遍历——同本脚本其余各项，成本/收益不成比例）。
+//   反例（变红方法）：造 `build-stage\payload\tmp-reverse-case.txt` ⇒ 本脚本 **FAIL 且 exit 1**；
+//   删掉再跑 ⇒ PASS。旧行为对照：改名成 `tmp-reverse-case.txt` 在旧判据下**不报**（只认 `*.bak`）。
+const PAYLOAD_JUNK_RE = /\.(bak|orig|rej|tmp|log)$|~$|^tmp[-_.]|commit-msg/i;
 function privateLeakStatus() {
   const hits = PRIVATE_PAYLOAD_NAMES.filter((n) => existsSync(join(payloadDir, n)));
   let junk = [];
   try {
     junk = readdirSync(payloadDir, { withFileTypes: true })
-      .filter((e) => e.isFile() && /\.bak/i.test(e.name))
+      .filter((e) => e.isFile() && PAYLOAD_JUNK_RE.test(e.name))
       .map((e) => e.name);
   } catch { /* payload 不可读 → 交给其它检查 */ }
   if (hits.length) {
     return { ok: false, msg: `payload 含私有面文件/目录（会随安装包发给使用者）：${hits.join('、')}——删除这些存量；stage-payload 只保证不复制，不负责清理` };
   }
   if (junk.length) {
-    return { ok: true, warn: true, msg: `payload 顶层有备份垃圾：${junk.join('、')}（建议删除，别随包发）` };
+    return { ok: false, msg: `payload 顶层有过程性垃圾（会随安装包发给使用者）：${junk.join('、')}——删掉它们（stage-payload 只负责复制、不负责清理）` };
   }
-  return { ok: true, say: true, msg: 'PASS: payload 无私有面文件 / 备份垃圾' };
+  return { ok: true, say: true, msg: 'PASS: payload 无私有面文件 / 过程性垃圾' };
 }
 
 // ── Electron exe 图标（任务栏按钮图标的真正来源，2026-09-11）─────────────────
