@@ -93,6 +93,15 @@ function runOne(rel) {
     const hit = text.split('\n').map((l) => l.trim()).filter((l) => CRASH.test(l))[0] || '';
     return { rel, status: 'crash', detail: hit.slice(0, 160) };
   }
+  // 2026-09-18 加：**itest 必须退出码 0**。
+  //   旧判据只认"运行期崩溃特征"（工具脚本 `shot.mjs` 的 usage 退出 2 是正常的，故当初放宽），
+  //   但 **itest 没有 usage 模式** ⇒ 断言失败（场景变红、exit 1、**无崩溃字样**）在本冒烟里**看不见**
+  //   ——与 09-18 修的两条"双重恒绿"同族：**测试全红也能算通过**。
+  //   反例（变红方法）：把 `mind-boot-recall-itest.mjs` 任一期望改成必红 ⇒ 该 itest `4/5 exit 1`
+  //   ⇒ 本冒烟对它的判定必须是 ❌（旧判据下是 ✅"无运行期崩溃"）；改回 ⇒ 复绿。
+  if (/[-_]itest\.mjs$/.test(rel) && r.status !== 0) {
+    return { rel, status: 'fail', detail: `itest 退出码 ${r.status}（断言失败＝测试没通过，不算"无崩溃"）` };
+  }
   return { rel, status: 'ok', code: r.status };
 }
 
@@ -132,11 +141,12 @@ if (!candidates.length) {
   process.exit(0);
 }
 
-console.log(`[verify-scripts-run] 真跑冒烟 ${candidates.length} 个脚本（判据：运行期崩溃特征，usage 退出不算失败）`);
+console.log(`[verify-scripts-run] 真跑冒烟 ${candidates.length} 个脚本（判据：运行期崩溃特征 + **itest 须退出码 0**；工具脚本的 usage 退出不算失败）`);
 const fails = [];
 for (const rel of candidates) {
   const r = runOne(rel);
   if (r.status === 'crash') { fails.push(r); console.log(`  ❌ ${rel}  → ${r.detail}`); }
+  else if (r.status === 'fail') { fails.push(r); console.log(`  ❌ ${rel}  → ${r.detail}`); }
   else if (r.status === 'missing') { console.log(`  ⏭ ${rel}（不存在，跳过）`); }
   else { console.log(`  ✅ ${rel}（exit ${r.code}，无运行期崩溃）`); }
 }
@@ -144,7 +154,7 @@ if (skippedForeign.length) {
   console.log(`  ⏭ 跳过 ${skippedForeign.length} 个未在安全白名单（需检时用 --file 点名）：${skippedForeign.join(', ')}`);
 }
 if (fails.length) {
-  console.error(`[verify-scripts-run] ❌ ${fails.length} 个脚本真跑崩溃 —— 语法检查过了不等于能跑`);
+  console.error(`[verify-scripts-run] ❌ ${fails.length} 个脚本真跑失败（崩溃 / itest 断言未过）—— 语法检查过了不等于能跑`);
   process.exit(1);
 }
-console.log('[verify-scripts-run] ✅ 全部通过（真跑无运行期崩溃）');
+console.log('[verify-scripts-run] ✅ 全部通过（真跑无运行期崩溃，itest 全绿）');
