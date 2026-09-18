@@ -92,7 +92,11 @@ function extractAnchor(text, anchor) {
   const lines = String(text).split('\n');
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
-    const m = /^(#{2,6})\s+(.*)$/.exec(lines[i]);
+    // 2026-09-18 修（实测撞出）：**CRLF 文件上锚点恒找不到**——`(.*)$` 里的 `.` 不匹配 `\r`、
+    //   `$` 也不匹配 `\r` 之前，于是 `## 小节B\r` 整体匹配失败 ⇒ Windows 风格换行的文件
+    //   上 `entry-log/mark/rollback` 全部报「锚点找不到」（本机实测 exit 1）。
+    //   仍按 `\n` 切、段内保留 `\r`：这样回滚写回是**字节保真**的（不把 CRLF 洗成 LF）。
+    const m = /^(#{2,6})[ \t]+(.*?)\r?$/.exec(lines[i]);
     if (m && m[2].trim() === anchor) { start = i; break; }
   }
   if (start < 0) return null;
@@ -104,10 +108,23 @@ function extractAnchor(text, anchor) {
   }
   return lines.slice(start, end).join('\n');
 }
+/** 取某 id 的**最后一条**记录。
+ *  2026-09-18 修（定点实测撞出，**冲突保护形同虚设**）：同一 id 会有**多条**记录
+ *  （`entry_replace` 的 `after=null` → `entry_mark` 的 `after=<hash>`），而旧实现用
+ *  `all.find(x => x.id === arg)` 取**第一条** ⇒ `hit.rec.after` 恒为 null ⇒ 冲突检查
+ *  （`if (hit.rec.after && curHash !== hit.rec.after.hash && !force)`）**永不触发**
+ *  ⇒ 人工改过之后照样被静默覆盖（本机实测：exit 0、内容被覆盖）。
+ *  取最后一条即拿到 `entry_mark` 的 after（该记录由 `{...hit.rec}` 展开，`before` 仍在）。 */
+function latestRecordOf(all, id) {
+  let hit = null;
+  for (const x of all) if (x.id === id) hit = x;
+  return hit;
+}
 /** 解析账本 → [{id, rec}]。**解析失败即抛错**（不静默跳过——Invariants #14）。 */
 function readLedger() {
   if (!existsSync(LEDGER)) return [];
-  const src = readFileSync(LEDGER, 'utf8');
+  // 2026-09-18：容忍 CRLF 账本（json 块的正则用 `\n` 定界，CRLF 下会**一条都解析不出** ⇒ 静默显示 0 条）。
+  const src = readFileSync(LEDGER, 'utf8').replace(/\r\n/g, '\n');
   const out = [];
   const re = /## (evo-[0-9]{14}-[0-9a-f]{4}) · `([^`]+)`[^\n]*\n[\s\S]*?```json state\n([\s\S]*?)\n```/g;
   let m;
@@ -471,7 +488,7 @@ if (cmd === 'snapshot') {
 } else if (cmd === 'entry-mark') {
   const id = (rest[0] || '').trim();
   const all = readLedger();
-  const hit = id === 'last' ? all[all.length - 1] : all.find((x) => x.id === id);
+  const hit = id === 'last' ? all[all.length - 1] : latestRecordOf(all, id);
   if (!hit) { console.error(`[evolve-log] 未找到账目「${id}」（用 entry-list 看有哪些）`); process.exit(1); }
   const abs = resolve(repoRoot, hit.rec.file);
   const seg = existsSync(abs) ? extractAnchor(readFileSync(abs, 'utf8'), hit.rec.anchor) : null;
@@ -492,7 +509,7 @@ if (cmd === 'snapshot') {
   const dry = rest.includes('--dry-run');
   const force = rest.includes('--force');
   const all = readLedger();
-  const hit = arg === 'last' ? all[all.length - 1] : all.find((x) => x.id === arg);
+  const hit = arg === 'last' ? all[all.length - 1] : latestRecordOf(all, arg);
   if (!hit) { console.error(`[evolve-log] 未找到账目「${arg}」（用 entry-list）`); process.exit(1); }
   if (hit.rec.kind === 'entry_rollback') {
     console.error('[evolve-log] 拒绝回滚一条**回滚记录**（灵枢纪律：撤销不可叠撤销）');
