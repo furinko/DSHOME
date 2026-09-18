@@ -387,6 +387,74 @@ try {
 }
 for (const l of upLog) console.log(`  ${upOk ? '✅' : '❌'} ${l}`);
 
+// ── 工具级副作用标记 + 台账降噪（2026-09-18 加 · P0-② 最小半，主人「清」）────────────────────
+// 判据：① 与心智区**无关**的调用（普通代码文件 / 无路径的 shell）**不记账**（降噪）
+//      ② 心智区写入 → `effect:"side_effect"` + `op:"edit"`
+//      ③ 只读工具读心智区 → `effect:"read_only"` 且**不告警**
+//      ④ **反例（本条修复点）**：**名单外工具**带心智区路径 → `effect:"unknown"` + **响亮告警一次**
+//      ⑤ shell 工具带路径 → `effect:"destructive"`（能删能改且护栏看不进脚本）
+const fxHome = mkdtempSync(join(tmpdir(), 'guard-effect-'));
+const prevHome4 = process.env.DSH_HOME;
+let fxOk = true;
+const fxLog = [];
+try {
+  process.env.DSH_HOME = fxHome;
+  mkdirSync(join(fxHome, 'mind'), { recursive: true });
+  mkdirSync(join(fxHome, 'mind-private', 'tasks'), { recursive: true });
+  const ledFx = join(fxHome, 'mind-private', 'tasks', 'guard-decisions.jsonl');
+  const readFx = () => {
+    try {
+      return readFileSync(ledFx, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    } catch { return []; }
+  };
+  const warns = [];
+  const guardsFx = [];
+  mod.apply({
+    logger: () => ({ info: () => {}, warn: (m) => { warns.push(String(m)); }, error: () => {}, debug: () => {} }),
+    on: () => {}, off: () => {}, effect: () => () => {}, get: () => undefined,
+    tools: { guard: (fn) => { guardsFx.push(fn); return () => {}; }, register: () => {} },
+  });
+  const g = guardsFx[0];
+
+  const n0 = readFx().length;
+  g({ name: 'edit', arguments: { file_path: 'packages/dshome/lib/index.js', new_string: 'x' } });
+  fxOk = fxOk && readFx().length === n0;
+  fxLog.push(`⑨ 普通代码文件 → 不记账（${n0} → ${readFx().length}）`);
+
+  g({ name: 'pwsh', arguments: { command: 'echo hi' } });
+  fxOk = fxOk && readFx().length === n0;
+  fxLog.push(`⑩ 无路径调用（pwsh）→ 不记账（${readFx().length}）`);
+
+  g({ name: 'edit', arguments: { file_path: 'mind/L2/Skill/x.md', new_string: 'x' } });
+  const r1 = readFx().at(-1);
+  fxOk = fxOk && r1?.effect === 'side_effect' && r1?.op === 'edit' && /L2\/Skill/.test(String(r1?.path));
+  fxLog.push(`⑪ 心智区写入 → 记账 effect=${r1?.effect} op=${r1?.op}`);
+
+  const w0 = warns.length;
+  g({ name: 'read', arguments: { file_path: 'mind/L1/Tree.md' } });
+  const r2 = readFx().at(-1);
+  fxOk = fxOk && r2?.effect === 'read_only' && warns.length === w0;
+  fxLog.push(`⑫ 只读工具读心智区 → effect=${r2?.effect} 未告警=${warns.length === w0}`);
+
+  g({ name: 'apply_patch', arguments: { file_path: 'mind/L1/Ritual.md', patch: 'x' } });
+  const r3 = readFx().at(-1);
+  const warned = warns.some((m) => m.includes('apply_patch') && m.includes('名单外工具'));
+  fxOk = fxOk && r3?.effect === 'unknown' && warned;
+  fxLog.push(`⑬ 反例·名单外工具（apply_patch）带心智区路径 → effect=${r3?.effect} 响亮告警=${warned}`);
+
+  g({ name: 'pwsh', arguments: { file_path: 'mind/L1/Tree.md' } });
+  const r4 = readFx().at(-1);
+  fxOk = fxOk && r4?.effect === 'destructive';
+  fxLog.push(`⑭ shell 工具带路径 → effect=${r4?.effect}`);
+} catch (e) {
+  fxOk = false;
+  fxLog.push(`抛错：${(e && e.message) || e}`);
+} finally {
+  if (prevHome4 === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prevHome4;
+  try { rmSync(fxHome, { recursive: true, force: true }); } catch { /* 忽略 */ }
+}
+for (const l of fxLog) console.log(`  ${fxOk ? '✅' : '❌'} ${l}`);
+
 // ── 静态锁：消费必须发生在 `post-execute`，不许留在 `isApproved` 里 ─────────────
 const guardSrc = readFileSync(GUARD, 'utf8');
 const isApprovedBody = (guardSrc.match(/function isApproved\([\s\S]*?\n}/) || [''])[0];
@@ -398,6 +466,8 @@ lock(/consumeApproved\(/.test(guardSrc), '静态锁：存在 consumeApproved()�
 lock(/ctx\.on\(\s*['"]tools\/pre-execute['"]/.test(guardSrc), "静态锁：apply 注册了 'tools/pre-execute'（上游批准面）");
 lock(/upstreamApproved\.has\(exec\.callId\)/.test(guardSrc), '静态锁：guard 命中 upstreamApproved 时**直接放行**（不进 decide ⇒ 不建幽灵卡）');
 lock(/ctx\.get\(\s*['"]approval['"]\s*\)/.test(guardSrc), "静态锁：用动态 `ctx.get('approval')` 取上游服务（缺服务不炸）");
+lock(/function toolEffect\(/.test(guardSrc) && /KNOWN_READ_TOOLS/.test(guardSrc), '静态锁：存在工具级副作用标记（toolEffect + 只读白名单）');
+lock(/effect === 'unknown' && inMindZone/.test(guardSrc), '静态锁：名单外工具带心智区路径 ⇒ 响亮告警');
 
 const markerAfter = readMarker();
 const selfClean = markerBefore === markerAfter;
@@ -406,4 +476,4 @@ if (!selfClean) {
   console.error(`    ${MARKER}`);
 }
 console.log(`[verify-guard-decisions] 自检：真 marker 运行前后${selfClean ? '一致 ✅（零污染）' : '不一致 ❌（本门禁是污染源）'}`);
-process.exit(fails.length || !selfClean || !wiringOk || !approveOk || !staticOk || !upOk ? 1 : 0);
+process.exit(fails.length || !selfClean || !wiringOk || !approveOk || !staticOk || !upOk || !fxOk ? 1 : 0);

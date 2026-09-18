@@ -481,6 +481,24 @@ export function decide(exec, ctx) {
   return {}; // 其余写入一律放行（不侵入生长空间）
 }
 
+// ── 工具级副作用标记（2026-09-18 加 · P0-② 最小半，主人「清」）────────────────────────────
+// 为什么：护栏此前只认 `MUTATING_TOOLS` 这个**名字名单**（名单驱动 = 新工具静默绕过，pkg-guard 同款老病）。
+//  这里给每条裁决标一个 `effect`，并对「**不在名单里、却带着心智区路径**」的工具**响亮告警一次**——
+//  不假装能识别一切，而是让"我不认识这个工具"变成可查、可喊的事实。
+// 语义：`read_only`（只读白名单）/ `side_effect`（写类名单：改文件）/ `destructive`（shell —— 能删能改，
+//  且**护栏看不进脚本内容**，这是已知的洞）/ `unknown`（我不认识的工具 —— 记进台账并告警）。
+const KNOWN_READ_TOOLS = new Set([
+  'read', 'glob', 'grep', 'read_image', 'list_agents', 'job_list', 'job_output', 'web_search', 'web_fetch',
+]);
+function toolEffect(toolName) {
+  const n = String(toolName ?? '');
+  if (MUTATING_TOOLS.has(n)) return 'side_effect';
+  if (/^(pwsh|bash|terminal|sh)/.test(n)) return 'destructive';
+  if (KNOWN_READ_TOOLS.has(n)) return 'read_only';
+  return 'unknown';
+}
+let unknownEffectWarned = false;
+
 // ── 上游批准面接线（2026-09-18 加 · 方案④「拆档」后半）─────────────────────────────────
 // 为什么：自家 `approvals.json` 面板能放行，但"谁点的、对应哪次调用"由**我们自己记**（审计判可伪造）。
 //  上游 `@deepseek-ai/dsh-user-approval` 提供真通道：服务名 `approval`，`request()` 异步返回
@@ -507,7 +525,8 @@ function recordUpstreamDecision(exec, filePath, decision, reason) {
     ts: new Date().toISOString(),
     tool: String(exec?.name ?? ''),
     path: normalizePath(filePath),
-    op: 'edit',
+    op: MUTATING_TOOLS.has(String(exec?.name ?? '')) ? 'edit' : 'other',
+    effect: toolEffect(String(exec?.name ?? '')),
     decision,
     reason,
   });
@@ -537,20 +556,42 @@ export function apply(ctx) {
           `工具层护栏拦不住 shell —— 请自行确认这次改动走了 §四 硬流程（放行 / 快照 / validate）。`
         );
       }
-      // P0-② 留痕物证（2026-09-18 加）：把每次裁决写成 append-only 一条 —— 拦/放、放行凭哪条额度、
+      // P0-② 留痕物证（2026-09-18 加）：把裁决写成 append-only 一条 —— 拦/放、放行凭哪条额度、
       // 针对哪个文件，全部可查（此前只有 approvals.json 的"有过一次放行"，对应不上调用，审计判"无法验证"）。
+      // **降噪（2026-09-18 · 主人「清」）**：此前对**每次** guard 调用都写一条 ⇒ `pwsh`/`read` 这类
+      // 无路径调用一天刷出上百行（`op:'edit'` 还是写死的、根本不真）。现在只在**与心智区有关**时记：
+      //   ① 被拦（reason）② 走放行额度（ids）③ 路径落在心智区（`mind\` / `mind-private\`）
+      // 其余（普通代码文件、无路径的工具调用）不记 —— 它们由各自的门禁/日志负责，不该灌进裁决台账。
       try {
         const fp = exec?.arguments?.file_path ?? exec?.arguments?.path ?? '';
         const ids = approvedInFlight.get(`${normalizePath(fp).toLowerCase()}|edit`) ?? [];
-        appendDecision({
-          ts: new Date().toISOString(),
-          tool: String(exec?.name ?? ''),
-          path: normalizePath(fp),
-          op: 'edit',
-          decision: reason ? 'deny' : (ids.length > 0 ? 'allow-by-approval' : 'allow'),
-          ...(ids.length > 0 ? { approvalIds: ids } : {}),
-          ...(reason ? { reason: String(reason).split('\n')[0].slice(0, 140) } : {}),
-        });
+        const toolName = String(exec?.name ?? '');
+        const effect = toolEffect(toolName);
+        if (reason || ids.length > 0 || (fp && inMindZone(fp))) {
+          appendDecision({
+            ts: new Date().toISOString(),
+            tool: toolName,
+            path: normalizePath(fp),
+            op: MUTATING_TOOLS.has(toolName) ? 'edit' : 'other',
+            effect,
+            decision: reason ? 'deny' : (ids.length > 0 ? 'allow-by-approval' : 'allow'),
+            ...(ids.length > 0 ? { approvalIds: ids } : {}),
+            ...(reason ? { reason: String(reason).split('\n')[0].slice(0, 140) } : {}),
+          });
+        }
+        // 名单外工具带心智区路径 ⇒ **响亮告警一次**（不当作已护栏；把"不认识"变成可查事实）。
+        if (fp && effect === 'unknown' && inMindZone(fp)) {
+          if (!unknownEffectWarned) {
+            unknownEffectWarned = true;
+            try {
+              ctx.logger?.('dshome')?.warn?.(
+                `[mind-guard] 名单外工具带心智区路径：「${toolName}」→ ${normalizePath(fp)}；它不在写类名单里`
+                + `（写面无护栏）。若它是写类工具，请把名字加进 \`MUTATING_TOOLS\`；若只读，请加进 \`KNOWN_READ_TOOLS\`。`
+                + `本次已按 effect:"unknown" 记入裁决台账。`
+              );
+            } catch { /* 记不上日志不影响裁决，台账已留痕 */ }
+          }
+        }
       } catch { /* 留痕失败不影响裁决 */ }
       return reason; // 命中 → 拦截；undefined → 放行（不侵入生长空间）
     });
