@@ -3,13 +3,17 @@
 // 用法：node scripts/mind-boot-recall-itest.mjs（插件源码改动后跑，验证 host 行为）
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 const require = createRequire(import.meta.url);
 // 2026-09-11 修（第四轮盲评 · C1）：原来硬编码 `E:/DSHOME/...`（**正斜杠写法**，且已入 git 会被推送）——
 // 换盘符 / 换布局（安装版 payload）即 MODULE_NOT_FOUND。改成与其它脚本同款：DSH_HOME 优先，否则上溯仓库根。
 const repoRoot = process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..');
 const { Context } = require(join(repoRoot, 'profiles', 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js'));
-const recallMod = require(join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'mind-recall.js'));
+// 2026-09-18 修（真实缺陷：本 itest 自 2026-09-11 起**根本跑不起来**）：`packages/dshome/package.json`
+//   是 `"type": "module"` ⇒ `mind-recall.js` 是 **ESM**，`require()` 它会抛
+//   `ERR_REQUIRE_ASYNC_MODULE`（实测 exit 1）——而 `verify-scripts-run` 只跑**本次暂存的**脚本
+//   ⇒ 依赖侧（host 插件）改动导致本 itest 失效，门禁**看不见**（盲区）。改动态 `import()` 加载。
+const recallMod = await import(pathToFileURL(join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'mind-recall.js')).href);
 
 // 构造顶层 agent 伪对象（delegationDepth=0），模拟官方 agentEvents 注入的 agent 载荷
 function fakeAgent(id, depth = 0) {
@@ -73,4 +77,8 @@ const primeIdx = texts.findIndex((t) => t.includes('【上工自动召回'));
 results.push(['注入位置', primeIdx === 1 ? '✅ claimed后第2位' : '❌ 位置=' + primeIdx]);
 
 for (const [name, verdict, extra] of results) console.log(`[itest] ${name}: ${verdict}${extra !== undefined ? ' (' + extra + ')' : ''}`);
-process.exit(0);
+// 2026-09-18 修（同族缺陷：**写死 `exit 0`** ⇒ 五个场景全红也退 0，任何门禁挂上去都是空转；
+//   与 09-18 修好的 `mind-skill-loader-itest` 完全同型）。收口改「任一 ❌ 即失败」。
+const failed = results.filter(([, v]) => String(v).startsWith('❌')).length;
+console.log(`[itest] ${results.length - failed}/${results.length} 通过${failed ? ' ⇒ exit 1' : ''}`);
+process.exit(failed ? 1 : 0);
