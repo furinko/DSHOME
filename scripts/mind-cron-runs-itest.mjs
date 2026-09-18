@@ -73,12 +73,27 @@ function readRuns(home) {
 }
 const taskOf = (home, id) => JSON.parse(readFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), 'utf8')).tasks.find((t) => t.id === id);
 
-const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
+const { DshCron, CRON_RUNS_FILE } = require('../packages/dshome-mind/lib/cron.cjs');
+
+/** 把 `DSH_HOME` 切到临时根，并**断言沙箱真的生效**（2026-09-18 加，实伤驱动）。
+ *  根因：`cron.cjs` 的 `repoRoot()` 只在 `DSH_HOME` **含 `mind/` 子目录**时才认它，否则**回落真仓库根**
+ *  （该回落本身是安全设计，只是静默）⇒ 一个只建了 `mind-private/` 的探针把**生产** `cron-runs.jsonl`
+ *  写成 4500 行垃圾、真记录被覆盖且不可恢复。本断言把那次的教训变成**每次跑都会执行的检查**：
+ *  临时根若没建 `mind/`，这里**当场响亮失败**（exit 9），而不是默默写生产账。 */
+function useHome(home) {
+  process.env.DSH_HOME = home;
+  const file = CRON_RUNS_FILE();
+  if (!file.startsWith(home)) {
+    console.error(`[itest] ❌ 沙箱失效：run 台账解析到 ${file}（**生产**路径）——临时根必须同时含 mind/ 子目录`);
+    process.exit(9);
+  }
+  return file;
+}
 
 // ── A/B/C/E/F：turn/end 三种形状 + 追加语义 + 不污染 ─────────────────────────
 {
   const home = makeHome();
-  process.env.DSH_HOME = home;
+  useHome(home);
   const { hostCtx, st, endSession } = makeHost(true);
   const cron = new DshCron(hostCtx);
   cron.start();
@@ -142,7 +157,7 @@ const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
 // ── D 反例：拉会话这一步就失败（agents 服务缺失）→ 必须落台账 ────────────────
 {
   const home = makeHome();
-  process.env.DSH_HOME = home;
+  useHome(home);
   const { hostCtx } = makeHost(false); // 不给 agents
   const cron = new DshCron(hostCtx);
   cron.start();
@@ -159,7 +174,7 @@ const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
 // ── H 上界：台账超 512KB → 保留后半 + 最新一条仍在 ────────────────────────────
 {
   const home = makeHome();
-  process.env.DSH_HOME = home;
+  useHome(home);
   // 先灌 9000 条旧记录（≈900KB，远超 512KB 上界）——模拟"任务被配成每分钟型"
   const old = Array.from({ length: 9000 }, (_, i) =>
     JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', taskId: `old-${i}`, status: 'ok', source: 'schedule' })).join('\n') + '\n';

@@ -8,8 +8,17 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const { Cron } = require('croner');
 
+let warnedHomeIgnored = false;
 function repoRoot() {
   if (process.env.DSH_HOME && fs.existsSync(path.join(process.env.DSH_HOME, 'mind'))) return process.env.DSH_HOME;
+  // 🔴 2026-09-18 响亮化（实伤驱动）：`DSH_HOME` 设了但**不含 `mind/` 子目录**时，原来**静默**回落真仓库根。
+  //    实伤：一次临时根只建了 `mind-private/` 的探针 ⇒ 把**生产** `cron-runs.jsonl` 写成 4500 行垃圾、
+  //    真记录被覆盖且不可恢复（该文件 gitignored、无快照）。回落本身是**安全设计**（拒绝把非心智目录当根），
+  //    错的只是"静默"——本行让"回落"可见。测试/探针用临时根请**同时建 `mind/`**。
+  if (process.env.DSH_HOME && !warnedHomeIgnored) {
+    warnedHomeIgnored = true;
+    console.warn(`[dshome-cron] ⚠️ DSH_HOME=${process.env.DSH_HOME} 不含 mind/ 子目录 ⇒ 回落真仓库根 ${path.resolve(__dirname, '../../..')}；若这是测试临时根，会写到**生产**台账`);
+  }
   return path.resolve(__dirname, '../../..');
 }
 const CRON_FILE = () => path.join(repoRoot(), 'mind-private', 'tasks', 'cron.json');
