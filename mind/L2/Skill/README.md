@@ -58,8 +58,8 @@ _版本：<x.y.z> | <YYYY-MM-DD> | 变更摘要_
 | import-artifact | 1.0.0 | 导入协议：其他设备/agent 产物即插即用 |
 | boot-recall | 1.0.3 | 上工自动召回：project+L3+教训+user-rules+人设卡 装配成注入上下文 |
 | dshome-diagnostics | 1.1.0 | DSHOME 诊断两层：进程层（崩/卡/闪断）+ agent 层（报错→源码链→会话日志四跳定位） |
-| dshome-crash-recovery | 1.0.8 | DSHOME/DSH 崩溃排查+自愈：三层定位 + marker 定位崩溃插件 + guard --recover/safe 逃生 |
-| dshome-plugin-dev | 1.3.9 | DSHOME/DSH 结构与运行时 Cordis 插件开发（含安全模式 v3：L3+L4 覆盖层 + `--patch` 位置坑；host 插件**四处登记**，漏 `exports` = 启动崩） |
+| dshome-crash-recovery | 1.0.9 | DSHOME/DSH 崩溃排查+自愈：三层定位 + marker 定位崩溃插件 + guard --recover/safe 逃生 |
+| dshome-plugin-dev | 1.3.10 | DSHOME/DSH 结构与运行时 Cordis 插件开发（含安全模式 v3：L3+L4 覆盖层 + `--patch` 位置坑；host 插件**四处登记**，漏 `exports` = 启动崩） |
 | landing-audit | 1.0.0 | 落地审计三查法（定义/接线/数据逐层查） |
 | scar-inference | 1.1.0 | 伤疤反推法/咬痕考古法（版本差/反推坑/作者画像） |
 | required-action-wiring | 1.1.0 | 必需动作接线三判据：唯一权威落点 / 没跑就硬失败 / 设备侧可自检（配套「回执≠产物」；判例：端口回 200 ≠ 就绪） |
