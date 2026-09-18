@@ -161,15 +161,23 @@ const GLYPH_ENTRY = `\n\t\t\t["mind-guard", (0, react_jsx_runtime.jsxs)("svg", {
   + `\n\t\t\t\t\tstrokeWidth: "1.31831",`
   + `\n\t\t\t\t\tstrokeLinejoin: "round"`
   + `\n\t\t\t\t}), (0, react_jsx_runtime.jsx)("path", {`
-  + `\n\t\t\t\t\td: "M6.95 9.35V7.85C6.95 6.85 7.62 6.2 8.4 6.2C9.18 6.2 9.85 6.85 9.85 7.85V9.35",`
+  + `\n\t\t\t\t\td: "M6.75 7.85V6.35C6.75 5.35 7.42 4.7 8.2 4.7C8.98 4.7 9.65 5.35 9.65 6.35V7.85",`
   + `\n\t\t\t\t\tstroke: "currentColor",`
   + `\n\t\t\t\t\tstrokeWidth: "1.2",`
   + `\n\t\t\t\t\tstrokeLinecap: "round"`
   + `\n\t\t\t\t}), (0, react_jsx_runtime.jsx)("path", {`
-  + `\n\t\t\t\t\td: "M5.95 9.15H10.85V13H5.95V9.15Z",`
+  + `\n\t\t\t\t\td: "M5.75 7.65H10.65V11.45H5.75V7.65Z",`
   + `\n\t\t\t\t\tfill: "currentColor"`
   + `\n\t\t\t\t})]`
   + `\n\t\t\t})],`;
+
+// v1（2026-09-18 首版）：锁画在 y 6.2~13（中心 ≈9.6），而盾牌中心 ≈8.1 ⇒ **视觉偏下**（主人当天反馈
+// 「锁头有点偏下了，居中呗」）。v2 把锁整体上移 ≈1.5：锁梁顶 4.7、锁体 7.65~11.45 ⇒ 中心 ≈8.08 ≈ 盾心。
+// 保留 V1 文本只为**原地升级**（不必让主人重装 node_modules）：内容是我们自己写的、形态确定 ⇒ 精确替换。
+const GLYPH_ENTRY_V1 = GLYPH_ENTRY
+  .replace('M6.75 7.85V6.35C6.75 5.35 7.42 4.7 8.2 4.7C8.98 4.7 9.65 5.35 9.65 6.35V7.85',
+           'M6.95 9.35V7.85C6.95 6.85 7.62 6.2 8.4 6.2C9.18 6.2 9.85 6.85 9.85 7.85V9.35')
+  .replace('M5.75 7.65H10.65V11.45H5.75V7.65Z', 'M5.95 9.15H10.85V13H5.95V9.15Z');
 
 function conversationClientFile(root) {
   const f = join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-conversation', 'lib', 'client.js');
@@ -185,9 +193,40 @@ for (const root of roots) {
   const rel = file.slice(root.length + 1).replace(/\\/g, '/');
   const before = readFileSync(file);
   const text = before.toString('utf8');
-  if (text.includes('["mind-guard"')) {
+  if (text.includes(GLYPH_ENTRY)) {
     console.log(`[patch-web] 已打补丁 ✓ ${rel}  sha=${short(before)}`);
     already += 1;
+    continue;
+  }
+  if (text.includes(GLYPH_ENTRY_V1)) {
+    // v1 → v2 原地升级（锁居中）：文本是我们写的、形态确定 ⇒ 精确替换；认不出（两者都不匹配）则响亮失败。
+    if (verifyOnly) {
+      console.error(`[patch-web] 版本落后 ✗ ${rel}（v1 锁偏下，需升级到 v2 居中版）`);
+      failed = true;
+      continue;
+    }
+    const upgraded = text.replace(GLYPH_ENTRY_V1, GLYPH_ENTRY);
+    try {
+      rmSync(file, { force: true });
+      writeFileSync(file, upgraded);
+    } catch (e) {
+      try { writeFileSync(file, before); } catch { /* 留给 pnpm install 重建 */ }
+      console.error(`[patch-web] 升级写入失败（已尽力回滚）: ${rel} — ${e.message}`);
+      failed = true;
+      continue;
+    }
+    if (!readFileSync(file, 'utf8').includes(GLYPH_ENTRY)) {
+      console.error(`[patch-web] 升级后复核失败: ${rel}`);
+      failed = true;
+      continue;
+    }
+    console.log(`[patch-web] UPGRADE ✓ ${rel}（v1 → v2：锁居中）`);
+    patched += 1;
+    continue;
+  }
+  if (text.includes('["mind-guard"')) {
+    console.error(`[patch-web] 已有 mind-guard 项但形态不认识（需人工确认）: ${rel}`);
+    failed = true;
     continue;
   }
   const at = text.indexOf(GLYPH_ANCHOR);
