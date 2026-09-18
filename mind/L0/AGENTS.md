@@ -20,7 +20,7 @@
 
 ## 四、修改协议（🔴）
 - 先搜后写：改代码/文件前先 grep/read 引用与现有实现，不凭推测写码。
-- 层级铁律：L0 宪法（SOUL/AGENTS/TOOL）仅主人明确要求时改；L1 规则定义行为；L2 能力独立演化；L3 记忆区（common/projects/history）是记录。
+- 层级铁律：L0 宪法＝**SOUL + AGENTS**（仅主人明确要求时改）；`TOOL.md` 层属 L0 但为**从属参考、非宪法级**（不注入、改它不按宪法审批——依据 `TOOL.md` 首行 + `mind-guard.js` 高危名单不含它）；L1 规则定义行为；L2 能力独立演化；L3 记忆区（common/projects/history）是记录。
 - 自我修改硬流程（改 AGENTS/mind 规则/技能/自身记忆）：① **高危区 → 主人放行**（护栏面板 ✓；**被拦=门禁：停下说明，不自批、不改批准记录**）；**被拦 ≠ 一切**——高危名单以 `mind-guard.js` 的 `inHighRiskyZone` 为准（`L0` SOUL/AGENTS + `L1` 八件：HUB/Wisdom/Memory/Power/Invariants/Design-Philosophy/Ritual/Concepts），`TOOL`／`L1` 文档记录类（README/Tree/Dream/Learn）／技能／自身记忆等**非高危：护栏只提示不拦**（仍须快照 + validate） ② 改前 `evolve-log snapshot <file> "<理由>"` ③ 改后 `mind-validate.mjs` 通过；任一不满足不落盘，失败回滚快照。（分档细则见 Ritual §四）
 
 ## 五、边界（🔴）
@@ -61,4 +61,4 @@
 - 自维护/元进化/整理队列/cron/独立复核 → 场景触发读 Ritual §四。
 
 ---
-_版本：3.10 | 2026-09-18 | **§六 记忆闭环订正「明示」口径**（规则层订正批次 ② 中③）：原句「敏感/拿不准/**主人明示**→面板裁决」与同句末「主人说'记一下'→实时落」**自相矛盾**；按 `Memory §八`（"明示/敏感/拿不准→**才建议**走 pending，**非强制门**、仅可选审阅"+"**例外**：用户直接要求记录→实时落盘、不入 pending"）与 `Invariants #6`（"pending 仅可选审阅"）改为：**敏感/拿不准 → 可走面板裁决（非强制）**；**主人明示（"记一下/存下来"）→ 实时直落、不入 pending**。本次改动授权：护栏面板 ✓（改前状态＝HEAD `5bb3bb7` 的 git 版本，未另留 snapshot——如实标注） | 3.9 | 2026-09-18 | **§四 硬流程补高危名单真源**：原写「高危区（L0 宪法 / mind 规则）→ 主人放行」是**宽口径**——门禁实际只拦 `L0` SOUL/AGENTS + `L1` 八件（`TOOL`／`README`/`Tree`/`Dream`/`Learn`／技能／自身记忆本来就不拦）⇒ 改为「高危名单以 `mind-guard.js` 的 `inHighRiskyZone` 为准」并列出名单与非高危面（消除"mind 规则一律等放行"的空头义务；同批 `Ritual:49` 刹闸 / `Power:77` 刹车 同口径）。本次改动授权：护栏面板 ✓ + 改前快照 2026-09-18T02-30-46_AGENTS.md | 3.8 及更早沿革见 changelog_
+_版本：3.11 | 2026-09-18 | **§四 层级铁律订正「TOOL 级别」**（规则层订正批次旧批 ④）：原写「L0 宪法（SOUL/AGENTS/**TOOL**）仅主人明确要求时改」与 `TOOL.md` 首行「本文件为 L0 **从属参考**，非宪法级（不注入、改它不按行为宪法审批）」矛盾，且 `mind-guard.js` 的 `inHighRiskyZone` 名单**不含 `TOOL.md`** ⇒ 按机制改为「L0 宪法＝**SOUL + AGENTS**；`TOOL.md` 层属 L0 但是从属参考、非宪法级」（同批 `HUB.md` §四① 同口径）。本次改动授权：护栏面板 ✓（改前状态＝HEAD `1878e73` 的 git 版本，未另留 snapshot——如实标注） | 3.10 | 2026-09-18 | **§六 记忆闭环订正「明示」口径** | 3.9 | 2026-09-18 | **§四 硬流程补高危名单真源**：原写「高危区（L0 宪法 / mind 规则）→ 主人放行」是**宽口径**——门禁实际只拦 `L0` SOUL/AGENTS + `L1` 八件（`TOOL`／`README`/`Tree`/`Dream`/`Learn`／技能／自身记忆本来就不拦）⇒ 改为「高危名单以 `mind-guard.js` 的 `inHighRiskyZone` 为准」并列出名单与非高危面（消除"mind 规则一律等放行"的空头义务；同批 `Ritual:49` 刹闸 / `Power:77` 刹车 同口径）。本次改动授权：护栏面板 ✓ + 改前快照 2026-09-18T02-30-46_AGENTS.md | 3.8 及更早沿革见 changelog_

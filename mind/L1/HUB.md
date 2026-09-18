@@ -1,6 +1,6 @@
 # HUB.md — 知识网络之心
 
-> 版本：1.8 | 2026-09-15 | 规则层订正批次：L42 强制层清单**五处路径前缀补全**（`L1/Learn.md` 实为私有区 `mind-private\L1\Learn.md`） | 1.7 | 2026-09-11 | 机制名表述统一 | 1.6 | 2026-09-09 | 记忆层重构：L3 三区表（common/projects/history）替代 L3/index+Project 行；知识流动路径同步 | 1.5 | 2026-09-06 | 注入层对齐 R0：注入层=「dshome-mind-inject 运行时读 SOUL.md + AGENTS.md 双件全文注入（R0 人格宪法+运行宪法，正文=注入源，无手写摘要）+ dshome-mind-recall 动态召回」；强制层读取动作化（AGENTS §八 知识地图）
+> 版本：1.9 | 2026-09-18 | **§三 加载策略按机制订正**（原「强制层＝每次上工必须加载 Tree+Power+**Memory**+Learn+**Invariants**」是**空头义务**：实测 `mind-inject.js` 只注 `SOUL`+`AGENTS`、`mind-prime.mjs` 只装六件（project 进度/待办 + L3 top-N + Learn 末尾 4 条 + user-rules + 人设卡 + Tree/Power 速览）⇒ **Memory/Invariants 从来不在装配面**，改为「注入层 R0 / 上工装配层 R1 / 按需层」三档如实描述）+ **§四 红线① 订正「L0 宪法＝SOUL+AGENTS」**（`TOOL.md` 层属 L0 却是**从属参考、非宪法级**——依据 `TOOL.md` 首行 + `mind-guard.js` 高危名单不含它）+ `Tree.md` Invariants 行的"强制层加载"同批改 | 1.8 | 2026-09-15 | 规则层订正批次：L42 强制层清单**五处路径前缀补全**（`L1/Learn.md` 实为私有区 `mind-private\L1\Learn.md`） | 1.7 | 2026-09-11 | 机制名表述统一 | 1.6 | 2026-09-09 | 记忆层重构：L3 三区表（common/projects/history）替代 L3/index+Project 行；知识流动路径同步 | 1.5 | 2026-09-06 | 注入层对齐 R0：注入层=「dshome-mind-inject 运行时读 SOUL.md + AGENTS.md 双件全文注入（R0 人格宪法+运行宪法，正文=注入源，无手写摘要）+ dshome-mind-recall 动态召回」；强制层读取动作化（AGENTS §八 知识地图）
 > 加载：M 元层——维护/审计/新设备时读；不参与运行时注入（注入=R0 SOUL+AGENTS）
 > 定位：L1 中枢——心智基座的设计理念、加载规则、跨层红线
 
@@ -18,7 +18,7 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 
 | 层 | 回答 | 内容 |
 |---|---|---|
-| L0 | 我是谁？怎么活？ | SOUL + AGENTS + TOOL |
+| L0 | 我是谁？怎么活？ | SOUL + AGENTS（宪法）· TOOL（从属参考） |
 | L1 | 能做什么？怎么做？怎么存？ | HUB + Wisdom + Tree + Power + Memory + Dream + Learn + Ritual + Invariants + Concepts + Design-Philosophy |
 | L2 Skill | 某类问题怎么解决？ | 方法论——跨项目可复用的逻辑闭环 |
 | L2 Exp | 这个工具/平台怎么用？有什么坑？ | 经验公式——方法论的实例 + 踩坑记录 |
@@ -36,17 +36,19 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 ## 三、加载策略（三层）
 
 ### 注入层（R0 常驻，会话首步由宿主插件注入，随上下文携带）
-`dshome-mind-inject` 运行时读 `mind\L0\SOUL.md`（人格宪法）+ `mind\L0\AGENTS.md`（运行宪法）**双件全文**注入（正文=唯一注入源）+ `dshome-mind-recall` 注动态召回；R2 触发读取动作见 AGENTS §八 知识地图。
+`dshome-mind-inject` 运行时读 `mind\L0\SOUL.md`（人格宪法）+ `mind\L0\AGENTS.md`（运行宪法）**双件全文**注入（正文=唯一注入源，SOUL 先于 AGENTS 是契约）。
 
-### 强制层（每次上工必须加载）
-`mind\L1\Tree.md`（有什么）+ `mind\L1\Power.md`（怎么用 Skill/Exp）+ `mind\L1\Memory.md`（怎么存 L3）+ `mind-private\L1\Learn.md`（教训）+ `mind\L1\Invariants.md`（确定性内核）。
+### 上工装配层（R1 常驻，由 `dshome-mind-recall` 调 `mind-prime` 装配——**不是"全文加载"**）
+装的六件：`project.md`「进度状态」+「下一步」待办 + **L3 相关记忆 top-N** + **`mind-private\L1\Learn.md` 末尾 4 条** + `user-rules` + 人设卡 + **`Tree.md`/`Power.md` 速览（头部差量）**。
 
-### 查询层（按需）
-L2 Skill/Exp 关键词触发；L3 记忆区（common/projects/history）按需 grep/read；L1 参考文档（Concepts / Design-Philosophy / Dream / Ritual / Wisdom）按需查。
+### 按需层（本层**不注入、也不由上工装配**，用时 read）
+`Memory` / `Invariants` / `Ritual` / `Concepts` / `Wisdom` / `Design-Philosophy` / `Dream`；L2 Skill/Exp（关键词触发）；L3 记忆区（common/projects/history）grep/read。
+
+> ⚠️ **订正记录（2026-09-18，规则层订正批次 ② 高2① / 旧批 ⑤）**：本节原写「**强制层（每次上工必须加载）**：Tree + Power + **Memory** + Learn + **Invariants**」。核对机制：`mind-inject.js` 只注入 SOUL+AGENTS，`mind-prime.mjs` 只装配上面那六件，**`Memory.md`/`Invariants.md` 从未被任何装配代码读过**（grep 三处装配面 0 命中）⇒ 那是**无机制支撑的强制义务**，而 `Tree`/`Power`/`Learn` 也只是"速览/末尾 4 条"而非全文。按本仓已定方向（**规则口径不得比机制宽 ⇒ 收窄文本对齐机制**，不是扩机制）改为三档如实描述。同批：`Tree.md` 的 Invariants 行删「——强制层加载」。
 
 ## 四、跨层红线
 
-1. **L0 是宪法** — SOUL/AGENTS/TOOL 仅用户明确要求时修改。
+1. **L0 是宪法** — **SOUL / AGENTS** 仅用户明确要求时修改；`TOOL.md` 层属 L0 但为**从属参考、非宪法级**（不注入、改它不按宪法审批，依据 `TOOL.md` 首行 + `mind-guard.js` 高危名单不含它）。
 2. **L1 是法律** — L1 文件定义规则，不对 L2/L3 具体内容负责。
 3. **L2 是能力** — Skill/Exp 遵守 L1 规则，独立演化。
 4. **L3 是记忆** — 遵守 Memory 规则，各自维护 `_index`。
@@ -66,9 +68,9 @@ L2 Skill/Exp 关键词触发；L3 记忆区（common/projects/history）按需 g
 | Dream.md | 灵感池 | 松散点子 + 整理提醒 |
 | Learn.md | 痕迹库 | 精炼教训（💢/🤗，≤200字/条） |
 | Ritual.md | 行为规程 | 收工闭环 / 自主维护 / 元进化 / 行为纪律细则 / 自省判据（AGENTS 细则的家） |
-| Invariants.md | 闸门 | 确定性内核：不可绕过的硬约束/门禁清单（🔴/🟡 不变式）——强制层加载 |
+| Invariants.md | 闸门 | 确定性内核：不可绕过的硬约束/门禁清单（🔴/🟡 不变式）——**按需 read**（不注入） |
 | Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 权威源 + 意图→概念→权威源路由表 |
 
 ---
 
-_版本：1.8 | 2026-09-15 | 与文件头版本行同步（2026-09-17 补：本文件此前**缺文件尾版本行**，`verify-l1-versions` 报 warn 后补齐）_
+_版本：1.9 | 2026-09-18 | 与文件头版本行同步：**§三 加载策略按机制订正**（删「强制层＝每次上工必须加载 Memory/Invariants」的空头义务；改为 注入层 R0 / 上工装配层 R1 / 按需层 三档如实描述）+ **§四① L0 宪法＝SOUL+AGENTS，TOOL 为从属参考** | 1.8 | 2026-09-15 | 与文件头版本行同步（2026-09-17 补：本文件此前**缺文件尾版本行**，`verify-l1-versions` 报 warn 后补齐）_

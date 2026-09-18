@@ -1,5 +1,6 @@
 # DSHOME 架构说明（现状）
 
+> 版本：2.5 ～创建：2026-08-31 ～更新：2026-09-18（**加载模型订正**：原写「强制层（R2 触发）：上工 read `Tree+Power` 头部 + 场景查 `Memory/Ritual/Invariants`」——核对机制后改为「**上工装配层 R1**（`mind-prime` 装六件）+ **按需层**」，`Memory`/`Invariants` 从不在装配面；同批改 `HUB` §三/§四①、`Tree`、`mind\README.md`）
 > 版本：2.4 ～创建：2026-08-31 ～更新：2026-09-18（**过时描述清理**——原 footer 自记的「收工闭环步数等遗留过时描述待后续轮次清理」本轮办结：顶层 `Project`、幽灵目录、L1 清单、收工步数、`L3/index`、本机读数时效、反事实断言、版本锁定、幽灵小节名；L4 补记新增 `mind-guard` 权限档。**逐条与实测对照见文末 footer**）
 > 版本：2.3 ～创建：2026-08-31 ～更新：2026-09-06（心智体系重构：dsh-evolve 退役 → mind/ 纯文件心智 + 可视化图谱；记忆流轮级缓冲路径修正；§5.2 注入层对齐 v2.5——AGENTS.md 全文注入；Q2 数据层核实：L3 空库、迁移记录为历史计划，Tree 收窄去预置）
 > 定位：**现状架构 + 设计决策记录**（历史设计文档已归档移除，本文为唯一架构参考）
@@ -89,8 +90,8 @@ mind-private\ 本机实例 = 真实记忆/项目/Learn/个性化 → gitignore�
 
 ```
 加载：注入层（R0：dshome-mind-inject 插件每会话**运行时读 mind/L0/SOUL.md + AGENTS.md 双件全文注入**——人格宪法+运行宪法，正文即注入源，无手写摘要副本 + dshome-mind-recall 动态召回，照官方 agent-instructions）
-      → 强制层（R2 触发，动作见 AGENTS §八 知识地图：上工 read L1/Tree+Power 头部 + 场景查 Memory/Ritual/Invariants）
-      → 查询层（L2 关键词触发 / L3 grep 按需）
+      → 上工装配层（R1：dshome-mind-recall 调 `mind-prime` 装六件——project 进度/待办 + L3 top-N + Learn 末尾 4 条 + user-rules + 人设卡 + Tree/Power 速览）
+      → 按需层（`Memory`/`Invariants`/`Ritual`/`Concepts`/`Wisdom`/`Design-Philosophy`/`Dream` 场景 read；L2 关键词触发 / L3 grep 按需）
 记忆流：正式拍板 → 实时落通用层；未定型 → 轮级缓冲（mind-private/tasks/pending 待放行 / mind-private/L1/Dream.md 点子）
       → 收工闭环 9 步（`Ritual §一`）→ 蒸馏入 L3/通用层（轮级缓冲模式）
 导入：import-artifact 技能（L2）——其他设备/agent 产物"直接丢给鱼鱼"即插即用
@@ -158,4 +159,4 @@ dsh-evolve（22 工具/JSON 存储/自动召回注入）→ 2026-09-02 退役：
 
 ---
 
-_版本：2.4 | 2026-09-18 | **过时描述清理**（原 footer 自记的「收工闭环步数等遗留过时描述待后续轮次清理」本轮办结）——**每条都先实测再改**：① `§1` 树去顶层 `Project`（已废止→「L3 三区 + TRASH」）② `§1`/`§4` **幽灵目录** `build-stage/mind-migration-backup-20260902`（实测不存在·属他机历史产物⇒标注，别照此找备份）③ `§2` 补 L4 新增 `permission` 档覆盖（`mind-guard`＝沙箱不变 + 批准 `ask`）④ `§3` 补 `/api/mind/{search,connect,approvals}` ⑤ `§4` better-sidebar 0.17.1→**0.19.1**（`node_modules` 实测）⑥ `§5.1` L1 清单补 `Ritual/Invariants/Concepts/Design-Philosophy`（对齐 `mind/README.md` 十一件）⑦ `§5.2` 收工闭环 7 步→**9 步** ⑧ `§5.4` 补注迁移路径 `L3/index`＋顶层 `Project\` 已于 **09-09** 废止并入三区 ⑨ `§5.4` 本机读数加**时效标注**并写明「出厂/文档不写依赖私有区的实测事实」⑩ `§7` **反事实断言订正**——`deploy-new-device.cmd` **实测存在**（git 在管），照旧文会**误删现役脚本** ⑪ `§8` 版本锁定 0.1.1-rc.2→**0.1.5-rc.2**（+ 18 条 `pnpm.overrides` 同步纪律）⑫ `§9.3` 幽灵小节名「上工先看地图」→ **`AGENTS §八 知识地图`** | _版本：2.3 | 2026-09-06 | 注入层对齐 v2.5（AGENTS 全文→R0 双件 SOUL+AGENTS，见 37d0533/ab1e437 演进）；§9.3 债销账；Q2 数据层核实：L3 空库（无备份可恢复）、迁移记录标注为历史计划、Tree 收窄去预置主题；收工闭环步数等遗留过时描述待后续轮次清理（见审计 Q4）_
+_版本：2.5 | 2026-09-18 | **加载模型订正**（规则层订正批次 ② 高2① / 旧批 ⑤）：`§5.2` 把「**强制层（R2 触发）**」改为「**上工装配层 R1**（`mind-prime` 六件：project 进度/待办 + L3 top-N + `Learn` 末尾 4 条 + user-rules + 人设卡 + `Tree`/`Power` 速览）+ **按需层**（`Memory`/`Invariants`/`Ritual`/`Concepts`/`Wisdom`/`Design-Philosophy`/`Dream`）」——依据＝`mind-inject.js` 只注 `SOUL`+`AGENTS`、`mind-prime.mjs` 只装配上述六件（**`Memory`/`Invariants` 从未被任何装配代码读过**）。同批：`HUB` §三/§四①、`Tree` Invariants 行、`mind\README.md` | 2.4 | 2026-09-18 | **过时描述清理**（原 footer 自记的「收工闭环步数等遗留过时描述待后续轮次清理」本轮办结）——**每条都先实测再改**：① `§1` 树去顶层 `Project`（已废止→「L3 三区 + TRASH」）② `§1`/`§4` **幽灵目录** `build-stage/mind-migration-backup-20260902`（实测不存在·属他机历史产物⇒标注，别照此找备份）③ `§2` 补 L4 新增 `permission` 档覆盖（`mind-guard`＝沙箱不变 + 批准 `ask`）④ `§3` 补 `/api/mind/{search,connect,approvals}` ⑤ `§4` better-sidebar 0.17.1→**0.19.1**（`node_modules` 实测）⑥ `§5.1` L1 清单补 `Ritual/Invariants/Concepts/Design-Philosophy`（对齐 `mind/README.md` 十一件）⑦ `§5.2` 收工闭环 7 步→**9 步** ⑧ `§5.4` 补注迁移路径 `L3/index`＋顶层 `Project\` 已于 **09-09** 废止并入三区 ⑨ `§5.4` 本机读数加**时效标注**并写明「出厂/文档不写依赖私有区的实测事实」⑩ `§7` **反事实断言订正**——`deploy-new-device.cmd` **实测存在**（git 在管），照旧文会**误删现役脚本** ⑪ `§8` 版本锁定 0.1.1-rc.2→**0.1.5-rc.2**（+ 18 条 `pnpm.overrides` 同步纪律）⑫ `§9.3` 幽灵小节名「上工先看地图」→ **`AGENTS §八 知识地图`** | _版本：2.3 | 2026-09-06 | 注入层对齐 v2.5（AGENTS 全文→R0 双件 SOUL+AGENTS，见 37d0533/ab1e437 演进）；§9.3 债销账；Q2 数据层核实：L3 空库（无备份可恢复）、迁移记录标注为历史计划、Tree 收窄去预置主题；收工闭环步数等遗留过时描述待后续轮次清理（见审计 Q4）_
