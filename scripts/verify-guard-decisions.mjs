@@ -390,7 +390,7 @@ for (const l of upLog) console.log(`  ${upOk ? '✅' : '❌'} ${l}`);
 // ── 工具级副作用标记 + 台账降噪（2026-09-18 加 · P0-② 最小半，主人「清」）────────────────────
 // 判据：① 与心智区**无关**的调用（普通代码文件 / 无路径的 shell）**不记账**（降噪）
 //      ② 心智区写入 → `effect:"side_effect"` + `op:"edit"`
-//      ③ 只读工具读心智区 → `effect:"read_only"` 且**不告警**
+//      ③ 只读工具读心智区 → **不记账**且**不告警**（"读"不算"改"；不告警同时钉住 `read_only` 分类）
 //      ④ **反例（本条修复点）**：**名单外工具**带心智区路径 → `effect:"unknown"` + **响亮告警一次**
 //      ⑤ shell 工具带路径 → `effect:"destructive"`（能删能改且护栏看不进脚本）
 const fxHome = mkdtempSync(join(tmpdir(), 'guard-effect-'));
@@ -431,10 +431,12 @@ try {
   fxLog.push(`⑪ 心智区写入 → 记账 effect=${r1?.effect} op=${r1?.op}`);
 
   const w0 = warns.length;
+  const nBeforeRead = readFx().length;
   g({ name: 'read', arguments: { file_path: 'mind/L1/Tree.md' } });
-  const r2 = readFx().at(-1);
-  fxOk = fxOk && r2?.effect === 'read_only' && warns.length === w0;
-  fxLog.push(`⑫ 只读工具读心智区 → effect=${r2?.effect} 未告警=${warns.length === w0}`);
+  // ⑫ 只读工具读心智区 → **不记账**（第二版降噪：实测"新增 4 行里 3 行是读"）且**不告警**。
+  //    不告警就是在钉 `read_only` 分类：若 `toolEffect` 返 `unknown`，这里会响 ⇒ 红。
+  fxOk = fxOk && readFx().length === nBeforeRead && warns.length === w0;
+  fxLog.push(`⑫ 只读工具读心智区 → 不记账（${nBeforeRead} → ${readFx().length}）且未告警=${warns.length === w0}`);
 
   g({ name: 'apply_patch', arguments: { file_path: 'mind/L1/Ritual.md', patch: 'x' } });
   const r3 = readFx().at(-1);

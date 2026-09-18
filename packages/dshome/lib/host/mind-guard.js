@@ -559,15 +559,17 @@ export function apply(ctx) {
       // P0-② 留痕物证（2026-09-18 加）：把裁决写成 append-only 一条 —— 拦/放、放行凭哪条额度、
       // 针对哪个文件，全部可查（此前只有 approvals.json 的"有过一次放行"，对应不上调用，审计判"无法验证"）。
       // **降噪（2026-09-18 · 主人「清」）**：此前对**每次** guard 调用都写一条 ⇒ `pwsh`/`read` 这类
-      // 无路径调用一天刷出上百行（`op:'edit'` 还是写死的、根本不真）。现在只在**与心智区有关**时记：
-      //   ① 被拦（reason）② 走放行额度（ids）③ 路径落在心智区（`mind\` / `mind-private\`）
-      // 其余（普通代码文件、无路径的工具调用）不记 —— 它们由各自的门禁/日志负责，不该灌进裁决台账。
+      // 无路径调用一天刷出上百行（`op:'edit'` 还是写死的、根本不真）。现在只在**有裁决意义**时记：
+      //   ① 被拦（reason）② 走放行额度（ids）③ **改**心智区（路径落 `mind\` / `mind-private\` **且不是只读工具**）
+      // 其余不记 —— 普通代码文件、无路径的工具调用由各自门禁/日志负责；**心智区的"读"也不记**。
+      // 最后这条是量出来的：第一版降噪后实测"新增 4 行里 3 行是读"（读心智文件的次数远超改它），
+      // 而审计关心的是"谁改了什么、是拦是放"，不是"谁看了一眼"。`effect` 分类照旧保留。
       try {
         const fp = exec?.arguments?.file_path ?? exec?.arguments?.path ?? '';
         const ids = approvedInFlight.get(`${normalizePath(fp).toLowerCase()}|edit`) ?? [];
         const toolName = String(exec?.name ?? '');
         const effect = toolEffect(toolName);
-        if (reason || ids.length > 0 || (fp && inMindZone(fp))) {
+        if (reason || ids.length > 0 || (fp && inMindZone(fp) && effect !== 'read_only')) {
           appendDecision({
             ts: new Date().toISOString(),
             tool: toolName,
