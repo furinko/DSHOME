@@ -481,6 +481,38 @@ export function decide(exec, ctx) {
   return {}; // 其余写入一律放行（不侵入生长空间）
 }
 
+// ── 上游批准面接线（2026-09-18 加 · 方案④「拆档」后半）─────────────────────────────────
+// 为什么：自家 `approvals.json` 面板能放行，但"谁点的、对应哪次调用"由**我们自己记**（审计判可伪造）。
+//  上游 `@deepseek-ai/dsh-user-approval` 提供真通道：服务名 `approval`，`request()` 异步返回
+//  `'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'`（**唯一同意值 `allowed-once`**），
+//  且 `request()` 会在**会话日志**里留一对**由服务自己写入**的 `approval/asked` + `approval/decided`
+//  （`node_modules/@deepseek-ai/dsh-user-approval/lib/index.js:135-145`）——这对事件 agent 用 write 伪造不了。
+//  前提：会话批准策略须为 `ask`（策略 `never` 时其 `decide()` **不问任何人**直接 `rejected`，见 `:178`）；
+//  本机已由方案④拆分档位落地（`mind-guard` = `{sandbox: danger-full-access, approval: ask}`）。
+// 判据（fail-closed，但不把系统锁死）：
+//  · `allowed-once` → 记 `callId` 放行（guard 侧不再重复拦，也**不建自家卡**）
+//  · `rejected` / `cancelled` → **硬拒**（主人明确说不 / 被中断）
+//  · `unavailable`（无人应答）· 无服务 · 无 agent · 请求抛错 → **回落自家面板流程**（guard 照常拦 + 建卡），
+//    并**响亮告警一次** —— "上游问不到人" 绝不等于 "放行"
+const upstreamApproved = new Set();
+let upstreamWarned = false;
+function warnUpstreamOnce(ctx, msg) {
+  if (upstreamWarned) return;
+  upstreamWarned = true;
+  try { ctx.logger?.('dshome')?.warn?.(`[mind-guard] ${msg}`); } catch { /* 记不上日志不影响裁决 */ }
+}
+/** 上游裁决的台账记录（与 guard 侧同一条物证流；上游本身另有一对会话审计事件）。 */
+function recordUpstreamDecision(exec, filePath, decision, reason) {
+  return appendDecision({
+    ts: new Date().toISOString(),
+    tool: String(exec?.name ?? ''),
+    path: normalizePath(filePath),
+    op: 'edit',
+    decision,
+    reason,
+  });
+}
+
 /** 宿主插件主体（fail-open）。 */
 export function apply(ctx) {
   try {
@@ -490,6 +522,12 @@ export function apply(ctx) {
     //  `cannot set property "dshomeGuardDisposer" without provide`，又被下面的 catch 接住 ——
     //  于是每次「挂载成功」都会多打一条自相矛盾的「初始化失败（护栏未生效）」告警，且该属性全仓无读者。）
     ctx.tools.guard((exec) => {
+      // 上游批准面已放行的这次调用：**直接放行且不进 decide**——decide 的高危分支会 `addApprovalPending`
+      // 建一张自家卡，若在这里放行就会留下一张**永远没人点的幽灵卡**。一次性消费 `callId`（防集合无界增长）。
+      if (exec?.callId !== undefined && upstreamApproved.has(exec.callId)) {
+        upstreamApproved.delete(exec.callId);
+        return undefined;
+      }
       const { reason, marker, hint } = decide(exec, ctx);
       // 分环：提示（shell-write-hint）走 `mind-guard-hints.txt`，证据（mounted/last-deny）走 marker。
       if (marker) (hint ? writeHint : writeMarker)(marker);
@@ -515,6 +553,50 @@ export function apply(ctx) {
         });
       } catch { /* 留痕失败不影响裁决 */ }
       return reason; // 命中 → 拦截；undefined → 放行（不侵入生长空间）
+    });
+
+    // ── 上游批准面：命中「心智高危区」的写类调用 → 先向上游 `approval` 服务要一次真批准 ──────────
+    // 为什么放 `tools/pre-execute`（不塞进 guard）：上游 `ToolGuard` 是**同步**契约，只能返回
+    //   `string`(拒) / `undefined`(放行)、**没有 allow**（`dsh-tools/lib/types/index.d.ts:481-489`）
+    //   ⇒ 想在写入前"等主人点一下"，只能走能在 waterfall 里 await 的 pre-execute。
+    // 与 guard 的关系：本钩子只在拿到 `allowed-once` 时放行并标记 callId（让 guard 不重复拦）；
+    //   **其余情况一律 `next()` 交回原流程**（守卫照常拦 + 建自家卡）——两道闸**叠加**，不是替换。
+    ctx.on('tools/pre-execute', async (exec, next) => {
+      // 同 post-execute 的纪律：不假设 `next` 一定存在（`verify-host-plugins` 会真跑注册的 handler）。
+      const proceed = typeof next === 'function' ? next : () => undefined;
+      try {
+        const fp = exec?.arguments?.file_path ?? exec?.arguments?.path ?? '';
+        if (!fp || !MUTATING_TOOLS.has(String(exec?.name ?? '')) || !inHighRiskyZone(fp)) return proceed();
+        if (isApproved(fp, 'edit')) return proceed(); // 自家额度已放行 ⇒ 照旧走原流程（写成功后才消费）
+        const approval = typeof ctx.get === 'function' ? ctx.get('approval') : undefined;
+        if (!approval || typeof approval.request !== 'function' || !exec?.agent) {
+          warnUpstreamOnce(ctx, `上游批准面不可用（${approval ? '本次调用缺 agent' : '无 approval 服务'}）⇒ 回落自家面板流程：${normalizePath(fp)}`);
+          return proceed();
+        }
+        const outcome = await approval.request({
+          agent: exec.agent,
+          toolName: String(exec.name),
+          ...(exec.callId !== undefined ? { callId: exec.callId } : {}),
+          reason: `心智高危区写入需放行：${normalizePath(fp)}`,
+          ...(exec.signal !== undefined ? { signal: exec.signal } : {}),
+        });
+        if (outcome === 'allowed-once') {
+          if (exec.callId !== undefined) upstreamApproved.add(exec.callId);
+          recordUpstreamDecision(exec, fp, 'allow-by-upstream', 'approval/allowed-once');
+          return proceed();
+        }
+        if (outcome === 'rejected' || outcome === 'cancelled') {
+          recordUpstreamDecision(exec, fp, 'deny', `upstream:${outcome}`);
+          return { kind: 'deny', reason: `心智高危区写入未获批准（上游批准面：${outcome}）——已拦下，未落盘` };
+        }
+        // 'unavailable'（无人应答）或上游返回了词表外的值：**不当作放行**，回落自家面板流程。
+        warnUpstreamOnce(ctx, `上游批准面返回 ${outcome}（无人应答）⇒ 回落自家面板流程：${normalizePath(fp)}`);
+        return proceed();
+      } catch (e) {
+        // `request()` 在"无打开的 turn"时会抛（其 `:133`）——自治/后台会话可能如此 ⇒ 绝不能带崩调用。
+        warnUpstreamOnce(ctx, `上游批准面请求失败 ⇒ 回落自家面板流程：${e?.message ?? e}`);
+        return proceed();
+      }
     });
 
     // 放行额度**写成功才消费**（2026-09-12 修）：`tools/post-execute` 报成功才真删 approvals.json 里那条。

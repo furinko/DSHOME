@@ -259,6 +259,134 @@ try {
 }
 for (const l of approveLog) console.log(`  ${approveOk ? '✅' : '❌'} ${l}`);
 
+// ── 上游批准面（2026-09-18 加 · 方案④「拆档」后半）：真跑 `tools/pre-execute` ────────────────
+// 判据（每条都要能变红）：`allowed-once` 放行且**不建自家幽灵卡** / `rejected`·`cancelled` 硬拒 /
+// `unavailable`·无服务·缺 agent·请求抛错 ⇒ **回落自家面板流程**（guard 照常拦 + 建卡）/
+// 非高危区**问都不问**上游。
+const upHome = mkdtempSync(join(tmpdir(), 'guard-upstream-'));
+const prevHome3 = process.env.DSH_HOME;
+let upOk = true;
+const upLog = [];
+try {
+  process.env.DSH_HOME = upHome;
+  mkdirSync(join(upHome, 'mind'), { recursive: true });
+  mkdirSync(join(upHome, 'mind-private', 'tasks'), { recursive: true });
+  const apUp = join(upHome, 'mind-private', 'tasks', 'approvals.json');
+  const ledUp = join(upHome, 'mind-private', 'tasks', 'guard-decisions.jsonl');
+  const readUpAp = () => { try { return JSON.parse(readFileSync(apUp, 'utf8')).items || []; } catch { return []; } };
+  const readUpLedger = () => {
+    try {
+      return readFileSync(ledUp, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    } catch { return []; }
+  };
+  const mkCtx = (approvalImpl) => {
+    const guards = []; const preHooks = [];
+    const c = {
+      logger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
+      on: (ev, fn) => { if (ev === 'tools/pre-execute') preHooks.push(fn); },
+      off: () => {}, effect: () => () => {},
+      get: (n) => (n === 'approval' ? approvalImpl : undefined),
+      tools: { guard: (fn) => { guards.push(fn); return () => {}; }, register: () => {} },
+    };
+    return { c, guards, preHooks };
+  };
+  const highRisk = { name: 'edit', callId: 'c-high', agent: { session: {} }, arguments: { file_path: 'mind/L1/Memory.md', new_string: 'x' } };
+  const lowRisk = { name: 'edit', callId: 'c-low', agent: { session: {} }, arguments: { file_path: 'mind/L2/Skill/x.md', new_string: 'x' } };
+  const freshHome = () => { try { rmSync(apUp, { force: true }); } catch { /* 首次不存在 */ } };
+
+  // ① allowed-once → 放行 + guard 不拦 + **不建自家卡** + 台账记 allow-by-upstream
+  {
+    freshHome();
+    let asked = 0;
+    const { c, guards, preHooks } = mkCtx({ request: async () => { asked += 1; return 'allowed-once'; } });
+    mod.apply(c);
+    const r = await preHooks[0](highRisk, () => 'next-called');
+    const g = guards[0](highRisk);
+    const led = readUpLedger().at(-1);
+    upOk = upOk && r === 'next-called' && g === undefined && asked === 1 && readUpAp().length === 0 && led?.decision === 'allow-by-upstream';
+    upLog.push(`① allowed-once → 放行=${r === 'next-called'} guard不拦=${g === undefined} 问上游 ${asked} 次 自家卡=${readUpAp().length} 台账=${led?.decision}`);
+  }
+  // ② rejected → 硬拒（不改用自家卡）
+  {
+    freshHome();
+    let asked = 0;
+    const { c, preHooks } = mkCtx({ request: async () => { asked += 1; return 'rejected'; } });
+    mod.apply(c);
+    const r = await preHooks[0](highRisk, () => 'next-called');
+    upOk = upOk && r?.kind === 'deny' && /rejected/.test(String(r.reason)) && asked === 1 && readUpAp().length === 0;
+    upLog.push(`② rejected → 硬拒=${r?.kind === 'deny'} 理由含 rejected=${/rejected/.test(String(r?.reason))} 自家卡=${readUpAp().length}`);
+  }
+  // ③ cancelled → 硬拒
+  {
+    freshHome();
+    const { c, preHooks } = mkCtx({ request: async () => 'cancelled' });
+    mod.apply(c);
+    const r = await preHooks[0](highRisk, () => 'next-called');
+    upOk = upOk && r?.kind === 'deny' && /cancelled/.test(String(r.reason));
+    upLog.push(`③ cancelled → 硬拒=${r?.kind === 'deny'}`);
+  }
+  // ④ unavailable（无人应答）→ **不当作放行**：回落自家面板流程（guard 拦 + 建卡）
+  {
+    freshHome();
+    const { c, guards, preHooks } = mkCtx({ request: async () => 'unavailable' });
+    mod.apply(c);
+    const r = await preHooks[0](highRisk, () => 'next-called');
+    const g = guards[0](highRisk);
+    upOk = upOk && r === 'next-called' && typeof g === 'string' && readUpAp().length === 1;
+    upLog.push(`④ unavailable → 回落=${r === 'next-called'} guard 拦=${typeof g === 'string'} 自家卡=${readUpAp().length}`);
+  }
+  // ⑤ 无 approval 服务 → 回落自家面板流程
+  {
+    freshHome();
+    const { c, guards, preHooks } = mkCtx(undefined);
+    mod.apply(c);
+    const r = await preHooks[0](highRisk, () => 'next-called');
+    const g = guards[0](highRisk);
+    upOk = upOk && r === 'next-called' && typeof g === 'string' && readUpAp().length === 1;
+    upLog.push(`⑤ 无 approval 服务 → 回落=${r === 'next-called'} + guard 拦 + 建卡=${readUpAp().length === 1}`);
+  }
+  // ⑥ 缺 agent → 回落（不抛、不硬拒，且**不调** request）
+  {
+    freshHome();
+    let asked = 0;
+    const { c, guards, preHooks } = mkCtx({ request: async () => { asked += 1; return 'allowed-once'; } });
+    mod.apply(c);
+    const noAgent = { ...highRisk, agent: undefined };
+    const r = await preHooks[0](noAgent, () => 'next-called');
+    const g = guards[0](noAgent);
+    upOk = upOk && r === 'next-called' && typeof g === 'string' && asked === 0;
+    upLog.push(`⑥ 缺 agent → 回落（问了 ${asked} 次）+ guard 拦=${typeof g === 'string'}`);
+  }
+  // ⑦ request 抛错（无打开的 turn）→ 回落、**绝不带崩调用**
+  {
+    freshHome();
+    const { c, guards, preHooks } = mkCtx({ request: async () => { throw new Error('approval.request() outside an open turn'); } });
+    mod.apply(c);
+    const r = await preHooks[0](highRisk, () => 'next-called');
+    const g = guards[0](highRisk);
+    upOk = upOk && r === 'next-called' && typeof g === 'string';
+    upLog.push(`⑦ request 抛错 → 回落（不崩）+ guard 拦=${typeof g === 'string'}`);
+  }
+  // ⑧ 非高危区（L2 Skill）→ 问都不问上游
+  {
+    freshHome();
+    let asked = 0;
+    const { c, guards, preHooks } = mkCtx({ request: async () => { asked += 1; return 'rejected'; } });
+    mod.apply(c);
+    const r = await preHooks[0](lowRisk, () => 'next-called');
+    const g = guards[0](lowRisk);
+    upOk = upOk && r === 'next-called' && g === undefined && asked === 0;
+    upLog.push(`⑧ 非高危区 → 不问上游（问了 ${asked} 次）+ 放行`);
+  }
+} catch (e) {
+  upOk = false;
+  upLog.push(`抛错：${(e && e.message) || e}`);
+} finally {
+  if (prevHome3 === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = prevHome3;
+  try { rmSync(upHome, { recursive: true, force: true }); } catch { /* 忽略 */ }
+}
+for (const l of upLog) console.log(`  ${upOk ? '✅' : '❌'} ${l}`);
+
 // ── 静态锁：消费必须发生在 `post-execute`，不许留在 `isApproved` 里 ─────────────
 const guardSrc = readFileSync(GUARD, 'utf8');
 const isApprovedBody = (guardSrc.match(/function isApproved\([\s\S]*?\n}/) || [''])[0];
@@ -267,6 +395,9 @@ const lock = (cond, label) => { if (!cond) staticOk = false; console.log(`  ${co
 lock(isApprovedBody.length > 0 && !/writeApprovals/.test(isApprovedBody), '静态锁：isApproved() 体内不写 approvals.json（不在这里消费）');
 lock(/ctx\.on\(\s*['"]tools\/post-execute['"]/.test(guardSrc), "静态锁：apply 注册了 'tools/post-execute'");
 lock(/consumeApproved\(/.test(guardSrc), '静态锁：存在 consumeApproved()（写成功后消费）');
+lock(/ctx\.on\(\s*['"]tools\/pre-execute['"]/.test(guardSrc), "静态锁：apply 注册了 'tools/pre-execute'（上游批准面）");
+lock(/upstreamApproved\.has\(exec\.callId\)/.test(guardSrc), '静态锁：guard 命中 upstreamApproved 时**直接放行**（不进 decide ⇒ 不建幽灵卡）');
+lock(/ctx\.get\(\s*['"]approval['"]\s*\)/.test(guardSrc), "静态锁：用动态 `ctx.get('approval')` 取上游服务（缺服务不炸）");
 
 const markerAfter = readMarker();
 const selfClean = markerBefore === markerAfter;
@@ -275,4 +406,4 @@ if (!selfClean) {
   console.error(`    ${MARKER}`);
 }
 console.log(`[verify-guard-decisions] 自检：真 marker 运行前后${selfClean ? '一致 ✅（零污染）' : '不一致 ❌（本门禁是污染源）'}`);
-process.exit(fails.length || !selfClean || !wiringOk || !approveOk || !staticOk ? 1 : 0);
+process.exit(fails.length || !selfClean || !wiringOk || !approveOk || !staticOk || !upOk ? 1 : 0);
