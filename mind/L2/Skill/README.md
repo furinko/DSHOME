@@ -64,6 +64,7 @@ _版本：<x.y.z> | <YYYY-MM-DD> | 变更摘要_
 | scar-inference | 1.1.0 | 伤疤反推法/咬痕考古法（版本差/反推坑/作者画像） |
 | required-action-wiring | 1.1.0 | 必需动作接线三判据：唯一权威落点 / 没跑就硬失败 / 设备侧可自检（配套「回执≠产物」；判例：端口回 200 ≠ 就绪） |
 | visual-verification | 1.0.0 | 视觉/UI 交付验证法：呈现面全覆盖 / 不猜 CSS 只读实测值 / 桩测≠渲染测 / 缓解须证真在跑；配套 `scripts/shot.mjs`（截图 · 放大镜 · 逐帧） |
+| concurrent-writers | 1.0.0 | 多写者共享工作区纪律：单写者协议 / 独立环境做实验 / append-only 优先 / 提交前复核 staged / 拿不到闸响亮失败；来源＝38 轮崩溃循环那次的结晶 |
 
 ---
 _版本：1.7 | 2026-09-17 | 同步 `required-action-wiring` 1.0.0→1.1.0（补判例「端口回 200 ≠ 就绪」：近似判据会抢在初始化完成前放行消费者）| 1.6 | 2026-09-17 | 每日自治巡检同步：能力表 3 处版本对齐实际（`verify-integrity` 1.3.0→1.5.0、`dshome-crash-recovery` 1.0.6→1.0.8、`dshome-plugin-dev` 1.3.3→1.3.8）+ 补登 `required-action-wiring` 1.0.0（09-14 新增、本表漏登）；来源=2026-09-17 独立只读深扫（本表不在 `mind-validate` 四元校验面内，只能人工兜） | 1.5 | 2026-09-12 | `dshome-plugin-dev` 1.3.2→1.3.3（§十 三步→四处登记；compaction-log 漏 exports 判例）| 1.4 | 2026-09-11 | 机制名表述统一 | 1.3 | 2026-09-11 | 收工同步 `safe.mjs` 逃生态订正：dshome-plugin-dev 1.3.1→1.3.2、dshome-crash-recovery 1.0.5→1.0.6（本表仍在门禁外，靠收工 step3 手工同步）| 1.2 | 2026-09-11 | 能力表同步实际（补 2 缺登技能 + 3 处版本号）；补"三处同改"警示。改前快照 `snapshots/2026-09-11T00-55-10_README.md`_
