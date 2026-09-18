@@ -272,7 +272,24 @@ if (process.argv.includes('--selftest')) {
 }
 let relatedSeen = 0;
 let relatedFiles = 0;
+let histSkipped = 0;
+let histSkippedWithRel = 0;
+/** 历史留痕面 = TRASH 回收站 + `evolve-log` 改前快照目录。两者都是**当时的字节副本**、不是活文档
+ *  ⇒ 不参与"引用当前有效性"校验。为什么必须排除（2026-09-19 两连击实测）：
+ *   ① 只排 TRASH 时，critical 反而 5→6 —— **我自己刚落下的 5 份改前快照又带进来 3 条同样的死链**
+ *      （快照是源文件的字节副本：源文件有幽灵 related，快照必然有）⇒ 只要快照在扫描面内，
+ *      **"清幽灵引用"这个动作本身就会制造新的 critical**（同族：verify-integrity「判据也是消费者」）。
+ *   ② 这两个面都**不许改**（TRASH=不删只移的历史留痕；快照=回滚点，改了回滚即失真）
+ *      ⇒ 产出的是**永远修不掉**的 critical（TRASH 侧实测 2 条：旧 Skill 指向上游已迁走的 SKILL.md）。
+ *  跳过数**显式上报**，非静默放过（对照：09-11 修掉的正是"无输入静默全绿"）。 */
+const HISTORICAL_RE = /(^|[\\/])TRASH([\\/]|$)|(^|[\\/])tasks[\\/]evolution[\\/]snapshots[\\/]/;
 for (const f of walk(MIND, [], 'mind').concat(walk(PRIV, [], 'priv', ))) {
+  if (HISTORICAL_RE.test(f.rel)) {
+    histSkipped++;
+    const t = String(readFmRelated(readFileSync(f.full, 'utf8'))).trim();
+    if (t) histSkippedWithRel++;
+    continue;
+  }
   // related 支持三种写法：顶层键、`metadata:` 缩进块（L2 Skill 现行）、逗号分隔或 YAML 数组 [a, b]
   const relRaw = readFmRelated(readFileSync(f.full, 'utf8'));
   const rel = String(relRaw).trim().replace(/^\[|\]$/g, '');
@@ -288,6 +305,9 @@ for (const f of walk(MIND, [], 'mind').concat(walk(PRIV, [], 'priv', ))) {
 // ⚠️ 2026-09-18 订正：那条 info 的**前提本身是错的尺子**——`related:` 实况出现 11 次（10 个 Skill 写在
 //    `metadata:` 缩进块内 + `mind/L1/Power.md` 正文一例）。现改为按 `readFmRelated` 取，缩进块**真进检查**；
 //    零输入时仍只报 info（不造恒亮灯），但文案不再声称"全仓 0 次"。
+if (histSkipped) {
+  issues.push({ sev: 'info', file: 'TRASH/** + tasks/evolution/snapshots/**', msg: `related 死链检查**跳过历史留痕面 ${histSkipped} 个文件**（其中 ${histSkippedWithRel} 个带 related、未校验）——该面 = TRASH 回收站 + evolve-log 改前快照，均**当时的字节副本·不是活文档**，且**不许改**；跳过数**显式上报**，非静默放过。` });
+}
 if (relatedSeen === 0) {
   issues.push({ sev: 'info', file: 'mind/**（全仓 frontmatter）', msg: 'related 死链检查当前**零输入**：没有任何文件的前言块带 `related`（顶层或 `metadata:` 缩进块）→ 该 critical 级检查实际未执行过。要用它就补 related；不用它，请从 README/Skill 的宣传里去掉这半句。' });
 }

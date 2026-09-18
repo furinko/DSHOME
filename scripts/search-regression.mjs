@@ -162,6 +162,15 @@ if (base) {
 //   代价（如实写明）：长期只增不减且不跑 `--update-baseline` 时，基线数字会**一直落后**于真实语料数，
 //   精确比对长期不触发（锚点丢失仍逐条拦、退化靠人工看参考值）。属**已知盲区**，需要时手动重建。
 const BASE_NOTE = '召回/精度基线（2026-09-17 判据三修）。**0**=不劣于基线 / 首次无基线 / **语料增量**（文件数 > 基线且条数不变、锚点全在 ⇒ 日常增删不堵门）；**1**=真退化（召回或 top1 低于基线）；**2**=条件变了需重建（回归集条数变 / **锚点文件丢失** / **语料减少** = 现值低于基线）。基线**只由 `--update-baseline` 改写**，不自动推进。';
+// ⚠️ 2026-09-19 修复（TDZ）：本常量原先**只**在下方 metrics 段（原 :187）声明，而这里**先用**它
+//   ⇒ `node scripts/search-regression.mjs --update-baseline` 必崩
+//   `ReferenceError: Cannot access 'NO_SIDE_EFFECT' before initialization`。
+//   严重性：门禁自己印的修复指令（「跑 `--update-baseline` 重建后提交」）**指向一条崩掉的命令** ——
+//   即"判据给了出路、出路是断的"，等于把人锁死在红门禁前。
+//   为什么冒烟/§六 verify-scripts-run 没抓到：不带 `--update-baseline` 时 `updateBaseline` 为 false
+//   **短路求值**、根本走不到这个标识符 ⇒ 语法/冒烟全绿，**修复路径从未真跑过**（同族：判据的盲区＝"修复路径不在被测面内"）。
+//   修法：声明提到**首次使用之前**，且**只声明一次**（下方不再重复声明）。
+const NO_SIDE_EFFECT = process.env.HINDSIGHT_NO_METRICS === '1' || !!process.env.CI;
 if (updateBaseline && NO_SIDE_EFFECT) {
   console.log('[search-regression] 🔇 无副作用模式：跳过基线落盘（如需重建请去掉 HINDSIGHT_NO_METRICS/CI 后手工跑）。');
 } else if (updateBaseline) {
@@ -184,7 +193,7 @@ if (updateBaseline && NO_SIDE_EFFECT) {
 //   起因：它原先在 `.git/hooks/pre-commit` 的「工具脚本真跑冒烟」白名单里，**每次提交都白跑一遍并 +9**，
 //   把 `metrics.json` 的 `search-hit` 从"召回量信号"变成"提交次数×9"（实测已累积 343）——**门禁污染被测对象**。
 //   挂成显式门禁后，`: run` 会显式带这个变量；开发者手工跑（无该变量）时行为不变，仍会累积信号。
-const NO_SIDE_EFFECT = process.env.HINDSIGHT_NO_METRICS === '1' || !!process.env.CI;
+// （`NO_SIDE_EFFECT` 的声明已上提到基线段之前——见上方 TDZ 修复注；此处**不再重复声明**。）
 const evoLog = join(dirname(fileURLToPath(import.meta.url)), 'evolve-log.mjs');
 const METRICS_FILE = join(repoRoot, 'mind-private', 'tasks', 'evolution', 'metrics.json');
 if (NO_SIDE_EFFECT) {

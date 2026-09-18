@@ -1,12 +1,12 @@
 ---
 name: recall-tuning
 description: 记忆/知识「写得进却召不回」的调优法——先分三层定位（词面 / 阈值 vs 真命中分布 / 切块），再动排序量纲；验召回必须复刻真实上工路径，验收判据是「排第几」不是「命中没有」。触发：召不回 / 召回不准 / 写进去却召不回 / 检索不到 / 搜不到 / 命中率低 / 排序不对 / top1 不对 / 调参 / 阈值 / minScore / 切块 / 查重 / 回归基线 / 权重 / 蒸馏验收。
-version: 1.1.0
+version: 1.1.1
 author: DSHOME
 license: internal
 metadata:
   tags: [召回, 检索, 调参, 阈值分布, 切块, 排序量纲, 回归基线, 蒸馏验收, 假阴性, 查重, 位次]
-  related: [mind/L2/Skill/boot-recall.md, mind/L2/Skill/verify-integrity.md, mind-private/L2/Skill/evolution-checkup.md, mind-private/L2/Skill/perf-attribution.md, mind/L1/Memory.md, scripts/mind-search-lib.cjs, scripts/mind-prime.mjs, scripts/search-regression.mjs]
+  related: [mind/L2/Skill/boot-recall.md, mind/L2/Skill/verify-integrity.md, mind/L1/Memory.md, scripts/mind-search-lib.cjs, scripts/mind-prime.mjs, scripts/search-regression.mjs]
 contract:
   id: recall-tuning
   triggers: [召不回, 召回不准, 写进去却召不回, 检索不到, 搜不到, 命中率, 排序不对, top1, 调参, 阈值, minScore, 切块, 查重, 回归基线, 权重, 蒸馏验收]
@@ -75,10 +75,10 @@ contract:
 ## 五、关联索引
 
 **L3：** `mind-private/L3/common/lessons/2026-09-17_蒸馏验收看召回不看体积.md`（消费端判据 · 跨项目结晶的排序劣势）· `mind-private/L3/common/lessons/2026-09-17_搜索面决定结论边界.md` · `mind-private/L3/common/lessons/2026-09-11_工具局限不等于事实缺失.md` · `mind-private/L3/projects/DSHOME/知识/dshome-core/2026-09-14_召回复刻真实上工路径.md`（cwd 与查重口径）
-**L2 Skill：** `boot-recall.md`（上工装配与注入面：写在装配外面＝再准也召不到）· `verify-integrity.md`（真加载 / 反例证伪 / 不污染被测对象 / 无输入即响亮失败）· `evolution-checkup.md`（量程与噪声 · 生效确认 · 判据能变红）· `perf-attribution.md`（扫参与对照实验方法）
+**L2 Skill：** `boot-recall.md`（上工装配与注入面：写在装配外面＝再准也召不到）· `verify-integrity.md`（真加载 / 反例证伪 / 不污染被测对象 / 无输入即响亮失败）
 **L1：** `mind/L1/Memory.md` §十一（蒸馏/时间窗口径）· `mind/L1/Power.md` §二（技能触发是**精确子串**匹配：触发词要写成用户真会说的词）· §四（L2 统一格式）
 **工具：** `scripts/mind-search-lib.cjs`（tokenize / jaccard / **切块** / `minScore` / `sortKey` 的唯一实现）· `scripts/mind-prime.mjs`（真实上工路径）· `scripts/search-regression.mjs` + `scripts/regression-baseline.json`（回归集与基线）
 
 ---
 
-_版本：1.1.0 | 2026-09-18 | 补「候选进了 ≠ 取用得到」：本轮实测通用层被取用端饿死（项目层 minScore:0 恒占满 limit ⇒ common 恒零席位），修法=通用层保底席位 GENERAL_MIN；核心规则增「验收落在真消费者上」 | _版本：1.0.0 | 2026-09-18 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：由「召不回」主题在 Learn 复发 ≥3 条 + L3 结晶（消费端判据 / 复刻真实路径 / 搜索面边界）+ 检索实现里两次同形修复（精度 / 量纲）提升而来；配套读数均带日期与口径。_
+_版本：1.1.1 | 2026-09-19 | **清幽灵引用**：`related` 与关联索引里指向 `evolution-checkup.md`、`perf-attribution.md` 的死链删除（两文件全库不存在、从未建过）；其宣称的覆盖已分别落在 `verify-integrity`（判据能变红 + 配方⑧「调参改动先离线扫参数矩阵」）与本节 §一.4（排序量纲核对）。 | _版本：1.1.0 | 2026-09-18 | 补「候选进了 ≠ 取用得到」：本轮实测通用层被取用端饿死（项目层 minScore:0 恒占满 limit ⇒ common 恒零席位），修法=通用层保底席位 GENERAL_MIN；核心规则增「验收落在真消费者上」 | _版本：1.0.0 | 2026-09-18 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：由「召不回」主题在 Learn 复发 ≥3 条 + L3 结晶（消费端判据 / 复刻真实路径 / 搜索面边界）+ 检索实现里两次同形修复（精度 / 量纲）提升而来；配套读数均带日期与口径。_
