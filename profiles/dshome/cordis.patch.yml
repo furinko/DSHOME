@@ -25,3 +25,29 @@
       name: '@deepseek-ai/dsh-experimental-tool-agent-team'
     - id: dsh-experimental-client-ui-agent-team
       name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
+
+# ── 权限档位：拆开「沙箱」与「批准」两个旋钮（2026-09-18 主人放行 · 方案④「拆档」）──
+# 上游把「能写哪里」与「要不要问我」绑成一档（read-only/workspace-write → approval: ask；
+# danger-full-access → approval: never）。本机要的是「**沙箱仍全盘放开**（能写任何地方）
+# **+ 批准改成会问我**」：需要批准的动作**真弹框**，而不是静默拒绝——用于「心智高危区写入
+# 走上游批准面」（`dsh-user-approval` 服务在策略 never 时**不问任何人**、直接判 rejected，
+# 见 `node_modules/@deepseek-ai/dsh-user-approval/lib/index.js:178`）。
+# ⚠️ patch 是**整行替换 config、不合并**（`dsh-base/cordis.patch.yml` 头注）⇒ 上游三档必须原样重申。
+# 生效＝重启 DSHOME（组合层在启动时应用）；回滚＝删本段 + `settings.yaml` 的 `permission.defaultPreset` 改回 danger-full-access。
+- id: permission
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+      mind-guard:
+        sandbox: danger-full-access
+        approval: ask
+        name: 心智护栏
+        description: 沙箱与 danger-full-access 相同（不限制可写范围），但需要批准的动作会真的弹框问用户，而不是静默拒绝。
