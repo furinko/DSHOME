@@ -17,7 +17,7 @@
 
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, statSync, mkdirSync } from 'node:fs';
 import { isMindConnected } from './mind-connect.js';
 
 /** Stable Cordis plugin name (cordis.patch.yml: name dshome/mind-guard). */
@@ -131,6 +131,26 @@ function contentOf(args) {
 // 护栏独立读写该文件，不 require index.cjs（那是 cordis 插件对象，重引用会循环）。
 // 放行粒度 = 路径前缀 + 操作（op）：一条 approved 覆盖其下所有文件同类操作。
 const approvalsFile = () => join(repoRoot(), 'mind-private', 'tasks', 'approvals.json');
+
+// ── 护栏裁决台账（2026-09-18 加 · 三参照物清单 P0-②「审批留痕物证」的物证半）──────────────
+// 为什么：`approvals.json` 只记"有过这么一次放行"，**判不出它对应哪次工具调用、也判不出
+// 一次裁决到底发生过没有**（审计判"无法验证"）。本台账 append-only 记下每一次护栏裁决：
+// `{ts,tool,path,op,decision,approvalIds?,reason?}` ⇒ 「谁在什么时候想改什么、是拦是放、
+// 放行凭哪条额度」全部可查。上界 512KB 保留后半（台账是可查，不是全存）。
+const DECISIONS_MAX_BYTES = 512 * 1024;
+export function guardDecisionsFile() { return join(repoRoot(), 'mind-private', 'tasks', 'guard-decisions.jsonl'); }
+export function appendDecision(rec) {
+  try {
+    const f = guardDecisionsFile();
+    mkdirSync(dirname(f), { recursive: true });
+    appendFileSync(f, JSON.stringify(rec) + '\n');
+    if (statSync(f).size > DECISIONS_MAX_BYTES) {
+      const lines = readFileSync(f, 'utf8').split('\n').filter(Boolean);
+      writeFileSync(f, lines.slice(-Math.max(1, Math.floor(lines.length / 2))).join('\n') + '\n');
+    }
+    return true;
+  } catch { return false; } // 留痕失败绝不影响裁决本身
+}
 function readApprovals() {
   try { return JSON.parse(readFileSync(approvalsFile(), 'utf8')).items || []; }
   catch { return []; }
@@ -479,6 +499,21 @@ export function apply(ctx) {
           `工具层护栏拦不住 shell —— 请自行确认这次改动走了 §四 硬流程（放行 / 快照 / validate）。`
         );
       }
+      // P0-② 留痕物证（2026-09-18 加）：把每次裁决写成 append-only 一条 —— 拦/放、放行凭哪条额度、
+      // 针对哪个文件，全部可查（此前只有 approvals.json 的"有过一次放行"，对应不上调用，审计判"无法验证"）。
+      try {
+        const fp = exec?.arguments?.file_path ?? exec?.arguments?.path ?? '';
+        const ids = approvedInFlight.get(`${normalizePath(fp).toLowerCase()}|edit`) ?? [];
+        appendDecision({
+          ts: new Date().toISOString(),
+          tool: String(exec?.name ?? ''),
+          path: normalizePath(fp),
+          op: 'edit',
+          decision: reason ? 'deny' : (ids.length > 0 ? 'allow-by-approval' : 'allow'),
+          ...(ids.length > 0 ? { approvalIds: ids } : {}),
+          ...(reason ? { reason: String(reason).split('\n')[0].slice(0, 140) } : {}),
+        });
+      } catch { /* 留痕失败不影响裁决 */ }
       return reason; // 命中 → 拦截；undefined → 放行（不侵入生长空间）
     });
 

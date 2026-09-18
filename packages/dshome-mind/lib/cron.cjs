@@ -32,11 +32,23 @@ function outcomeOfTurnEnd(event) {
 }
 
 /** 追加一条 run 记录。台账写坏不抛（不能反过来影响自治），但**响亮告警**。 */
+/** 台账上界（2026-09-18 加）：超限保留**后半**——台账是为了可查，不该无界增长。
+ *  实测体量本就有界（2 条/日 ≈ 150KB/年），此为上界保险：万一任务被配成"每分钟型"也不会撑爆。 */
+const LEDGER_MAX_BYTES = 512 * 1024;
+function trimLedgerIfNeeded(file) {
+  try {
+    if (fs.statSync(file).size <= LEDGER_MAX_BYTES) return false;
+    const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+    fs.writeFileSync(file, lines.slice(-Math.max(1, Math.floor(lines.length / 2))).join('\n') + '\n');
+    return true;
+  } catch { return false; }
+}
 function appendCronRun(rec) {
   try {
     const f = CRON_RUNS_FILE();
     fs.mkdirSync(path.dirname(f), { recursive: true });
     fs.appendFileSync(f, JSON.stringify(rec) + '\n');
+    if (trimLedgerIfNeeded(f)) console.warn('[dshome-cron] run 台账超上界，已保留后半（最旧的被裁——台账是"可查"不是"全存"）');
     return true;
   } catch (e) {
     console.warn('[dshome-cron] run 台账写入失败（自治本身不受影响）:', e?.message ?? e);

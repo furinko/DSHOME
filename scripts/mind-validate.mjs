@@ -49,6 +49,37 @@ function hasKeys(kv, keys) {
   return keys.filter((k) => !kv[k] && (kv[k] !== '' || !(k in kv)));
 }
 
+/** related 取值：**顶层** `related:` 或**缩进一层的** `metadata:` 块内 `related:`（L2 Skill 现行写法）。
+ *  2026-09-18 加（门禁盲区·老账）：`readFm` 的正则要求键**顶格**（`^([A-Za-z0-9_-]+):`），而 10 个 Skill 把
+ *  `related` 写在 `metadata:` 下（2 空格缩进）⇒ 那些关联路径**从未进入死链检查**；门禁还据此把
+ *  "零输入"当事实写成一条 info（实况：`related:` 在仓内出现 11 次）。尺子量不到被量的东西 = 假绿。
+ *  ⚠️ 只在 frontmatter 块内找（正文/代码块里的同名字样不参与）。 */
+function readFmRelated(content) {
+  const c = String(content || '').replace(/\r\n/g, '\n');
+  const m = /^---\n([\s\S]*?)\n---/.exec(c);
+  if (!m) return '';
+  for (const line of m[1].split('\n')) {
+    const mm = /^\s*related:\s*(.*)$/.exec(line);
+    if (mm) return mm[1].trim();
+  }
+  return '';
+}
+
+// ── 自检（反例驱动）：`node scripts/mind-validate.mjs --selftest` ──────────────
+// 判据必须能变红：S2/S5/S6 锁"缩进块要么被认、要么不许误认"；R3 锁"全路径不许靠别处同名文件顶包"。
+// 两段分开收集（解析器在这、路径解析在下面）⇒ 结果数组共用，末尾统一打印退出。
+const selftestCases = [];
+if (process.argv.includes('--selftest')) {
+  selftestCases.push(
+    ['S1 顶层 related: [a, b]', readFmRelated('---\nname: x\nrelated: [a, b]\n---\nbody'), '[a, b]'],
+    ['S2 反例·修复点：metadata 缩进块内 related', readFmRelated('---\nname: x\nmetadata:\n  tags: [t]\n  related: [a, b]\n---\n'), '[a, b]'],
+    ['S3 无 frontmatter → 空', readFmRelated('# 标题\nrelated: [a]\n'), ''],
+    ['S4 反例·正文里的 related 不算（只在 fm 块内）', readFmRelated('---\nname: x\n---\nrelated: [a]\n'), ''],
+    ['S5 CRLF frontmatter 也能读到', readFmRelated('---\r\nname: x\r\nmetadata:\r\n  related: [a]\r\n---\r\n'), '[a]'],
+    ['S6 反例·注释行 `# related:` 不误抓', readFmRelated('---\nname: x\n# related: [a]\n---\n'), ''],
+  );
+}
+
 // ① L2 Skill 完整性
 const skills = walk(join(MIND, 'L2', 'Skill'), [], 'L2/Skill')
   .filter((f) => !/README|_index/.test(basename(f.rel)));
@@ -198,16 +229,21 @@ for (const m of memories) {
 
 // ③ related 死链（frontmatter related 属性 → 文件必须存在）
 function relExists(target) {
-  const t = (target || '').replace(/\.md$/i, '');
-  const candidates = [
-    join(MIND, t), join(PRIV, t),
-    join(MIND, t + '.md'), join(PRIV, t + '.md'),
-  ];
-  // related 常写作相对路径如 mind/L1/Memory.md 或 basename
-  for (const c of candidates) if (existsSync(c)) return true;
-  // basename 兜底：在 mind/(mind-private) 下找同名
-  const base = basename(t);
-  if (base) {
+  const raw = String(target || '').trim().replace(/^\[|\]$/g, '');
+  const t = raw.replace(/\.md$/i, '');
+  // 三个基准：**仓库根**（Skill 现行写法：`scripts/…`/`packages/…`/`docs/…` 全根相对）、`mind\`、`mind-private\`。
+  // 2026-09-18 加：此前只有 mind/mind-private 两个基准 ⇒ 10 个 Skill 的根相对 related **全部误判为死链**
+  // （实测 7 条，目标逐个 Test-Path 均为真存在）。目录也算命中（`related` 可写目录前缀，如 `mind-private/`）。
+  const ROOT = join(MIND, '..');
+  for (const base of [ROOT, MIND, PRIV]) {
+    for (const c of [join(base, t), join(base, t + '.md')]) if (existsSync(c)) return true;
+  }
+  // basename 兜底：**只对"裸 basename"**（不含路径分隔符）生效。
+  // 2026-09-18 订正（同批实证）：原实现对全路径也兜底 ⇒ `node_modules/@deepseek-ai/dsh/config/agent-presets/
+  // cordis/skills/cordis-plugin-development/SKILL.md`（上游改布局后**已不存在**）被 `mind-private` 里另一个
+  // 同名 `SKILL.md` 顶包 ⇒ 真死链报绿。写全路径就必须自身命中。
+  if (!/[/\\]/.test(t)) {
+    const base = basename(t);
     for (const root of [MIND, PRIV]) {
       const files = walk(root, []);
       if (files.some((f) => basename(f.rel).replace(/\.md$/i, '') === base)) return true;
@@ -215,23 +251,45 @@ function relExists(target) {
   }
   return false;
 }
+
+// ── 自检第二段：`relExists` 的路径口径（用**仓内真实路径**断言，跑完即退）──────
+if (process.argv.includes('--selftest')) {
+  selftestCases.push(
+    ['R1 仓库根相对文件 scripts/mind-prime.mjs', relExists('scripts/mind-prime.mjs'), true],
+    ['R2 仓库根相对目录 mind-private/', relExists('mind-private/'), true],
+    ['R3 反例·全路径不许靠别处同名顶包（mind/L1/SKILL.md 不存在）', relExists('mind/L1/SKILL.md'), false],
+    ['R4 裸 basename 兜底仍生效（Memory → mind/L1/Memory.md）', relExists('Memory'), true],
+    ['R5 反例·真不存在 → false', relExists('no-such-file-zzz.md'), false],
+  );
+  let bad = 0;
+  for (const [n, got, want] of selftestCases) {
+    const ok = got === want;
+    if (!ok) bad++;
+    console.log(`  ${ok ? '✅' : '❌'} ${n} → ${JSON.stringify(got)}${ok ? '' : `（期望 ${JSON.stringify(want)}）`}`);
+  }
+  console.log(`[mind-validate --selftest] ${selftestCases.length - bad}/${selftestCases.length} 通过`);
+  process.exit(bad ? 1 : 0);
+}
 let relatedSeen = 0;
+let relatedFiles = 0;
 for (const f of walk(MIND, [], 'mind').concat(walk(PRIV, [], 'priv', ))) {
-  const kv = readFm(readFileSync(f.full, 'utf8'));
-  // related 支持两种写法：逗号分隔字符串 或 YAML 数组 [a, b]（剥外层方括号再拆）
-  const relRaw = (kv && kv.related) || '';
+  // related 支持三种写法：顶层键、`metadata:` 缩进块（L2 Skill 现行）、逗号分隔或 YAML 数组 [a, b]
+  const relRaw = readFmRelated(readFileSync(f.full, 'utf8'));
   const rel = String(relRaw).trim().replace(/^\[|\]$/g, '');
+  let hit = 0;
   for (const t of rel.split(',').map((s) => s.trim()).filter(Boolean)) {
-    relatedSeen++;
+    relatedSeen++; hit++;
     if (!relExists(t)) issues.push({ sev: 'critical', file: f.rel, msg: `related 死链: ${t}` });
   }
+  if (hit) relatedFiles++;
 }
 // 2026-09-11（第四轮盲评 · C2）：本检查此前是「critical 级 + **零输入** + 100% 恒真」——
-// 全仓 109 个 .md 里 `related:` 出现 **0 次**，而 README/Skill 里却宣传它"会拦死链"。
-// 处理：保留检查（将来有人用 related 时仍能抓死链），但把"当前零输入"变成**可见的 info**，
-// 而不升温成 critical/warn —— 后者会造一盏恒亮灯（A′/C2 都批评过恒亮灯）。
+// 当时读的是 `readFm`（只认顶格键），全仓顶格 `related:` 出现 0 次，而 README/Skill 里宣传它"会拦死链"。
+// ⚠️ 2026-09-18 订正：那条 info 的**前提本身是错的尺子**——`related:` 实况出现 11 次（10 个 Skill 写在
+//    `metadata:` 缩进块内 + `mind/L1/Power.md` 正文一例）。现改为按 `readFmRelated` 取，缩进块**真进检查**；
+//    零输入时仍只报 info（不造恒亮灯），但文案不再声称"全仓 0 次"。
 if (relatedSeen === 0) {
-  issues.push({ sev: 'info', file: 'mind/**（全仓 frontmatter）', msg: 'related 死链检查当前**零输入**：没有任何文件带 `related` 字段 → 该 critical 级检查实际从未执行过。要用它就补 related；不用它，请从 README/Skill 的宣传里去掉这半句。' });
+  issues.push({ sev: 'info', file: 'mind/**（全仓 frontmatter）', msg: 'related 死链检查当前**零输入**：没有任何文件的前言块带 `related`（顶层或 `metadata:` 缩进块）→ 该 critical 级检查实际未执行过。要用它就补 related；不用它，请从 README/Skill 的宣传里去掉这半句。' });
 }
 
 // ④ _index.md 引用的文件必须真实存在（同目录）——记忆层重构后 _index 分布：L3/common/<主题>/、L3/projects/<项目>/知识/<主题>/、L3/history/

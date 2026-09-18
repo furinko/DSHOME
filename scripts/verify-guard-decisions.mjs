@@ -178,6 +178,15 @@ try {
   }, null, 2), 'utf8');
   const readAp = () => JSON.parse(readFileSync(apFile, 'utf8')).items;
 
+  // ── 裁决台账（2026-09-18 P0-②「审批留痕物证」）─────────────────────────────
+  // 为什么单测它：approvals.json 只证明"有过一次放行"，**对不上是哪次工具调用**（审计判"无法验证"）。
+  // 台账必须对每一次裁决都留下 `拦/放 + 凭哪条额度` 的物证，且要有上界（可查 ≠ 全存）。
+  const decFile = mod.guardDecisionsFile();
+  const readDecisions = () => {
+    try { return readFileSync(decFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); }
+    catch { return []; } // 文件不存在 = 还没裁决过
+  };
+
   const guards3 = []; const postHooks = [];
   const ctx3 = {
     logger: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
@@ -195,6 +204,11 @@ try {
   const r1 = guardFn2(exec3);
   approveOk = approveOk && !r1 && readAp().length === 1;
   approveLog.push(`① 命中放行 → 放行=${!r1} 且记录仍在=${readAp().length === 1}（命中≠消费）`);
+  // ⑦ 台账①：放行必须留"凭哪条额度"的物证（decision=allow-by-approval + approvalIds）
+  const d7 = readDecisions().at(-1);
+  approveOk = approveOk && d7?.decision === 'allow-by-approval' &&
+    (d7.approvalIds || []).includes('ap-t1') && /Memory\.md$/.test(d7.path || '');
+  approveLog.push(`⑦ 台账·放：decision=${d7?.decision} approvalIds=${JSON.stringify(d7?.approvalIds || [])} path=${d7?.path}（放行对得上调用）`);
   await postFn(exec3, { isError: true }, nextOk);
   approveOk = approveOk && readAp().length === 1;
   approveLog.push(`② post-execute 失败（isError:true）→ 记录仍在=${readAp().length === 1}（反证：不许白烧额度）`);
@@ -218,6 +232,24 @@ try {
   await postFn({ name: 'edit', arguments: {} }, { isError: false }, nextOk);
   approveOk = approveOk && readAp().length === 1;
   approveLog.push(`⑥ 反例·缺 file_path → 不消费且不抛=${readAp().length === 1}`);
+  // ⑧ 台账·拦：高危区且无额度 → decision=deny 且带 reason（"想改什么、为什么拦"可查）
+  writeAp();
+  const soulExec = { name: 'edit', arguments: { file_path: 'mind/L0/SOUL.md', new_string: 'x' } };
+  const rSoul = guardFn2(soulExec);
+  const d8 = readDecisions().at(-1);
+  approveOk = approveOk && !!rSoul && d8?.decision === 'deny' &&
+    /SOUL\.md$/.test(d8.path || '') && typeof d8.reason === 'string' && d8.reason.length > 0;
+  approveLog.push(`⑧ 台账·拦：写 SOUL.md → 拦=${!!rSoul} decision=${d8?.decision} 带 reason=${typeof d8?.reason === 'string'}`);
+  // ⑨ 台账上界：超 512KB → 保留后半且**不丢最新一条**（台账是可查，不是全存）
+  const big = Array.from({ length: 9000 }, (_, i) =>
+    JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', tool: 'edit', path: 'x.md', op: 'edit', decision: 'allow', i })).join('\n') + '\n';
+  writeFileSync(decFile, big, 'utf8');
+  guardFn2({ name: 'edit', arguments: { file_path: 'mind/L1/Memory.md', new_string: 'y' } });
+  const afterTxt = readFileSync(decFile, 'utf8');
+  const afterLines = afterTxt.split('\n').filter(Boolean);
+  const lastRec = JSON.parse(afterLines.at(-1));
+  approveOk = approveOk && afterTxt.length < big.length && afterLines.length < 9000 && /Memory\.md$/.test(lastRec.path || '');
+  approveLog.push(`⑨ 台账上界：${big.length}B → ${afterTxt.length}B / ${afterLines.length} 行，最后一条=${lastRec.path}（裁剪保留后半、最新不丢）`);
 } catch (e) {
   approveOk = false;
   approveLog.push(`抛错：${(e && e.message) || e}`);

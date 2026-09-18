@@ -15,6 +15,7 @@
 //   E 追加语义：多次 run → 台账累加、每行合法 JSON（不覆盖历史）
 //   F 反例：非自治会话的 turn/end → **不记账**（不污染）
 //   G 超时：占闸超 BUSY_MAX_MS → status=timeout（"跑了但没结果"也算非成功）
+//   H 上界：台账超 512KB → 保留后半，**最新一条不丢**（可查 ≠ 全存；无界增长会撑爆磁盘）
 //
 // 隔离：`DSH_HOME` 指向临时目录（不碰真仓库任何文件），跑完删除。
 // 用法：node scripts/mind-cron-runs-itest.mjs
@@ -151,6 +152,31 @@ const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
   check('D1 反例·agents 不可用 → 台账 status=error / source=create（不再只打一行日志）',
     d.length === 1 && d[0].status === 'error' && d[0].source === 'create', JSON.stringify(d[0]));
   check('D2 → lastResult 标 error（而非"跑过了"）', taskOf(home, 'itest-ok')?.lastResult?.status === 'error', JSON.stringify(taskOf(home, 'itest-ok')?.lastResult));
+  cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── H 上界：台账超 512KB → 保留后半 + 最新一条仍在 ────────────────────────────
+{
+  const home = makeHome();
+  process.env.DSH_HOME = home;
+  // 先灌 9000 条旧记录（≈900KB，远超 512KB 上界）——模拟"任务被配成每分钟型"
+  const old = Array.from({ length: 9000 }, (_, i) =>
+    JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', taskId: `old-${i}`, status: 'ok', source: 'schedule' })).join('\n') + '\n';
+  writeFileSync(runsFile(home), old, 'utf8');
+  const { hostCtx, st, endSession } = makeHost(true);
+  const cron = new DshCron(hostCtx);
+  cron.start();
+  cron.trigger(cron.tasks.find((t) => t.id === 'itest-ok'), 'itest');
+  await sleep(400);
+  endSession(st.created[0], { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } });
+  await sleep(100);
+  const sizeNow = readFileSync(runsFile(home), 'utf8').length;
+  const linesNow = readRuns(home);
+  check('H1 超上界 → 已裁剪（体量与行数都下降）', sizeNow < old.length && linesNow.length < 9000,
+    `before=${old.length}B/9000 行 after=${sizeNow}B/${linesNow.length} 行`);
+  check('H2 裁剪保留后半 → 最新一条（本次 run）仍在，未把新证据裁掉',
+    linesNow.at(-1)?.taskId === 'itest-ok' && linesNow.at(-1)?.status === 'ok', JSON.stringify(linesNow.at(-1)));
   cron.clear();
   rmSync(home, { recursive: true, force: true });
 }
