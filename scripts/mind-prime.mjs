@@ -127,9 +127,19 @@ function search(limit2) {
   // 项目层：当前项目专属记忆全部列入（项目专属即相关；不靠 query——中英不匹配会漏），minScore 0 保证在场。
   const projHits = projectKey && proj.length ? searchL3(projectKey, proj, limit2, { minScore: 0 }) : [];
   // 合并：项目优先保留（当前项目上下文），通用知识补充；去重取前 limit。
+  //   2026-09-18 修（实测「通用记忆被项目层饿死」）：项目层用 `minScore: 0` ⇒ **恒返回 limit 条**，
+  //   而原来的 `[...projHits, ...generalHits]` 逐个 break ⇒ 只要项目知识 ≥ limit（本机实测 **32 条** vs
+  //   limit 5），**通用层一个席位都拿不到** ⇒ `common/` 的通用结晶与参考对 DSHOME 会话等于**召不回**
+  //   （实测：`searchL3('沉默之恶', common)` 契约集 score **23 top1**，但 `mind-prime` 的 L3 段通用 0 条）。
+  //   ⇒ 给通用层**保留最少席位数** GENERAL_MIN，其余仍按"项目优先"补满；通用层命中不足时行为与修前一致。
+  const GENERAL_MIN = 2;
   const picked = [];
   const seen = new Set();
-  for (const m of [...projHits, ...generalHits]) {
+  // 有意留 ≥1 席给项目层（当项目层有命中时）——避免 limit 被调小后通用层反把项目上下文挤光。
+  const generalKeep = Math.min(GENERAL_MIN, generalHits.length, Math.max(0, limit2 - (projHits.length ? 1 : 0)));
+  const projKeep = Math.max(0, limit2 - generalKeep);
+  const merged = [...projHits.slice(0, projKeep), ...generalHits.slice(0, generalKeep), ...projHits.slice(projKeep)];
+  for (const m of merged) {
     if (seen.has(m.file)) continue;
     seen.add(m.file); picked.push(m);
     if (picked.length >= limit2) break;
