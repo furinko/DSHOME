@@ -79,6 +79,46 @@ check('A7 数据面·真实 shell-app 目录能拼出可用命令', (() => {
   return existsSync(shellDir) && r.path === process.execPath && String(r.args[0]).includes('shell-app');
 })());
 
+// ── B. 自启起来的那个壳必须**自己**能把后端拉起来（2026-09-18 实测事故）────────
+// 事故：自启登记没有 `DSHOME_BACKEND_CMD`（那只由 开发启动.cmd 设置）⇒ 壳判 `no-spec`、
+// 一个后端都不拉 ⇒ 开机后"后端连不上，得关托盘重开"。判据＝dev 兜底能给出与启动器等价的规格，
+// 且**必须带 cwd**（后端 process.cwd() 决定 workspaceRoot / 记忆的项目 key）。
+const bs = require(join(shellDir, 'backend-spec.cjs'));
+const REPO = 'E:\\DSHOME';
+const DEVNODE = 'C:\\Users\\x\\AppData\\Local\\dshome-dev\\node\\node.exe';
+const bsMk = (o) => bs.devBackendSpec({
+  repoDir: REPO, port: 3099, localAppData: 'C:\\Users\\x\\AppData\\Local', fileExists: () => true, ...o,
+});
+
+check('B1 dev 兜底＝与 开发启动.cmd 等价（dev node + CLI + profile/port + cwd=仓库根）', (() => {
+  const r = bsMk({});
+  return r && r.kind === 'cmd' && r.cmd.includes(DEVNODE) && r.cmd.includes('@deepseek-ai')
+    && r.cmd.includes('--profile dshome') && r.cmd.includes('--port 3099') && r.cwd === REPO;
+})());
+
+check('B2 反例·认不出 dsh CLI ⇒ 返回 null（不许硬编一条起不来的命令）', (() => {
+  const r = bsMk({ fileExists: (p) => p === DEVNODE }); // CLI 不存在
+  return r === null;
+})());
+
+check('B3 dev 运行时不在 ⇒ 退回 PATH 上的 node（不硬绑一个不存在的解释器）', (() => {
+  const r = bsMk({ fileExists: (p) => !p.endsWith('node.exe') });
+  return r && r.cmd.startsWith('"node"');
+})());
+
+check('B4 端口可注入（不写死 3099）', (() => {
+  const r = bsMk({ port: 3100 });
+  return r.cmd.includes('--port 3100');
+})());
+
+check('B5 真实仓库数据面：本机 dev 兜底真能拼出可用命令', (() => {
+  const r = bs.devBackendSpec({
+    repoDir: join(shellDir, '..', '..', '..'), port: 3099,
+    localAppData: process.env.LOCALAPPDATA || '', fileExists: (p) => existsSync(p),
+  });
+  return !!r && existsSync(join(shellDir, '..', '..', '..', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'));
+})());
+
 // ── W. 接线面（防假绿：脚本全过但 main.cjs 没接上）────────────────────────────
 const mainSrc = readFileSync(join(shellDir, 'main.cjs'), 'utf8');
 check('W1 main.cjs 引用了 autostart.cjs', /require\(['"]\.\/autostart\.cjs['"]\)/.test(mainSrc));
@@ -92,10 +132,18 @@ check('W6 反例·旧的裸写法已清除（残留即修复没生效）',
   !/setLoginItemSettings\(\{ openAtLogin: next \}\);/.test(mainSrc));
 check('W7 启动自愈已挂（老坏值不该等到用户手点才消）',
   mainSrc.includes('migrateLegacyLoginItem()') && mainSrc.includes("autoStart: 'legacy-migrated'"));
+// B 段接线（2026-09-18 no-spec 事故的修点）
+check('W9 main.cjs 引用了 backend-spec.cjs', /require\(['"]\.\/backend-spec\.cjs['"]\)/.test(mainSrc));
+check('W10 resolveBackendSpec 走了 dev 兜底（自启起来的壳也能拉后端）',
+  mainSrc.includes('backendSpec.devBackendSpec({'));
+check('W11 两处 spawn 都显式带 cwd（后端 process.cwd() = 记忆项目 key）',
+  (mainSrc.match(/cwd: spec\.cwd/g) || []).length === 2,
+  `cwd: spec.cwd 出现 ${(mainSrc.match(/cwd: spec\.cwd/g) || []).length} 次（期望 2）`);
+check('W12 安装版 spec 也带 cwd=instDir', mainSrc.includes('cwd: instDir'));
 check('W8 自愈里的重登也带 path/args',
   mainSrc.includes('setLoginItemSettings({ openAtLogin: true, path: opts.path, args: opts.args })'));
 
 console.log(failed
   ? `\nverify-shell-autostart: ${failed} 项失败`
-  : '\nverify-shell-autostart: 全部通过（判据 7 项 + 接线 8 项；登记口径 = dev/兜底 electron.exe+appDir，安装版 DSHOME.exe）');
+  : '\nverify-shell-autostart: 全部通过（A 登记口径 7 项 + B dev 后端兜底 5 项 + W 接线 12 项 = 24 项；登记＝dev/兜底 electron.exe+appDir、安装版 DSHOME.exe；自启起来的壳自带后端规格与 cwd）');
 process.exit(failed ? 1 : 0);

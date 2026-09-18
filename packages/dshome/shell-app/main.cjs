@@ -17,6 +17,7 @@ const updater = require('./updater.cjs');
 const safeOverlay = require('./safe-overlay.cjs');
 const readiness = require('./readiness.cjs');
 const autostart = require('./autostart.cjs');
+const backendSpec = require('./backend-spec.cjs');
 
 // ---- 配置 ----
 const DEFAULT_PORT = 3099;
@@ -89,11 +90,25 @@ function resolveBackendSpec() {
         const nodeExe = path.join(instDir, 'runtime', 'node.exe');
         const cliBin = path.join(profDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js');
         if (fs.existsSync(nodeExe) && fs.existsSync(cliBin)) {
-          return { kind: 'install', instDir, profDir, nodeExe, cliBin, env: { ...process.env, DSH_HOME: instDir } };
+          // cwd=instDir：安装器快捷方式本来就把工作目录设成 {app}，显式写死可避免"从别处拉起"时
+          // 后端 process.cwd() 漂移（它决定 workspaceRoot / 记忆的项目 key）。
+          return { kind: 'install', instDir, profDir, nodeExe, cliBin, cwd: instDir, env: { ...process.env, DSH_HOME: instDir } };
         }
       }
     } catch { /* 忽略坏 env 文件 */ }
   }
+  // 🔴 dev 兜底（2026-09-18 实测事故）：`DSHOME_BACKEND_CMD` 只由 `开发启动.cmd` 设置；**开机自启**
+  //    登记的是 `electron.exe "<shell-app>"`（Run 项无环境变量）⇒ 原逻辑走到这里就返回 null
+  //    ⇒ 壳只当 UI 客户端、**一个后端都不拉**（日志实证 `{"backend":"no-spec"}`，托盘的
+  //    「重启后端」同样无效）⇒ 开机后停在"后端未连接"，必须退出托盘、用启动器重开。
+  //    口径与 `开发启动.cmd` 等价，详见 backend-spec.cjs 顶部；cwd 必须是仓库根（记忆项目 key）。
+  const dev = backendSpec.devBackendSpec({
+    repoDir: path.resolve(__dirname, '..', '..', '..'),
+    port: backendPort(),
+    localAppData: process.env.LOCALAPPDATA || '',
+    fileExists: (p) => fs.existsSync(p),
+  });
+  if (dev) return { ...dev, env: { ...process.env } };
   return null; // 无法解析 → 壳只做 UI 客户端（后端由外部启动）
 }
 
@@ -250,14 +265,16 @@ function startBackend() {
       // 旧写法拼在末尾 → dsh 判 `unknown option '--patch'` → 后端根本起不来。
       const cmd = safeMode ? safeOverlay.withPatchFlag(spec.cmd, SAFE_OVERLAY_FILE) : spec.cmd;
       if (safeMode) logLine({ backend: 'spawn-cmd', patched: true, cmd });
-      backend = spawn(cmd, { shell: true, windowsHide: true, env: spec.env, stdio: ['ignore', 'pipe', 'pipe'] });
+      // 🔴 cwd 必须显式给（登录自启时进程 cwd 是系统目录，而后端 process.cwd() 决定
+      //    workspaceRoot 与记忆的项目 key）——dev 兜底把 cwd 设成仓库根，见 backend-spec.cjs。
+      backend = spawn(cmd, { shell: true, windowsHide: true, env: spec.env, cwd: spec.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     } else {
       // 🔴 --patch 必须排在 app 参数之前（0.1.5 实测：`--no-open --port x --patch y` = unknown option）
       const args = [spec.cliBin, '--profile', 'dshome'];
       if (safeMode) args.push('--patch', SAFE_OVERLAY_FILE);
       args.push('--no-open', '--port', String(backendPort()));
       if (safeMode) logLine({ backend: 'spawn-install', patched: true, args });
-      backend = spawn(spec.nodeExe, args, { windowsHide: true, env: spec.env, stdio: ['ignore', 'pipe', 'pipe'] });
+      backend = spawn(spec.nodeExe, args, { windowsHide: true, env: spec.env, cwd: spec.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     }
   } catch (e) {
     logLine({ backend: 'spawn-error', error: String(e?.message ?? e) });
