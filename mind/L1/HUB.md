@@ -68,3 +68,7 @@ L2 Skill/Exp 关键词触发；L3 记忆区（common/projects/history）按需 g
 | Ritual.md | 行为规程 | 收工闭环 / 自主维护 / 元进化 / 行为纪律细则 / 自省判据（AGENTS 细则的家） |
 | Invariants.md | 闸门 | 确定性内核：不可绕过的硬约束/门禁清单（🔴/🟡 不变式）——强制层加载 |
 | Concepts.md | 契约 | 概念注册表：todo/progress/suggestion/memory/skill 权威源 + 意图→概念→权威源路由表 |
+
+---
+
+_版本：1.8 | 2026-09-15 | 与文件头版本行同步（2026-09-17 补：本文件此前**缺文件尾版本行**，`verify-l1-versions` 报 warn 后补齐）_
