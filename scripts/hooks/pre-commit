@@ -116,3 +116,10 @@ node scripts/verify-shell-autostart.mjs
 #    根因就是"不在门禁面内"。本次把它接为第 5 元并挂链；`--selftest` 13 项（含 3 条 README 反例：
 #    打坏版本 / 删行 / sync 复一致）可执行。
 node scripts/skill-version.mjs --check
+# ⑯ Web 产物补丁在位（2026-09-18 加）：`scripts/patch-web-assets.mjs` 的两块补丁只改
+#    **node_modules / payload 产物**（不在 git 里）——① `vendor-*.js` 的 `singleTilde→false`
+#    ② 权限图标表补 `mind-guard` 项。`pnpm install` / 升级上游会**抹掉**它们，而首版收工时
+#    它**不在任何链上** ⇒ 补丁可**静默消失**且无人喊（同「门禁不在链上 = 纸面门禁」一课）。
+#    可执行反例：`pnpm install` 后直接跑 ⇒ 报未打 + exit 1；修复＝`node scripts/patch-web-assets.mjs`
+#    （`stage-payload` 也会自动打）。薄包装，真源判据在 patcher 里。
+node scripts/verify-web-patches.mjs
