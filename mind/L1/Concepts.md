@@ -1,6 +1,6 @@
 # Concepts.md — 心智概念注册表（L1 契约）
 
-> 版本：1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | B3 首启自举闭环（上工无档即建档）+ V4 跨设备立场（主线档各设备独立，不做合并）
+> 版本：1.6 | 2026-09-18 | 规则层订正批次（旧批残项 · 批次② ⑩）：**`suggestion` 消费时机订正**——原文写「**命中即删**」，而实现在 2026-09-12 已改为「**写成功之后才消费**」（命中只记 in-flight，`tools/post-execute` 报成功才删；见 `packages\dshome\lib\host\mind-guard.js:181-224`）；本批同改 `L29` 与路由表「建议」行 | 1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | B3 首启自举闭环（上工无档即建档）+ V4 跨设备立场（主线档各设备独立，不做合并）
 > 定位：这是"某一概念的**权威源/入口在哪**"的**挂号处**。系统要查询/流转一个概念，只在本表查一次；
 > 加载：按需（查询层，L1 参考文档）——概念权威源/路由表，按需查
 > 其他文档（AGENTS.md、Skill、记忆）**引用本表**，**不得各自重复定义**同一概念的权威源。
@@ -26,7 +26,7 @@
 > （`dshome-mind-guard` 插件）——它**不是**抽象的"建议流"，而是**真实在跑的裁决闭环**：
 > - **产生**：改"自我类高危文件"（L0 纪律 / L1 规则）时护栏真拦 → 写一条 `approvals.json` 待裁决（kind=action，status=pending，含 path/op/reason 摘要）；
 > - **裁决**：用户在「心智 → 动作放行」面板 ✓ 放行（→approved）或 ✗ 拒绝（不入 TRASH——被拦的本就是未落盘改动，拒绝即不落盘）；
-> - **消费**：放行记录**一次性**——命中即删，下次改同文件需重新裁决（不永久放行）；
+> - **消费**：放行记录**一次性**，且**写成功之后才消费**——命中只是拿到额度（记入 in-flight），`tools/post-execute` 报成功才删 ⇒ **写失败不消费**、额度不丢（2026-09-12 修，原文「命中即删」已过时）；下次改同文件需重新裁决（不永久放行）；
 > - **产出类建议**（评估/审计/巡检发现）不走此机制：直接汇报用户，用户口头裁决——不入 approvals。
 > 机器可读薄字段即 approvals.json 条目字段（id/kind/path/op/reason/status/requestedAt/decidedAt/decidedBy）；不再使用 candidate/accepted/rejected/deferred 虚字段（原理想状态机无实现，废弃）。
 
@@ -36,7 +36,7 @@
 |---|---|---|
 | 下一步 / 该做什么 / 有什么待办 | todo | 体系主线档「下一步」→ 经 `/api/mind/todos` 读写 |
 | 到哪一步 / 进度 / 项目状态 | progress | 体系主线档「进度状态」 |
-| 建议 / 可改 / 改进点 / 需放行动作 | suggestion | 动作放行面板（approvals.json）→ 用户 ✓ 放行 / ✗ 拒绝；裁决后消费即删（一次性）。**评估 / 审计 / 巡检发现 → 直接汇报用户、用户口头裁决——不入 approvals（见上方"产出类建议"）** |
+| 建议 / 可改 / 改进点 / 需放行动作 | suggestion | 动作放行面板（approvals.json）→ 用户 ✓ 放行 / ✗ 拒绝；**写成功之后才消费**（命中只是拿到额度；一次性、不永久放行）。**评估 / 审计 / 巡检发现 → 直接汇报用户、用户口头裁决——不入 approvals（见上方"产出类建议"）** |
 | 教训 / 偏好 / 记忆 / 上次怎么做 | memory | `/api/mind/search?q=` 模糊召回 → `mind-private\L3\`（common+projects）grep 深读；写前 `/api/mind/dup-check` |
 | 怎么做 / 技能 / 能力 / 流程 / 积木 | skill | `mind\L2\Skill\` + `_index.md`（关键词触发加载） |
 
@@ -62,4 +62,5 @@
 - **改契约流程**：增删概念 / 调整权威源属"自我类文件"改动 → 走 `AGENTS.md` §四 硬流程：**用户放行 → 快照 → `mind-validate.mjs` 通过 → 失败回滚**。
 
 ---
-_版本：1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | v1.2（suggestion 对齐 approvals）→ B3 首启自举 + V4 跨设备立场_
+
+_版本：1.6 | 2026-09-18 | 规则层订正批次（旧批残项 · 批次② ⑩）：**`suggestion` 消费时机订正**——原文「命中即删」→ **「写成功之后才消费」**（命中只记 in-flight，`post-execute` 成功才删；`mind-guard.js:181-224`）；同批改 `L29` 与路由表「建议」行 | 1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | v1.2（suggestion 对齐 approvals）→ B3 首启自举 + V4 跨设备立场_
