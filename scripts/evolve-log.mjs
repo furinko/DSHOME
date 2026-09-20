@@ -761,7 +761,11 @@ if (cmd === 'snapshot') {
     if (!hits.length) { console.error(`[evolve-log] ❌ TRASH 索引里找不到「${key}」——不做模糊恢复，先 --list`); process.exit(1); }
     if (hits.length > 1) { console.error(`[evolve-log] ❌ 命中 ${hits.length} 条，名字有歧义，请给完整原路径：\n  ${hits.map((h) => h.orig).join('\n  ')}`); process.exit(1); }
     const r = hits[0];
-    const src = join(TRASH, `${r.at}__${basename(r.orig)}`);
+    // ⚠️ 2026-09-20：命名加 `pathTag` 后，恢复侧按同一规则重建；**旧命名（`<ts>__<basename>`,
+    //   2026-09-20 之前入站的条目）保留兜底** —— 否则历史条目一条都恢复不了（同 `snapshot` 的"旧口径保留"处置）。
+    const srcNew = join(TRASH, `${r.at}__${pathTag(resolve(repoRoot, r.orig))}__${basename(r.orig)}`);
+    const srcOld = join(TRASH, `${r.at}__${basename(r.orig)}`);
+    const src = existsSync(srcNew) ? srcNew : srcOld;
     const dst = join(repoRoot, r.orig);
     if (!existsSync(src)) { console.error(`[evolve-log] ❌ 回收站里没有实体：${src}（索引与磁盘不一致）`); process.exit(1); }
     if (existsSync(dst)) { console.error(`[evolve-log] ❌ 原路径已被占用，拒绝覆盖：${dst}`); process.exit(1); }
@@ -787,13 +791,17 @@ if (cmd === 'snapshot') {
       const abs = resolve(repoRoot, p);
       if (!existsSync(abs)) { console.error(`[evolve-log] ❌ 不存在，拒绝静默跳过：${p}`); process.exitCode = 1; continue; }
       const at = ts();
-      const dst = join(TRASH, `${at}__${basename(abs)}`);
+      // ⚠️ 2026-09-20 修（同名互撞）：原来命名只有 `<ts>__<basename>` ⇒ **不同目录的同名文件在同一秒互撞**，
+      //   守卫会 `拒绝覆盖` 并**阻塞整批**（2026-09-20 退役两份同名基线时实测：`40/40` 成功、第二份被判"已存在同名"）。
+      //   同病 `snapshot` / `batch` 已在 2026-09-14 用 `pathTag`（路径短哈希）修过 —— **trash 漏了同一修**。
+      //   现与它们同口径：`<ts>__<pathTag>__<basename>`。`--restore` 侧同步 + 保留旧命名兜底。
+      const dst = join(TRASH, `${at}__${pathTag(abs)}__${basename(abs)}`);
       if (existsSync(dst)) { console.error(`[evolve-log] ❌ 回收站已存在同名，拒绝覆盖：${dst}`); process.exitCode = 1; continue; }
       const size = dirSize(abs);
       movePath(abs, dst);
       appendTrashIndex(at, relOf(abs), humanSize(size), reason);
       appendFileSync(LOG, `| ${at.slice(0, 10)} | ↳退役:${basename(abs)} | ${reason} | 移入 TRASH（不删只移） | — |\n`);
-      console.log(`  🗑 ${relOf(abs)}  →  TRASH/${basename(abs)}  (${humanSize(size)})`);
+      console.log(`  🗑 ${relOf(abs)}  →  TRASH/${basename(dst)}  (${humanSize(size)})`);
       ok++;
     }
     console.log(`[evolve-log] 已移入 TRASH ${ok}/${paths.length} 项 · 理由：${reason}`);

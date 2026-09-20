@@ -77,6 +77,11 @@ if (process.argv.includes('--selftest')) {
     ['S4 反例·正文里的 related 不算（只在 fm 块内）', readFmRelated('---\nname: x\n---\nrelated: [a]\n'), ''],
     ['S5 CRLF frontmatter 也能读到', readFmRelated('---\r\nname: x\r\nmetadata:\r\n  related: [a]\r\n---\r\n'), '[a]'],
     ['S6 反例·注释行 `# related:` 不误抓', readFmRelated('---\nname: x\n# related: [a]\n---\n'), ''],
+    // 2026-09-20：L3 校验面的过滤器（`isL3Entry`，函数声明已提升，故此处可调用）
+    ['L3-1 日期名前缀条目 → 进校验面', String(isL3Entry('lessons/2026-09-17_x.md')), 'true'],
+    ['L3-2 反例·修复点：非日期名条目（旧过滤器恒 false ＝ 永不校验的 C 档盲区）', String(isL3Entry('lessons/toolchain.md')), 'true'],
+    ['L3-3 反例·README/_index 不进校验面', String(isL3Entry('common/_index.md')), 'false'],
+    ['L3-4 反例·非 .md 不进校验面', String(isL3Entry('common/foo.json')), 'false'],
   );
 }
 
@@ -149,9 +154,19 @@ function memoryRoots() {
   }
   return roots;
 }
+// ⚠️ 2026-09-20 放开（原过滤器带 `/^\d{4}-\d{2}-\d{2}_/`，**只校验日期前缀文件**）——
+//   那道条件是**按文件名划的缝**：实测 18 份"非日期名"的结晶/参考文档**完全不在校验面上**，
+//   于是"缺 frontmatter ⇒ 检索把它们静默当 C 档（排序垫底、连带 source/scope/importance 全读不到）"
+//   可以长期存在而门禁**永远 0/0**（同族：门禁覆盖不到的地方＝没有门禁）。
+//   现改为：L3 面内**所有非 README/_index 的 .md** 都校验（存量已清 ⇒ 上线即常绿，不是恒亮灯）。
+//   判据两条照旧：结构体例（kind/importance/scope/topic/tags）+ 溯源契约（source 或 verified:false）。
+function isL3Entry(rel) {
+  const b = basename(rel);
+  return b.endsWith('.md') && !/README|_index/.test(b);
+}
 const memories = [];
 for (const r of memoryRoots()) {
-  memories.push(...walk(r.dir, [], r.rel).filter((f) => !/README|_index/.test(basename(f.rel)) && /^\d{4}-\d{2}-\d{2}_/.test(basename(f.rel))));
+  memories.push(...walk(r.dir, [], r.rel).filter((f) => isL3Entry(f.rel)));
 }
 for (const m of memories) {
   const kv = readFm(readFileSync(m.full, 'utf8'));
