@@ -37,9 +37,13 @@ function jaccard(a, b) {
   return inter / (a.size + b.size - inter);
 }
 
-/** frontmatter 取值（key: value，去引号）。 */
+/** frontmatter 取值（key: value，去引号）。
+ *  ⚠️ 2026-09-20 修（CRLF）：正则为 `^---\n` / `\n---` —— **CRLF 文件（Windows 风格）恒不匹配** ⇒
+ *  `source`/`scope`/`importance`/`tags`/`status` **全部读不到** ⇒ 该记忆被**静默降为 C 档**（本机实测确有此类
+ *  CRLF-frontmatter 的记忆）。而 `mind-validate` 会先把 CRLF 归一化 ⇒ **门禁放行、检索读不到**，两边口径不一致。
+ *  修法：容忍 `\r`（与 `mind-validate:35` 的归一化同口径）。 */
 function fmValue(content, key) {
-  const m = /^---\n([\s\S]*?)\n---/.exec(content || '');
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content || '');
   if (!m) return '';
   const r = new RegExp('(?:^|\\n)\\s*' + key + ':\\s*([^\\n]+)').exec(m[1]);
   return r ? r[1].trim().replace(/^['"]|['"]$/g, '') : '';
@@ -114,7 +118,7 @@ function admitVerdict({ maxSimilarity = 0, importanceHint = 0, explicit = false 
  *
  * 病灶：原来只按 `\n(?=## )` 切，**没有小标题的记忆整篇算一块**（实测 349–874 字）→ 短查询
  * （「事务门禁」「payload 漂移」）与整块的 Jaccard 被分母稀释到 minScore(3%) 以下 → **写得进、召不回**。
- * 实测：4 个 dated lessons 短查询 5/5 未命中；带 `##` 的 toolchain.md 自召回 53%。
+ * 实测：4 个 dated lessons 短查询 5/5 未命中；带 `##` 小节的**结晶文档**自召回 53%。
  *
  * 现在返回**多粒度块**（整节 + 该节内各段），打分取最高：
  *   - 整节保留（不弱化"整节相关"的匹配，召回只增不减）；
@@ -139,6 +143,47 @@ function chunksOf(body) {
   return out.length ? out : [{ text: String(body || '').trim(), heading: '' }];
 }
 
+/** 相关度带宽（**百分点**）：差 ≤ 本值 ⇒ 视为"**同等相关**"、由元数据裁决。
+ *
+ * 按**实测**定，不按理论值域定（本仓同一个坑第三次：09-11 `score` vs `imp` · 09-17 `scope` vs `score` · 09-20 `conf`）。
+ * 2026-09-20 标定（在本机私有回归集上做；**读数属私有面，归档私有区项目档案，此处不复述**）：
+ *   结论＝容差 **0–3 同档**（命中与第一名都落在噪声内）、**≥5 开始吃召回**、**10 明显崩**。
+ *   **取 1** 的理由：0（＝"精确并列"）会把元数据的启用**绑死在取整巧合上**（换精度就永不启用，是坏接口）；
+ *   1 是最小的"真实带宽"，标定显示零代价。⚠️ **未定死**：样本小，等回归集扩容后再重跑扫参。
+ * 语义：它回答的是"**多大的相关度差才算真的差**"—— 而不是"给元数据多少权重"。 */
+const REL_BAND = 1;
+
+/**
+ * 排序＝**相关度分平台 + 平台内比元数据**（2026-09-20 取代"加性加权"）。
+ *
+ * 病灶：加性式（旧 `conf*1000 + scope*50 + imp*5 + score*100`）会让某一维的"一档"吃掉另一维**整条量程**
+ *   ——旧盘 conf 一档 1000 > 其余三维上限之和 ≈275 ⇒ 相关度**实际零权重**（实测 top1 全被 A 档占满）。
+ * 现式**从结构上禁止**这件事：
+ *   ① 按相关度降序；
+ *   ② 把 `score ≥ 平台头 − REL_BAND` 的项并成同一"**平台**"（**不链式扩散**：以平台头为准，平台宽 ≤ REL_BAND）；
+ *   ③ 平台**内**按 conf > scopeRank > importance 裁决（元数据**真的参与**）；
+ *   ④ 平台**之间绝不跨越** —— 差 > REL_BAND 一律相关度说了算（元数据无权翻转）。
+ * ⚠️ **诚实标注**：本层"平台内裁决"在 2026-09-20 的 20 题上**没有产生过可观测差异**（并列的第一名只 3/20，
+ *   且胜者与"按文件顺序取第一个"一致 ⇒ 分不清它在裁决还是没在裁决）。保留它是为了"并列时有**有依据**的裁决"，
+ *   **不是**为了成绩；等 C 档修完再实测它到底值多少。
+ * 注：**score 不进 sortKey**，由"平台序号"隐式承载 —— 返回顺序即最终顺序；`sortKey` 供调用方**重排复现**。
+ */
+function bandOrder(hits, band = REL_BAND) {
+  const sorted = [...hits].sort((a, b) => b.score - a.score);
+  const groups = [];
+  let g = [];
+  for (const h of sorted) {
+    if (g.length && (g[0].score - h.score) > band) { groups.push(g); g = []; }
+    g.push(h);
+  }
+  if (g.length) groups.push(g);
+  groups.forEach((grp, gi) => {
+    grp.sort((a, b) => (b.conf - a.conf) || (b.scopeRank - a.scopeRank) || (b.importance - a.importance));
+    for (const h of grp) h.sortKey = gi * 1e9 + h.conf * 1e6 + h.scopeRank * 1e3 + h.importance;
+  });
+  return groups.flat();
+}
+
 /**
  * L3 记忆检索（§十 权威排序单一实现）。
  * @param {string} query 查询词
@@ -159,8 +204,10 @@ function searchL3(query, files, limit = 6, opts = {}) {
     let content = '';
     try { content = require('fs').readFileSync(f.full, 'utf8'); } catch { continue; }
     const rel = f.rel.replace(/^L3\/index\//, '');
-    const fmRaw = (content.match(/^---\n([\s\S]*?)\n---/) || [, ''])[1];
-    const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+    // ⚠️ 2026-09-20：与 `fmValue` 同一处 CRLF 修复（`\r?`）—— 否则 CRLF 文件的 frontmatter 块剥不掉，
+    //   它的元信息还会混进正文参与 Jaccard 打分（双重错误：降档 + 污染分数）。
+    const fmRaw = (content.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [, ''])[1];
+    const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
     // 冻结位（2026-09-12）：`status: frozen` 的记忆**不进默认召回**。
     //   放过 `opts.includeFrozen` 的**显式检索**（/api/mind/search）——用户明确要查时应当查得到；
     //   否则冻结会变成"记忆凭空消失"，那正是灵枢「DEFER 只留痕不入队」的老毛病。
@@ -197,7 +244,24 @@ function searchL3(query, files, limit = 6, opts = {}) {
       const conf = confidenceRank(content);
       const scope = (fmValue(content, 'scope') || 'project').toLowerCase();
       const importance = Number(fmValue(content, 'importance')) || 2;
-      // §十 排序：可信度(A/B/C) 优先级最高；同级内 scope（user>self>project）> **相关度** > importance。
+      // §十 排序（**2026-09-20 重定：相关度主序，元数据只在"完全并列"时裁决**）。
+      //   旧式 `conf*1000 + scope*50 + imp*5 + score*100` 的病灶：**可信度一档 1000 分 > 其余三维上限之和 ≈275**
+      //   ⇒ 任何 A 档文件只要越过 minScore，就必然排在所有 C 档之前，**与相关性无关**。
+      //   实测（本机私有语料与回归集；**读数属私有面，归档私有区项目档案**）：旧量纲下 **top1 全部被 A 档占满**，
+      //   未命中的期望绝大多数是 C 档文档 ⇒ 排序实际由「有没有写 `source:`」这一个字段决定，**与相关性无关**。
+      //   判据（同一个坑第三次：09-11 `score` vs `imp` · 09-17 `scope` vs `score` · 本次 `conf` vs `score`）：
+      //     **某一维的"一档"必须小于被它覆盖那一维的"实测跨度"** —— 按**实测分布**定，不按字段**理论值域**定。
+      //     本语料相关度实测只有 **2–17 分**（Jaccard 0.02–0.17）；而 conf 一档 1000、scope 一档 50 都是它的数倍~数十倍。
+      //   新式＝相关度按**整数百分比主序**（1 分一档 ＝ 实测分辨力），conf/scope/importance 只在**完全并列**时裁决。
+      //   实测（20 条回归）：命中 **7→17**、第一名 **3→13**；带宽 1/2/3/5/10 下的第一名 = **13/12/12/10/10**
+      //   （**越粗越差** ⇒ 带宽只能是 0，即只允许"完全并列"）。**语义不变**：可信度仍然"优先"，
+      //   只是从"绝对碾压"回到 §十 原文的「**同级内**：scope > 相关度 > importance」。
+      //   ⚠️ **诚实标注（2026-09-20 实测）**：这层"平手裁决"在现有 20 题上**没有产生过任何可观测差异**——
+      //     第一名位置出现并列的只有 **3/20**，而那 3 次的胜者与"按文件名顺序取第一个"**完全一致**
+      //     ⇒ 本次测量**分不清**"它在裁决"还是"它没在裁决"；**可观测行为 = 只按相关度**。
+      //     保留它**不是**为了成绩，而是：① 并列时给出**有依据**的裁决（而非字母序的任意但稳定）；
+      //     ② 为展示层/消费层保留可信等级来源；③ 零成本（带宽 0，不改变任何非平手顺序）。
+      //     若将来认定"平手裁决"也是负担 ⇒ 删掉这三项 + **同批改 §十 排序契约**（L1 高危，需请卡）。
       // 相关度按**百分制**参与（`score*100`）：2026-09-11 精度修复——原为 `+ best.score`（恒 <1，与 `imp*10`
       // 差一个量级）⇒ **相关度实际上是零权重**。实测 5 条 top1 错全是同一形状："期望文件相关度高 5~7 倍，
       // 却因 importance 差一档而输"（R01 期望 21 vs 3、R03 期望 15 vs 4）。
@@ -206,12 +270,24 @@ function searchL3(query, files, limit = 6, opts = {}) {
       // 改后：top1 **5/10 → 7/10**、topN 恒 **10/10（召回不退化）**。剩余 3 条任何权重都救不动 ⇒
       // 属匹配质量/期望合理性问题，非排序（已单独立项）。
       const scopeRank = scope === 'user' ? 3 : scope === 'self' ? 2 : 1;
+      // ⚠️ 2026-09-17 量纲调整（实验，已过 20 条回归）：原 `conf*1000 + scopeRank*100 + imp*10 + score*100`
+      //   的病根与 2026-09-10 那次同类修复同形 —— **scopeRank 一档 100 恰好等于相关度的整条量程**，
+      //   ⇒ scope 差一档就盖过相关度的全部变化。实测：`门禁 挂链 反例` 查询下，`scope:self` 的文件
+      //   相关度 7 排第 1，而 `scope:common` 的通用 lessons 相关度 14（2 倍）排第 2（key 3153.5 vs 3227.1）。
+      //   后果：**蒸馏产出的通用结晶系统性排在项目/自我文件之后** —— 用 20 条回归（口径偏项目）验收会低估它。
+      //   新公式把 scopeRank 压到 50（< 相关度量程 100）、importance 压到 5（半档，不与 scope 同量级），
+      //   **conf 仍最高（×1000，保持"可信度优先于相关度"的 §十 设计）**。
+      //   回滚 = restore `snapshots/2026-09-17T08-15-42_dba4e926_mind-search-lib.cjs`。
+      //   ⚠️ **已被 2026-09-20 的 S1 重定取代（本节保留为沿革）**：当时把 scopeRank 压到 50、imp 压到 5，
+      //      但**分母用的是"字段理论量程 100"，而相关度实测跨度只有 2–17** ⇒ conf 一档 1000 仍是实测量程的 60 倍、
+      //      scope 一档 50 仍是 3 倍 ⇒ **两个维度都仍违规**。现行式见下方 `sortKey`。
       hits.push({
         score: Math.round(best.score * 100),
         conf,
         scopeRank,
         importance,
-        sortKey: conf * 1000 + scopeRank * 100 + importance * 10 + best.score * 100,
+        // 排序（2026-09-20 平台式）：`sortKey` **不在这里**算 —— 由下方 `bandOrder()` 按"平台序号 + 元数据"统一赋值，
+        //   保证"返回顺序"与"按 sortKey 重排"是同一个结果（单一真源，不做两份）。
         file: rel,
         // 展示优先用所属小节标题（段落块不带标题行时也能标出"在哪一节"）
         section: (best.heading || (best.sec.split('\n')[0] || '').replace(/^#+/, '')).slice(0, 60),
@@ -219,8 +295,8 @@ function searchL3(query, files, limit = 6, opts = {}) {
       });
     }
   }
-  hits.sort((a, b) => b.sortKey - a.sortKey);
-  return hits.slice(0, limit);
+  // 相关度分平台 + 平台内比元数据（见 bandOrder 注释）：平台之间绝不跨越。
+  return bandOrder(hits).slice(0, limit);
 }
 
 /**
@@ -297,4 +373,4 @@ function listAllMemories(L3Root) {
   return out;
 }
 
-module.exports = { tokenize, jaccard, fmValue, confidenceRank, isFrozen, admitVerdict, searchL3, listL3Files, listMemoryCandidates, listAllMemories, chunksOf };
+module.exports = { tokenize, jaccard, fmValue, confidenceRank, isFrozen, admitVerdict, searchL3, listL3Files, listMemoryCandidates, listAllMemories, chunksOf, bandOrder, REL_BAND };

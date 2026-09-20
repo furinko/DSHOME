@@ -1,0 +1,23 @@
+{
+  "_comment": "出厂装置回归题集（2026-09-20 建）。与私有集的分工：这里测的是【检索实现 × 出厂文档】——输入自足（题集与语料都随仓库走、可公开、无隐私），所以它的基线可以随仓库走、可以随包出厂、跨设备同源 ⇒ 挂 pre-commit 真拦。私有集（mind-private/tasks/regression/search-regression.json）测的是【实现 × 我的活库】，分母每天在变，故只报不拦。锚点＝相对 mind/ 的路径。",
+  "generatedAt": "2026-09-20",
+  "topN": 6,
+  "items": [
+    { "id": "f01", "q": "我是谁，判断原则是什么", "expect": "L0/SOUL.md", "note": "身份锚点 + 判断原则" },
+    { "id": "f02", "q": "运行纪律和边界在哪", "expect": "L0/AGENTS.md", "note": "动作协议 / 红线" },
+    { "id": "f03", "q": "收工要做哪几步", "expect": "L1/Ritual.md", "note": "收工闭环 9 步" },
+    { "id": "f04", "q": "记忆怎么归档、怎么调取", "expect": "L1/Memory.md", "note": "记忆层规则" },
+    { "id": "f05", "q": "有哪些不可绕过的硬约束", "expect": "L1/Invariants.md", "note": "确定性内核 / 门禁清单" },
+    { "id": "f06", "q": "Skill 和 Exp 怎么用、怎么沉淀", "expect": "L1/Power.md", "note": "能力手册" },
+    { "id": "f07", "q": "全库都有哪些文件", "expect": "L1/Tree.md", "note": "全目录索引" },
+    { "id": "f08", "q": "复盘和蒸馏用什么思维方法", "expect": "L1/Wisdom.md", "note": "思维方法论" },
+    { "id": "f09", "q": "加载顺序和跨层红线是什么", "expect": "L1/HUB.md", "note": "设计理念 + 加载顺序" },
+    { "id": "f10", "q": "概念路由和权威源去哪查", "expect": "L1/Concepts.md", "note": "概念注册表" },
+    { "id": "f11", "q": "上工自动召回是怎么做的", "expect": "L2/Skill/boot-recall.md", "note": "召回装配流程" },
+    { "id": "f12", "q": "多个会话同时改同一批文件怎么防写冲突", "expect": "L2/Skill/concurrent-writers.md", "note": "多写者纪律" },
+    { "id": "f13", "q": "写进去却召不回，检索怎么调", "expect": "L2/Skill/recall-tuning.md", "note": "召回调优三层定位" },
+    { "id": "f14", "q": "怎么确认一个改动真的生效了", "expect": "L2/Skill/verify-integrity.md", "note": "验证完整性四则" },
+    { "id": "f15", "q": "出厂区和私有区怎么划，推之前查什么", "expect": "L2/Skill/factory-hygiene.md", "note": "双区卫生自检" },
+    { "id": "f16", "q": "启动崩溃和插件加载失败怎么排查", "expect": "L2/Skill/dshome-crash-recovery.md", "note": "崩溃定位与自愈" }
+  ]
+}

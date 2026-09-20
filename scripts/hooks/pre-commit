@@ -83,15 +83,19 @@ node scripts/growth-audit.mjs
 #    本项把"每个 verify-* 有没有反证"做成机器台账并设**棘轮**：4 个历史门禁允许暂时为零，
 #    **新 `verify-*` 零反证痕迹即拒**。逃生标记：`// gate-ledger: reverse-cases <反证在哪>`。
 node scripts/gate-ledger.mjs --check
-# ⑬ 检索回归门禁（2026-09-17 加 · 方案稿 P0-3 第二步）：把 `search-regression.mjs` 从「工具脚本真跑冒烟」
-#    白名单**提升为显式门禁** —— 它在白名单里只会被当"崩没崩"看（非零码 = ok），既**白跑**（+9 污染
-#    `search-hit`）又**从不拦人**。现在直接认它的退出码：
-#      0 = 不劣于基线 / 首次无基线 / 语料增量（日常增删记忆**不堵门**）
-#      1 = **真退化**（召回或 top1 低于 `scripts/regression-baseline.json`）
+# ⑬ 检索回归门禁（2026-09-17 加 · **2026-09-20 改跑「装置层」**）
+#    ⚠️ 分层（2026-09-20 S2）：本条**只跑 `--layer=factory`（装置回归）** —— 题集与语料都取自出厂面
+#    （`scripts/regression-set.factory.json` + `mind/**`），**输入自足** ⇒ 基线可随仓库走、跨设备同源、**真拦**。
+#    私人层（`mind-private/L3` 活库）分母**每天都在变** ⇒ **不进链、只报不拦**（拦下来必是假红）。
+#    为什么改：原实现把「读数」放受管区、把「输入」留私有区 ⇒ 换设备/新克隆必然参照值不匹配、恒 exit 2；
+#    两边各自 `--update-baseline` 又互相覆盖（ping-pong）。判据＝**出厂面的东西必须自足**。
+#      0 = 不劣于基线 / 语料增量（日常增删出厂文档**不堵门**）
+#      1 = **真退化**（召回或第一名低于 `scripts/regression-baseline.factory.json`）
 #      2 = **条件变了需重建**（回归集条数变 / **锚点文件丢失** / 语料减少）
+#      3 = **本机无装置基线**（响亮；先跑一次 `--layer=factory --update-baseline` 建立）
 #    `HINDSIGHT_NO_METRICS=1`：门禁**不得**改被测对象的指标（不 bump / 不落基线 / 不写 changelog）。
-#    逃生门：规则或语料大改时 `git commit --no-verify`，或先手工 `--update-baseline` 重建后提交。
-HINDSIGHT_NO_METRICS=1 node scripts/search-regression.mjs
+#    逃生门：规则或语料大改时 `git commit --no-verify`，或先手工 `--layer=factory --update-baseline` 重建后提交。
+HINDSIGHT_NO_METRICS=1 node scripts/search-regression.mjs --layer=factory
 # ⑭ 补齐链外门禁（2026-09-17 加 · 待办「门禁强制力」：原来 5 道 `verify-*` **根本不在链上** ⇒
 #    绿提交可与红门禁并存）。本次把能绿的都挂进来，并逐个核过真实退出码：
 #      · verify-upstream-contract —— 上游具名导出/槽位/官方行 id 是否还在。**挂链前先修了尺子**：
