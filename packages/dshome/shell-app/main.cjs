@@ -39,6 +39,14 @@ const STDERR_KEEP_CHARS = 200 * 1024; // 内存里单次启动保留的最后 st
 const ICON_FILE = path.join(__dirname, 'icon-official.png');
 const TRAY_ICON_FILE = path.join(__dirname, 'tray-official.png');
 const WINDOW_TITLE = 'DSHOME';
+/** 本地通知监听端口（0 = 关闭）。缺省值必须与后端 `dshome/notify` 插件的默认值一致：
+ *  启动器（DSHOME.exe）与开机自启（注册表 Run 项）都是**不带环境变量**拉起壳的，
+ *  而 dshome/shell host 插件那条路（会注入 DSHOME_NOTIFY_PORT）在「壳先起、后端后起」的
+ *  布局下走不到——单实例锁让后端拉起的第二个壳直接退出。壳不自己兜底 ⇒ 监听口根本不开，
+ *  后端 POST 全部打到空气且静默（实测 2026-09-20：只剩壳自身的连接/断开提示）。
+ *  同时写回本进程环境：壳自己拉起的后端要继承同一端口。 */
+const NOTIFY_PORT = Number(process.env.DSHOME_NOTIFY_PORT || 32123);
+if (process.env.DSHOME_NOTIFY_PORT === undefined) process.env.DSHOME_NOTIFY_PORT = String(NOTIFY_PORT);
 
 /** 后端 stdout 打印的「带 token URL」。
  *  0.1.5 起根路径启用一次性 token 鉴权：壳的存活探测（isBackendUp 的 GET）与窗口加载
@@ -859,8 +867,7 @@ function createTray() {
 }
 
 function startNotifyListener() {
-  const port = Number(process.env.DSHOME_NOTIFY_PORT || 0);
-  if (!port) return;
+  if (!NOTIFY_PORT) return;
   const server = createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/notify') {
       let body = '';
@@ -876,7 +883,9 @@ function startNotifyListener() {
     }
     res.writeHead(404); res.end();
   });
-  server.listen(port, '127.0.0.1');
+  // 端口被占（例如另一个 DSHOME 实例已在跑）只记日志：通知是尽力而为，不能把壳打崩。
+  server.on('error', (error) => logLine({ notify: 'listen-fail', port: NOTIFY_PORT, error: String(error?.message ?? error) }));
+  server.listen(NOTIFY_PORT, '127.0.0.1');
 }
 
 // ---- 入口 ----
