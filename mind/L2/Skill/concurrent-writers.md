@@ -1,7 +1,7 @@
 ---
 name: concurrent-writers
 description: 多写者共享一个工作区时的纪律——动手前先问"还有谁在动这批文件"，共享配置单写者、台账走追加、拿不到闸就响亮失败；git add 与 commit 之间别停（会有别人的东西卷进来）。触发：并发 / 多写者 / 同时改 / 抢写 / 写冲突 / 共享工作区 / 并发会话 / 单写者 / 互斥 / 串行 / 排队 / git 竞态 / 提交冲突 / 别人的改动 / 工作区干净。
-version: 1.0.1
+version: 1.0.2
 author: DSHOME
 license: internal
 metadata:
@@ -18,7 +18,7 @@ contract:
 # concurrent-writers — 多写者共享工作区的纪律
 
 > 心法一句话：**"工作区干净"不等于"没有别人"——并发的另一半可能就是我自己。**
-> 来源：`mind-private/L3/common/lessons/2026-09-11_并发改配置炸整树.md`（多会话并行改同一 profile 配置 ⇒
+> 来源：L3 结晶「并发改配置炸整树」（私有区，不推送）·（多会话并行改同一 profile 配置 ⇒
 > 后端 **38 轮崩溃循环**）+ Learn 的 git 竞态条目（`add` 完还没 `commit`，另一会话把我的文件一起提交了）
 > + 2026-09-14 自治会话并发写同一批文件（落地 `cron.cjs` 串行闸）。
 
@@ -59,11 +59,11 @@ contract:
 
 ## 五、关联索引
 
-**L3：** `mind-private/L3/common/lessons/2026-09-11_并发改配置炸整树.md`（本技能来源：单写者协议 / 崩溃栈 `#tag` 归因 / safe 模式两代价）
+**L3：** L3 结晶「并发改配置炸整树」（私有区，不推送）·（本技能来源：单写者协议 / 崩溃栈 `#tag` 归因 / safe 模式两代价）
 **L2 Skill：** `dshome-crash-recovery.md`（并发把树炸了之后怎么救：三层定位 + marker + safe 逃生）· `verify-integrity.md`（不受污染的验证）
 **L1：** `mind/L1/Ritual.md` §四（改前快照/回滚）· §一 step6（清理中介物）
 **工具：** `scripts/mind-cron-serialize-itest.mjs`（串行闸的真值表：忙则排队 / 放闸补跑 / 去重 / 超时）
 
 ---
 
-_版本：1.0.1 | 2026-09-19 | **清幽灵引用**：`related` 与关联索引里指向 `mind-private/L2/Skill/evolution-checkup.md` 的死链删除——该文件全库不存在（含 TRASH）、从未建过；其宣称的「生效确认 · 量程与噪声」已由 `dshome-diagnostics`（改完必须重启 + 真机探针才算生效）与本仓 `recall-tuning` §一.4（量纲核对）覆盖。 | _版本：1.0.0 | 2026-09-18 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：由 L3 结晶 `2026-09-11_并发改配置炸整树`（38 轮崩溃循环）+ Learn 的 git 竞态 + 自治并发写三处实证提升而来。_
+_版本：1.0.2 | 2026-09-19 | **清幽灵引用**：`related` 与关联索引里指向 `mind-private/L2/Skill/evolution-checkup.md` 的死链删除——该文件全库不存在（含 TRASH）、从未建过；其宣称的「生效确认 · 量程与噪声」已由 `dshome-diagnostics`（改完必须重启 + 真机探针才算生效）与本仓 `recall-tuning` §一.4（量纲核对）覆盖。 | _版本：1.0.0 | 2026-09-18 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：由 L3 结晶 `2026-09-11_并发改配置炸整树`（38 轮崩溃循环）+ Learn 的 git 竞态 + 自治并发写三处实证提升而来。_

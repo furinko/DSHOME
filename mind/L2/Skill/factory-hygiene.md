@@ -1,7 +1,7 @@
 ---
 name: factory-hygiene
 description: 出厂卫生自检——推之前扫"会被推出去的那个面"：门禁两条（人维护的禁词表 + 不依赖词表的凭据/PII 形态）+ 门禁管不了的历史维度（git grep HEAD）；唯一划区判据是"这段能贴在公开 GitHub 上吗"。触发：出厂卫生 / 双区卫生 / 出厂区 / 私有区泄漏 / 私密泄漏 / 禁词 / 禁词表 / 凭据泄漏 / 私有名 / 盘符 / 脱敏 / 去私 / 隐私红线 / 公开仓库 / 推之前 / 能公开吗。
-version: 1.0.0
+version: 1.0.1
 author: DSHOME
 license: internal
 metadata:
@@ -21,7 +21,7 @@ contract:
 > 任何文件都可能被公开推送，一次都不许例外。**
 > 权威定义**不在这张卡**：`mind/L0/AGENTS.md §五 边界（🔴）` 与 `mind/L1/Invariants.md #13 出厂卫生` 是真源
 > ——本卡只写"**怎么自检**"，条文一律指过去（避免两份真相）。
-> 来源：`mind-private/L3/common/lessons/2026-09-17_双区卫生出厂区只放可公开内容.md`（E 族 10 条 ≥3 复发归并）。
+> 来源：L3 结晶「双区卫生出厂区只放可公开内容」（私有区，不推送）·（E 族 10 条 ≥3 复发归并）。
 
 ## 一、使用流程（Step 1→N）
 
@@ -74,9 +74,9 @@ contract:
 
 **L1（权威源）：** `mind/L0/AGENTS.md` §五 边界（🔴 双区与隐私红线）· `mind/L1/Invariants.md` #13 出厂卫生（硬约束 + 门禁映射）· `mind/L1/Memory.md` §十一（蒸馏与时间窗口径）
 **L2 Skill：** `import-artifact.md`（**入口面**：外部产物默认落私有区 + 私密信息提示）· `verify-integrity.md`（无输入即响亮失败 / 反例证伪）· `landing-audit.md`（书面红线 vs 真门禁接线）
-**L3：** `mind-private/L3/common/lessons/2026-09-17_双区卫生出厂区只放可公开内容.md`（E 族 10 条归并）· `mind-private/L3/common/lessons/2026-09-17_搜索面决定结论边界.md`
+**L3：** L3 结晶「双区卫生出厂区只放可公开内容」（私有区，不推送）·（E 族 10 条归并）· L3 结晶「搜索面决定结论边界」（私有区，不推送）
 **工具：** `scripts/mind-validate.mjs`（⑨ `publicDenylistCheck` 名单扫 · ⑩ `credentialLeakCheck` 形态扫）· `mind-private/tasks/private-denylist.txt`（唯一真源）· `scripts/mind-cron-recipes-itest.mjs`（引用同一真源、不另编名单的先例）
 
 ---
 
-_版本：1.0.0 | 2026-09-18 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：由「出厂卫生 / 双区边界」主题在 Learn 复发 ≥3 条（E 族 10 条已归并为 L3 结晶）+ `Invariants #13` 与 ⑨/⑩ 两道真门禁提升而来；本卡只写自检流程，红线定义一律指 `AGENTS §五` / `Invariants #13`（不做第二份真相）。_
+_版本：1.0.1 | 2026-09-18 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：由「出厂卫生 / 双区边界」主题在 Learn 复发 ≥3 条（E 族 10 条已归并为 L3 结晶）+ `Invariants #13` 与 ⑨/⑩ 两道真门禁提升而来；本卡只写自检流程，红线定义一律指 `AGENTS §五` / `Invariants #13`（不做第二份真相）。_
