@@ -659,6 +659,52 @@ function publicDenylistCheck() {
   if (hits.length) {
     issues.push({ sev: 'critical', file: '出厂卫生', msg: `公开面出现禁词 ${hits.length} 处（私有项目名/个人路径不得进出厂区——Invariants #13）→ ${hits.slice(0, 8).join('、')}${hits.length > 8 ? ` …另 ${hits.length - 8} 处` : ''}` });
   }
+
+  // ⑪ 私有区**条目名**（2026-09-20 加；与 ⑨ 共用同一"推送面"定义 ⇒ 扫面口径只此一份。
+  //   注：本函数名是历史名，现含 ⑨ 禁词表 + ⑪ 私有条目名 两条**出厂面卫生**门禁。）
+  //   为什么单列一条：`Tree.md:70` / `Invariants #13` 定「出厂只写结构与机制、不登记运行时条目」，
+  //   而 ⑨ 只挡得住**能枚举的禁词**（私有项目名 / 个人路径）；"私有区条目名"（`2026-09-17_xxx.md`、
+  //   `SKILL.md`）是**通用文件名 / 日期名**，**枚举不了** ⇒ 只能用「**与本机私有 L3 实际内容比对**」来判。
+  //   判据两道（**版本行一律白名单** —— 版本行是历史留痕，按既有口径不追改）：
+  //     硬：出现 `mind-private/L3/<rel>` 且 `<rel>` **在本机私有 L3 里真实存在** ⇒ 命中
+  //         （只说**结构路径**如 `mind-private/L3/common/` 不算 —— 出厂文档本来就该讲结构）
+  //     软：出现本机私有 L3 的**日期前缀 basename**（高熵、几乎不会通用）⇒ 命中
+  //   ⚠️ 输入缺失（本机无 `mind-private/L3` 条目，如新克隆 / 装机版）⇒ **显式跳过并报 info**：
+  //     与 ⑨ 的"禁词表缺失"语义**不同** —— ⑨ 缺的是**门禁自身的定义**（故它报 critical），
+  //     本条缺的是**用户数据**（没有私有库 ⇒ 也没有"能泄漏的条目"），故不报 critical。
+  {
+    const memRels = [];
+    for (const r of memoryRoots()) for (const f of walk(r.dir, [], r.rel)) {
+      if (isL3Entry(f.rel)) memRels.push(f.rel.replace(/^L3\//, ''));
+    }
+    const datedNames = memRels.map((r) => basename(r)).filter((n) => /^\d{4}-\d{2}-\d{2}_/.test(n));
+    const VER_LINE = /^\s*[>_]?\s*(版本|_版本)[：:]/;
+    if (!memRels.length) {
+      console.log('[mind-validate] ℹ️ ⑪ 私有条目名扫：本机无 `mind-private/L3` 条目（新克隆 / 装机版）⇒ 显式跳过（没有私有库 ⇒ 没有"能泄漏的条目"）');
+    } else if (!gitFace.length) {
+      console.log('[mind-validate] ℹ️ ⑪ 私有条目名扫：拿不到推送面（无 git）⇒ 显式跳过');
+    } else {
+      const refHits = [];
+      for (const full of gitFace) {
+        if (!SCAN_EXT.test(full) || SKIP_DIR.test(full) || ignored.has(resolve(full))) continue;
+        let text = ''; try { text = readFileSync(full, 'utf8'); } catch { continue; }
+        const short = full.slice(repoRoot.length + 1).replace(/\\/g, '/');
+        text.split('\n').forEach((line, i) => {
+          if (VER_LINE.test(line)) return;
+          for (const cand of (line.match(/mind-private[\\/]L3[\\/][^\s`）·"')]*/g) || [])) {
+            const rel = cand.replace(/^mind-private[\\/]L3[\\/]/, '').replace(/\\/g, '/');
+            if (memRels.includes(rel)) refHits.push(`${short}:${i + 1}「${cand}」`);
+          }
+          for (const n of datedNames) if (line.includes(n)) refHits.push(`${short}:${i + 1}「${n}」`);
+        });
+      }
+      if (refHits.length) {
+        issues.push({ sev: 'critical', file: '双区卫生', msg: `⑪ 受管面引用了**本机私有 L3 条目** ${refHits.length} 处（出厂只写结构与机制——Tree.md:70 / Invariants #13；改成「按标题引用 + 标注私有区」即可）→ ${refHits.slice(0, 6).join('、')}${refHits.length > 6 ? ` …另 ${refHits.length - 6} 处` : ''}` });
+      } else {
+        console.log(`[mind-validate] ⑪ 受管面未引用本机私有 L3 条目 ✅（比对面：私有 L3 ${memRels.length} 条 · 推送面 ${gitFace.length} 个文件）`);
+      }
+    }
+  }
 }
 publicDenylistCheck();
 

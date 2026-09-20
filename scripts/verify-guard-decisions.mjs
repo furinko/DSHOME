@@ -58,7 +58,9 @@ const CASES = [
   ['approvals.json·大小写变体', 'E:/DSHOME/MIND-PRIVATE/TASKS/APPROVALS.JSON', '中性内容', '拦', 'self'],
   ['L2 Skill（非高危·只提示）', 'mind/L2/Skill/boot-recall.md', '中性内容', '放', 'self'],
   ['L1 Learn（文档区）', 'mind/L1/Learn.md', '中性内容', '放', 'self'],
-  ['L3 记忆（生长区）', 'mind-private/L3/common/user-rules/rules.md', '中性内容', '放', 'self'],
+  // ⚠️ 2026-09-20：原夹具点名了一份**真实记忆文件**（`L3/common/user-rules/rules.md`）——guard 只按**路径前缀**
+  //   分类、不依赖文件是否存在 ⇒ 改用合成路径（双区卫生：出厂/受管面不写本机私有区条目名）。
+  ['L3 记忆（生长区）', 'mind-private/L3/common/lessons/_fixture.md', '中性内容', '放', 'self'],
   ['普通代码文件', 'E:/OtherProject/foo.txt', '中性内容', '放', 'other'],
   ['出厂区·正当讨论 token', 'mind/L1/Example.md', '记录 token 消耗教训', '放', 'privacy'],
   ['出厂区·中文密码赋值', 'mind/L1/Example.md', '我的密码是 hunter2xyz', '拦', 'privacy'], // cred-ok（测试真值表的示例值，非真凭据）
