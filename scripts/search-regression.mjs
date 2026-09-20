@@ -96,23 +96,29 @@ for (const it of items) {
   // → 期望串是短词时，任何"名字里含该串"的错文件也算命中（**假命中**，命中率虚高）。
   // 改为**单向**：期望串必须是命中文件路径的一部分（路径分隔符归一后再比）。
   const normRel = (s) => String(s).replace(/\\/g, '/');
-  const matched = hs.some((h) => h.file && normRel(h.file).includes(normRel(it.expect)));
+  // ⚠️ 2026-09-20（**多锚点 `allow`**）：同一个问题**可能有多篇都算对** —— 原作注释里早就写了这句
+  //   （下面 :103 那条），但当时只是"把 top1 记为信息行"来回避它。现在把"**可接受答案集合**"变成一等字段：
+  //     `accept = [expect, ...allow]` ⇒ **任一命中即算命中、任一排 rank1 即算 top1 正确、任一还在库里即算锚点未丢**。
+  //   🔴 **纪律（不许自欺）**：`allow` 只许放**真的在回答同一个问题**的文档；拿它把判据放宽到"能通过"
+  //     就是改判据迁就结果（本仓反复吃过的亏）。当前全集仅 3 条带 allow（r04/r06/r17），逐条给了人判依据。
+  const accept = [it.expect, ...(Array.isArray(it.allow) ? it.allow : [])].map(normRel);
+  const matched = hs.some((h) => h.file && accept.some((a) => normRel(h.file).includes(a)));
   const top = hs[0];
   // 2026-09-11 补（检索修复 C 的实验疏漏）：只判"进没进 topN"是**只有召回、没有精度**的体温计——
   // 实测 R03/R09 修好后目标文档确实进了 topN，但 top1 仍是无关文档，而旧判据照样打 ✅。
   // 这里把 top1 是否正确**记为信息行**（不升门禁：同一问题可能有多个合理答案，硬判会造恒亮灯）。
   // 注：`top` 必须先声明再被引用——首版把它写在下面，`node --check` 过了但真跑抛 TDZ
   // `Cannot access 'top' before initialization`（语法检查查不出"东西不存在/未初始化"，同 mind-inject 那例）。
-  const top1ok = !!(matched && top && top.file && normRel(top.file).includes(normRel(it.expect)));
+  const top1ok = !!(matched && top && top.file && accept.some((a) => normRel(top.file).includes(a)));
   // 锚点存在性（2026-09-16 加）：**旧用例的期望文件是否还在候选库里** ——
   //   用来把"语料变动"分成"日常增量"（锚点仍在 ⇒ 放行）与"真损失"（锚点被删/改名 ⇒ 拦）。
   //   判据同 matched：期望串须是候选路径的一部分（单向，防短词假命中）。
   //   ⚠️ 2026-09-17 修：`files` 是 `{full, rel}` **对象数组**（见 mind-search-lib `listAllMemories`），
   //      故必须取 `f.rel`——写成 `normRel(f)` 会得到 `[object Object]`，**锚点全部误判为丢失**（实测 20/20 假红）。
-  const anchorExists = files.some((f) => normRel(f.rel).includes(normRel(it.expect)));
+  const anchorExists = files.some((f) => accept.some((a) => normRel(f.rel).includes(a)));
   if (matched) hits++; else misses++;
   if (matched && !top1ok) top1off++;
-  detail.push({ id: it.id, q: it.q, expect: it.expect, ok: matched, top1ok, anchorExists, topFile: top ? top.file : '(空)', topScore: top ? top.score : null });
+  detail.push({ id: it.id, q: it.q, expect: it.expect, allow: Array.isArray(it.allow) ? it.allow : [], ok: matched, top1ok, anchorExists, topFile: top ? top.file : '(空)', topScore: top ? top.score : null });
 }
 
 // ⚠️ 2026-09-20 修（S1 · **读数口径**）：原打印 `items.length - top1off`，而 `top1off` 只在
@@ -122,7 +128,7 @@ for (const it of items) {
 const top1Correct = detail.filter((d) => d.top1ok).length;
 console.log(`\n[search-regression] 结果：召回命中 ${hits}/${items.length}（未命中 ${misses}）· 第一名正确 ${top1Correct}/${items.length}（＝期望文件恰好排 rank1 的条数）`);
 for (const d of detail) {
-  console.log(`  ${d.ok ? '✅' : '❌'} ${d.id}「${d.q}」→ 期望 ${d.expect}  ${d.top1ok ? 'top1✅' : 'top1❌'}`);
+  console.log(`  ${d.ok ? '✅' : '❌'} ${d.id}「${d.q}」→ 期望 ${d.expect}${d.allow.length ? `（或 ${d.allow.join(' / ')}）` : ''}  ${d.top1ok ? 'top1✅' : 'top1❌'}`);
   // 2026-09-12：明细**常打**（原来只在「未命中」时才打 top1）—— 否则"top1 错了 5 条"在输出里**看不见**，
   // 而那正是精度退化的形态（召回全绿 + 精度悄悄掉）。
   if (!d.ok || !d.top1ok) console.log(`        top1=${d.topFile} (score=${d.topScore})`);
