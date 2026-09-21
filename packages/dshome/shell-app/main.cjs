@@ -110,13 +110,19 @@ function resolveBackendSpec() {
   //    ⇒ 壳只当 UI 客户端、**一个后端都不拉**（日志实证 `{"backend":"no-spec"}`，托盘的
   //    「重启后端」同样无效）⇒ 开机后停在"后端未连接"，必须退出托盘、用启动器重开。
   //    口径与 `开发启动.cmd` 等价，详见 backend-spec.cjs 顶部；cwd 必须是仓库根（记忆项目 key）。
+  const devRepoDir = path.resolve(__dirname, '..', '..', '..');
   const dev = backendSpec.devBackendSpec({
-    repoDir: path.resolve(__dirname, '..', '..', '..'),
+    repoDir: devRepoDir,
     port: backendPort(),
     localAppData: process.env.LOCALAPPDATA || '',
     fileExists: (p) => fs.existsSync(p),
   });
-  if (dev) return { ...dev, env: { ...process.env } };
+  // 🔴 环境必须注入 `DSH_HOME`=仓库根（2026-09-21 实测事故，主人报障「开机自启报错，手动启动没问题」）：
+  //    Run 项拉起壳时**没有任何环境变量**，缺 DSH_HOME ⇒ 后端 `resolveDshHome()` 落到 `~/.dsh`
+  //    ⇒ `~\.dsh\profiles\dshome` 不存在 ⇒ 后端连崩三次 + 弹「DSHOME 后端异常退出」；
+  //    手动 `开发启动.cmd` 设了 DSH_HOME 所以没事。盘的实证与口径详见 backend-spec.cjs；
+  //    安装版分支（下一条 return）本来就有同款注入（`DSH_HOME: instDir`）。
+  if (dev) return { ...dev, env: backendSpec.devBackendEnv(process.env, devRepoDir) };
   return null; // 无法解析 → 壳只做 UI 客户端（后端由外部启动）
 }
 

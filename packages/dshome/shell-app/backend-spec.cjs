@@ -48,4 +48,26 @@ function devBackendSpec(input) {
   };
 }
 
-module.exports = { devBackendSpec };
+/**
+ * 自启壳给后端进程的环境（纯函数，可脱离 Electron 直接回归）。
+ *
+ * ── 为什么必须有它（2026-09-21 实测事故，主人报障「开机自启报错，手动启动没问题」）──
+ * 注册表 `…\Run` 项拉起壳时**不带任何环境变量**；而 `DSH_HOME` 决定 `resolveDshHome()`
+ * 的落点（`@deepseek-ai/dsh-home-paths` 优先级：显式配置 > `$DSH_HOME` > `~/.dsh`）
+ * ⇒ 缺它时后端去 `~\.dsh\profiles\dshome` 找 profile，**那里没有** ⇒ 后端连崩三次 →
+ * fail-loud 弹窗「DSHOME 后端异常退出」，主人只能用 `开发启动.cmd` 手动重开（那条链设了 DSH_HOME）。
+ * 盘上实证：清空 DSH_HOME + cwd=仓库根跑 CLI ⇒ **逐字复现**同一句
+ *   `Error: dsh: profile "dshome" does not exist; create it with 'dsh plugin --profile dshome add <package>'`；
+ * 给上 DSH_HOME 后 profile 目录 `E:\DSHOME\profiles\dshome` 存在。
+ * 安装版分支（main.cjs `resolveBackendSpec`）本来就有同款注入（`DSH_HOME: instDir`）——dev 兜底漏了。
+ * 口径与 `开发启动.cmd` 第 6 行 `set "DSH_HOME=%~dp0"` 等价。
+ * @param {Record<string, string|undefined>} processEnv - 壳自己的环境（登录自启时缺 DSH_HOME）。
+ * @param {string} repoDir - 仓库根；本 dev 布局下它就是 `DSH_HOME`。
+ * @returns {Record<string, string|undefined>} 后端 spawn 用的环境对象。
+ */
+function devBackendEnv(processEnv, repoDir) {
+  // 壳自己的环境必须**原样带过去**（PATH / DSHOME_NOTIFY_PORT 等），只覆盖 DSH_HOME 一个键。
+  return { ...(processEnv ?? {}), DSH_HOME: repoDir };
+}
+
+module.exports = { devBackendSpec, devBackendEnv };

@@ -119,6 +119,26 @@ check('B5 真实仓库数据面：本机 dev 兜底真能拼出可用命令', ((
   return !!r && existsSync(join(shellDir, '..', '..', '..', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'));
 })());
 
+// ── B6-B7：自启壳给后端的**环境**（2026-09-21 实测事故）──────────────────────
+// 事故：主人报「开机自启报错，手动启动没问题」。Run 项拉起壳时**没有任何环境变量**，而壳的 dev
+// 兜底只补了命令与 cwd、**没补 `DSH_HOME`** ⇒ 后端 `resolveDshHome()` 落到 `~/.dsh`
+// （`@deepseek-ai/dsh-home-paths` 优先级：显式 > `$DSH_HOME` > `~/.dsh`）⇒ 去
+// `~\.dsh\profiles\dshome` 找 profile，**那里没有** ⇒ 后端连崩三次 → fail-loud 弹窗
+// 「DSHOME 后端异常退出」；手动 `开发启动.cmd` 第 6 行设了 DSH_HOME 所以没事。
+// 实证：清空 DSH_HOME 跑 CLI = 逐字复现同一句报错；给上 DSH_HOME = profile 目录存在。
+// 判据＝注入 DSH_HOME=仓库根；反例＝壳自己的环境（PATH / 通知口）不得被注入动作丢掉。
+const bsEnv = (env) => (typeof bs.devBackendEnv === 'function' ? bs.devBackendEnv(env, REPO) : null);
+
+check('B6 dev 环境必须注入 DSH_HOME=仓库根（反例：壳里若带旧值，也必须被覆盖成仓库根）', (() => {
+  const e = bsEnv({ DSH_HOME: 'C:\\Users\\x\\.dsh' });
+  return !!e && e.DSH_HOME === REPO;
+})());
+
+check('B7 反例·注入不得丢掉壳自己的环境（PATH / DSHOME_NOTIFY_PORT 必须原样带过去）', (() => {
+  const e = bsEnv({ PATH: 'C:\\Windows', DSHOME_NOTIFY_PORT: '32123' });
+  return !!e && e.PATH === 'C:\\Windows' && e.DSHOME_NOTIFY_PORT === '32123';
+})());
+
 // ── W. 接线面（防假绿：脚本全过但 main.cjs 没接上）────────────────────────────
 const mainSrc = readFileSync(join(shellDir, 'main.cjs'), 'utf8');
 check('W1 main.cjs 引用了 autostart.cjs', /require\(['"]\.\/autostart\.cjs['"]\)/.test(mainSrc));
@@ -140,10 +160,13 @@ check('W11 两处 spawn 都显式带 cwd（后端 process.cwd() = 记忆项目 k
   (mainSrc.match(/cwd: spec\.cwd/g) || []).length === 2,
   `cwd: spec.cwd 出现 ${(mainSrc.match(/cwd: spec\.cwd/g) || []).length} 次（期望 2）`);
 check('W12 安装版 spec 也带 cwd=instDir', mainSrc.includes('cwd: instDir'));
+check('W13 dev 兜底把 devBackendEnv 接上了、仓库根取自 devRepoDir（防"函数在、没接上"的假绿）',
+  /backendSpec\.devBackendEnv\(\s*process\.env\s*,\s*devRepoDir\s*\)/.test(mainSrc)
+  && /repoDir:\s*devRepoDir/.test(mainSrc));
 check('W8 自愈里的重登也带 path/args',
   mainSrc.includes('setLoginItemSettings({ openAtLogin: true, path: opts.path, args: opts.args })'));
 
 console.log(failed
   ? `\nverify-shell-autostart: ${failed} 项失败`
-  : '\nverify-shell-autostart: 全部通过（A 登记口径 7 项 + B dev 后端兜底 5 项 + W 接线 12 项 = 24 项；登记＝dev/兜底 electron.exe+appDir、安装版 DSHOME.exe；自启起来的壳自带后端规格与 cwd）');
+  : '\nverify-shell-autostart: 全部通过（A 登记口径 7 项 + B dev 后端兜底/环境 7 项 + W 接线 13 项 = 27 项；登记＝dev/兜底 electron.exe+appDir、安装版 DSHOME.exe；自启起来的壳自带后端规格、cwd 与 DSH_HOME）');
 process.exit(failed ? 1 : 0);
