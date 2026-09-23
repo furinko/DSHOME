@@ -569,6 +569,14 @@ for (const f of walk(MIND, [], 'mind').concat(extraVersionFiles)) {
 //   禁词表存 `mind-private\tasks\private-denylist.txt`（含私有名 → 本身不能进公开仓库）。
 //   等级：**critical**（2026-09-10 当日先用 warn 上线、清零存量后按约定升为 critical）——出厂区写私有名/个人路径
 //   是🔴红线（随 git 推公开仓库即外泄），只提示不阻塞等于留个洞。要放行某处，需先从禁词表移除该词或改掉内容。
+//   🔴 2026-09-23 修 **匹配口径**（承重的那一处）：原用 `lines[i].includes(t)` ⇒ **区分大小写**，而**表里词形**
+//      与**公开面写法**大小写不同（同一个词的两种形态）⇒ **3 处真泄漏在 origin/main 上假绿通过**（`docs/ARCHITECTURE.md` +
+//      `mind/README.md`×2，同日已改干净）。改为大小写不敏感（`termsLower` / `lower`），中文与路径词不受影响。
+//      **反证（隔离临时树 + 合成词，不写真私密名）**：`$T` 下放 `mind-private/tasks/private-denylist.txt`
+//      （词 `Zorbex`）+ `docs/probe.md`（写 `zorbex`），`DSH_HOME=$T` 跑隔离副本 ——
+//      **修好版报「禁词 1 处」** ↔ **变异回 `includes(t)` 报 0 处**（假绿复现）⇒ 该判据承重已证伪。
+//      ⚠️ 踩坑留痕：前两次探针**量错了对象**——隔离副本仍读 `DSH_HOME` ⇒ 实际跑的是真仓库（输出里
+//      「推送面 214 个文件」露的马脚）。**隔离探针必须把环境变量一起隔离**。
 function publicDenylistCheck() {
   const listFile = join(PRIV, 'tasks', 'private-denylist.txt');
   // 2026-09-11 修（openhanako 考古 · 出厂边界）：**输入缺失必须响亮失败**，不再静默 no-op。
@@ -622,6 +630,11 @@ function publicDenylistCheck() {
       return out.split('\0').filter(Boolean).map((p) => join(repoRoot, p));
     } catch { return []; }
   })();
+  // 🔴 2026-09-23 修：禁词匹配改为**大小写不敏感**——原 `includes(t)` 区分大小写，而**表里词形**与
+  //   **公开面写法**大小写不同（同一个词的两种大小写形态）⇒ 3 处私密名在出厂面"假绿"通过（实测全在
+  //   origin/main，修好判据后当场报出）。⚠️ 本注释**故意不复写那个词**——写了就会被自己这条闸扫到
+  //   （当场已实测自击一次，故留此注）。中文/路径词不受影响；**报告仍用原词形**（便于定位与改文）。
+  const termsLower = terms.map((t) => t.toLowerCase());
   const hits = [];
   let scanned = 0;
   const scanFile = (full) => {
@@ -633,9 +646,10 @@ function publicDenylistCheck() {
     try { text = readFileSync(full, 'utf8'); } catch { return; }
     scanned++;
     const lines = text.split('\n');
+    const lower = lines.map((l) => l.toLowerCase());
     for (let i = 0; i < lines.length; i++) {
-      for (const t of terms) {
-        if (lines[i].includes(t)) hits.push(`${full.slice(repoRoot.length + 1).replace(/\\/g, '/')}:${i + 1}「${t}」`);
+      for (let k = 0; k < terms.length; k++) {
+        if (lower[i].includes(termsLower[k])) hits.push(`${full.slice(repoRoot.length + 1).replace(/\\/g, '/')}:${i + 1}「${terms[k]}」`);
       }
     }
   };

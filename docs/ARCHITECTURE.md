@@ -77,7 +77,7 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖位（apiKeyEnv 技巧、禁�
 ### 5.1 四阶 + 双区
 
 ```
-四阶（参考 Cathome CCBP + 轮级缓冲设计）：
+四阶（参考**外部参照引擎**的 CCBP + 轮级缓冲设计）：
 L0 宪法  SOUL（人格）/ AGENTS（纪律·常驻注入）/ TOOL（工具索引）
 L1 法律  HUB / Wisdom / Tree（全索引）/ Power / Memory（归档规则）/ Ritual（行为规程）/ Invariants（确定性内核）/ Concepts（概念注册表）/ Design-Philosophy（生长哲学）/ Dream（灵感）/ Learn（教训）
 L2 能力  Skill（方法论·frontmatter 标准化）/ Exp（工具手册）
