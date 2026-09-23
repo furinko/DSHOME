@@ -20,6 +20,8 @@ $DSH_HOME\（monorepo，pnpm workspace）
 │  ├─ dshome-palette/    # Ctrl+K 命令面板
 │  ├─ dshome-plugin-center/  # 插件管理中心（client-only，sidebar 入口）
 │  ├─ dshome-assistant-identity/ # 对话区助手形象（client-only，localStorage 持久化）
+│  ├─ dshome-input/      # 三档输入队列 dock（client-only，遮蔽官方 QueueDock）
+│  ├─ dshome-conversation/    # 对话区卡片化（client-only，Think 8 行窗 + 块卡片隔离）
 │  └─ dshome-mind/       # 心智图谱面板（host /api/mind/* + client conversation.view「心智」）
 ├─ mind/                 # 🧠 鱼鱼心智出厂固件（L0 宪法 / L1 法律 / L2 能力 / L3 记忆**三区** + TRASH）——入库可推送
 ├─ mind-private/         # 🧠 鱼鱼心智本机实例（真实记忆/项目/Learn 条目/个性化）——gitignore，永不推送
@@ -54,6 +56,8 @@ L4  profiles/dshome/cordis.patch.yml  本机覆盖位（apiKeyEnv 技巧、禁�
 | `dshome/desktop` | 自供 desktop 四服务（旧市场接口） | **已禁用**（接口不匹配 dshmarket） |
 | `dshome-plugin-center` | 插件管理中心（client-only） | 活跃 |
 | `dshome-assistant-identity` | 对话区助手形象（client-only） | 活跃 |
+| `dshome-input` | 三档输入队列 dock：遮蔽官方 QueueDock（同 id `queue` + `priority:-1`），排队/插话/立即三档走官方 RPC 组合 | 活跃（2026-09-23 自研，取代第三方 `dsh-input-traffic`） |
+| `dshome-conversation` | 对话区卡片化：Think 8 行窗（DOM 触发官方展开 + CSS 限高）+ 工具/命令/系统块卡片隔离（client-only，纯 DOM + 官方语义属性选择器） | 活跃（2026-09-23） |
 | `dshome-mind` | 心智图谱：host `/api/mind/{status,read,graph,search,connect,approvals}` + client `conversation.view`「心智」tab | 活跃（v2 图谱） |
 
 **护栏模式**（所有 host 插件一致）：服务挂载 try/catch，失败只记日志、绝不阻断 profile 启动。

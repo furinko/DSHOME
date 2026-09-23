@@ -29,6 +29,16 @@
     # dshome-assistant-identity（client）：对话区助手形象——通用设置两行（名字+头像）+ 对话区注入。
     - id: dshome-assistant-identity
       name: dshome-assistant-identity
+    # dshome-input（client）：三档输入队列 dock（2026-09-23 自研，取代第三方 dsh-input-traffic）。
+    # 遮蔽官方 QueueDock（同 id "queue" + priority -1，低者胜；同 id 同 priority 会抛错），
+    # 用 DSHOME 自有视觉渲染排队 / 插话 / 立即三档 + 打回输入框 / 删除 / 清空。
+    # 三档全部走官方 RPC 面：绿=保持排队、黄=updateQueue(steer)、红=cancel→remove→send。
+    - id: dshome-input
+      name: dshome-input
+    # dshome-conversation（client）：对话区卡片化——Think 8 行窗（DOM 触发官方展开 + CSS 限高）、
+    # 工具/命令/系统注入块卡片隔离；纯 DOM，只用官方语义属性选择器，零宿主行为。
+    - id: dshome-conversation
+      name: dshome-conversation
     # dshome-mind（host+client）：心智可视化面板——/api/mind/* 双区读取 + better-sidebar「心智」tab。
     - id: dshome-mind
       name: dshome-mind

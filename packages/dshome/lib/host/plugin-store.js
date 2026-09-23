@@ -21,6 +21,8 @@ const DESC_CN = {
   'dshome/plugin-manager': '插件列表与启停（写 profile patch，重启生效）',
   'dshome/desktop': '桌面服务兼容层（接口与 dshmarket 不匹配，已禁用）',
   'dshome-plugin-center': '插件管理中心（本面板）',
+  'dshome-input': '三档输入队列 dock：排队 / 插话 / 立即（遮蔽官方 QueueDock，自有视觉）',
+  'dshome-conversation': '对话区卡片化：Think 8 行窗 + 工具/命令/系统块卡片隔离',
   'dshome-plugin-api': '插件管理控制面（/api/dshome/plugins）',
   'dshome-mind': '心智可视化面板（host+client）：/api/mind/* 双区读取 + 侧栏「心智」tab',
   'dshome/mind-inject': '心智 R0 注入：每会话开头注入一次 SOUL+AGENTS 宪法全文（正文=注入源，v3.0），非每轮',

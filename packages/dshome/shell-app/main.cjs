@@ -203,7 +203,8 @@ const SAFE_FALLBACK_IDS = [
   'dshome-core', 'dshome-shell', 'dshome-theme', 'dshome-palette', 'dshome-notify',
   'dshome-plugin-manager', 'dshome-plugin-center', 'dshome-assistant-identity',
   'dshome-mind', 'dshome-mind-inject', 'dshome-mind-guard', 'dshome-mind-recall',
-  'dshome-mind-connect', 'dshome-mind-skill-loader', 'dshome-desktop',
+  'dshome-mind-connect', 'dshome-mind-skill-loader', 'dshome-desktop', 'dshome-input',
+  'dshome-conversation',
 ];
 
 function safeProfileName(spec) {

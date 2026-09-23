@@ -1,0 +1,19 @@
+{
+  "name": "dshome-input",
+  "version": "0.1.0",
+  "description": "DSHOME client input queue dock: three-tier (now/next/later) planning rendered in DSHOME's own visual language, built on the official conversation slots.",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.cjs",
+  "exports": {
+    ".": "./lib/index.cjs",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

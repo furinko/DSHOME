@@ -31,7 +31,9 @@
         "dshome-theme",
         "dshome-palette",
         "dshome-plugin-center",
-        "dshome-assistant-identity"
+        "dshome-assistant-identity",
+        "dshome-input",
+        "dshome-conversation"
       ],
       "platform": "web"
     }
@@ -45,6 +47,8 @@
     "dshome-palette": "workspace:*",
     "dshome-plugin-center": "workspace:*",
     "dshome-assistant-identity": "workspace:*",
+    "dshome-input": "workspace:*",
+    "dshome-conversation": "workspace:*",
     "@deepseek-ai/schemastery": "3.18.1",
     "@deepseek-ai/dsh-settings": "0.1.5-rc.2"
   },

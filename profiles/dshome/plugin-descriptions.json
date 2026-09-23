@@ -1,4 +1,5 @@
 {
-  "dsh-input-traffic": "回合输入流量管理：三级计划队列（now/next/later）、拖拽排序、插话/打断、并发保护与批量清空",
+  "dshome-input": "DSHOME 三档输入队列 dock：排队 / 插话 / 立即（遮蔽官方 QueueDock，走 DSHOME 自有视觉）",
+  "dshome-conversation": "对话区卡片化：Think 8 行窗（自动展开 + CSS 限高）+ 工具/命令/系统块卡片隔离",
   "dsh-context": "上下文洞察与管理：上下文面板 + 上下文命令，透视上下文的构成与演变"
 }

@@ -78,7 +78,6 @@ window.__ModuleLoader__.load({
         const tag = document.createElement("style");
         tag.setAttribute("data-dshome-overrides", "1");
         tag.textContent =
-          "div[data-steer-dock]{width:100%;max-width:780px;margin-inline:auto}" +
           "[data-width-handle]{display:none}";
         document.head.appendChild(tag);
       } catch (error) {

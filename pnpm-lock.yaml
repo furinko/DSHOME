@@ -46,6 +46,12 @@ importers:
       dshome-assistant-identity:
         specifier: workspace:*
         version: link:../dshome-assistant-identity
+      dshome-conversation:
+        specifier: workspace:*
+        version: link:../dshome-conversation
+      dshome-input:
+        specifier: workspace:*
+        version: link:../dshome-input
       dshome-palette:
         specifier: workspace:*
         version: link:../dshome-palette
@@ -61,6 +67,10 @@ importers:
         version: 43.4.0
 
   packages/dshome-assistant-identity: {}
+
+  packages/dshome-conversation: {}
+
+  packages/dshome-input: {}
 
   packages/dshome-mind:
     dependencies:
@@ -202,9 +212,6 @@ importers:
       dsh-imagegen:
         specifier: workspace:*
         version: link:../../packages/imagegen-plugin
-      dsh-input-traffic:
-        specifier: ^0.2.9
-        version: 0.2.9(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-client-locale@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-client-ui-conversation@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-client-ui-primitives@0.1.0-rc.8(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-client-ui-settings@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-client-ui-slots@0.1.0-rc.8(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2)))
       dsh-status-rotator:
         specifier: 0.17.2
         version: 0.17.2(@deepseek-ai/cordis@4.0.2)
@@ -220,6 +227,12 @@ importers:
       dshome-assistant-identity:
         specifier: workspace:*
         version: link:../../packages/dshome-assistant-identity
+      dshome-conversation:
+        specifier: workspace:*
+        version: link:../../packages/dshome-conversation
+      dshome-input:
+        specifier: workspace:*
+        version: link:../../packages/dshome-input
       dshome-mind:
         specifier: workspace:*
         version: link:../../packages/dshome-mind
@@ -3719,33 +3732,6 @@ packages:
       '@deepseek-ai/dsh-client-ui-primitives':
         optional: true
       react:
-        optional: true
-
-  dsh-input-traffic@0.2.9:
-    resolution: {integrity: sha512-qb7i7fA0fZHgaVxCqCI8t/KgUXqrviASLR0zmQk8hDxr0u5XR0Vw3u4+03ltdCqqm7dfICJuuzySVlZv/gCESw==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@deepseek-ai/cordis': ^4.0.1
-      '@deepseek-ai/dsh-client-locale': ^0.1.0-rc.5
-      '@deepseek-ai/dsh-client-runtime': ^0.1.0-rc.5
-      '@deepseek-ai/dsh-client-ui-conversation': ^0.1.0-rc.5
-      '@deepseek-ai/dsh-client-ui-primitives': ^0.1.0-rc.5
-      '@deepseek-ai/dsh-client-ui-settings': ^0.1.0-rc.5
-      '@deepseek-ai/dsh-client-ui-slots': ^0.1.0-rc.5
-    peerDependenciesMeta:
-      '@deepseek-ai/cordis':
-        optional: true
-      '@deepseek-ai/dsh-client-locale':
-        optional: true
-      '@deepseek-ai/dsh-client-runtime':
-        optional: true
-      '@deepseek-ai/dsh-client-ui-conversation':
-        optional: true
-      '@deepseek-ai/dsh-client-ui-primitives':
-        optional: true
-      '@deepseek-ai/dsh-client-ui-settings':
-        optional: true
-      '@deepseek-ai/dsh-client-ui-slots':
         optional: true
 
   dsh-status-rotator@0.17.2:
@@ -8901,15 +8887,6 @@ snapshots:
     optionalDependencies:
       '@deepseek-ai/dsh-client-ui-primitives': 0.1.0-rc.8(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))
       react: 18.3.1
-
-  dsh-input-traffic@0.2.9(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-client-locale@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-client-ui-conversation@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-client-ui-primitives@0.1.0-rc.8(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-client-ui-settings@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-client-ui-slots@0.1.0-rc.8(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))):
-    optionalDependencies:
-      '@deepseek-ai/cordis': 4.0.2(@deepseek-ai/cordis-plugin-include@1.0.7)(@deepseek-ai/cordis-plugin-loader@1.0.3)
-      '@deepseek-ai/dsh-client-locale': 0.1.5-rc.2(@deepseek-ai/cordis@4.0.2)
-      '@deepseek-ai/dsh-client-ui-conversation': 0.1.5-rc.2(@deepseek-ai/cordis@4.0.2)
-      '@deepseek-ai/dsh-client-ui-primitives': 0.1.0-rc.8(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))
-      '@deepseek-ai/dsh-client-ui-settings': 0.1.5-rc.2(@deepseek-ai/cordis@4.0.2)
-      '@deepseek-ai/dsh-client-ui-slots': 0.1.0-rc.8(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.5-rc.2(@deepseek-ai/cordis@4.0.2))
 
   dsh-status-rotator@0.17.2(@deepseek-ai/cordis@4.0.2):
     optionalDependencies:

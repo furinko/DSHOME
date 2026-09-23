@@ -6,7 +6,7 @@ DSHOME = 基于 DeepSeek Harness 的**个人桌面客户端**（独立 profile +
 - **本仓库的分发形态＝GitHub 源码**（clone 即用）。**"给别人用 / 市场安装"是附带的源码路径，不是产品形态**（不投 CI / 签名 / 装机链）——详见文末附录。
 - **本机自用为主**：同一套仓库在多台设备上各自演化（心智**不跨设备同步**，同步的是项目产物；见 `docs/DESIGN.md` §十）。
 
-本仓库是 **monorepo**：`pnpm workspace` 管理 **7 个本地包**。
+本仓库是 **monorepo**：`pnpm workspace` 管理 **9 个本地包**。
 
 ## 结构
 
@@ -18,6 +18,8 @@ dshome-monorepo/
 │  ├─ dshome-palette/            # Ctrl+K 命令面板
 │  ├─ dshome-plugin-center/      # 插件管理中心（client-only，sidebar 入口）
 │  ├─ dshome-assistant-identity/ # 对话区助手形象（client-only，localStorage 持久化）
+│  ├─ dshome-input/              # 三档输入队列 dock（client-only，遮蔽官方 QueueDock）
+│  ├─ dshome-conversation/       # 对话区卡片化（client-only，Think 8 行窗 + 块卡片隔离）
 │  ├─ dshome-mind/               # 心智图谱面板（/api/mind/* 双区读取 + conversation.view「心智」）
 │  └─ imagegen-plugin/           # 图像生成插件（ComfyUI 桥，包名 dsh-imagegen）
 ├─ mind/                         # 心智出厂固件（L0 宪法 / L1 法律 / L2 能力 / L3 记忆 + TRASH）
@@ -30,7 +32,7 @@ dshome-monorepo/
 └─ .gitignore
 ```
 
-## 七个包
+## 九个包
 
 | 包 | 说明 |
 |---|---|
@@ -39,6 +41,8 @@ dshome-monorepo/
 | `dshome-palette` | Ctrl+K 命令面板 |
 | `dshome-plugin-center` | 插件管理中心（client-only，`sidebar.footer.action` 入口） |
 | `dshome-assistant-identity` | 对话区助手形象（client-only） |
+| `dshome-input` | 三档输入队列 dock（client-only，排队 / 插话 / 立即） |
+| `dshome-conversation` | 对话区卡片化（client-only，Think 8 行窗 + 块卡片隔离） |
 | `dshome-mind` | 心智图谱（host `/api/mind/*` + client `conversation.view` 面板） |
 | `imagegen-plugin` | 图像生成（ComfyUI 桥，包名 `dsh-imagegen`） |
 

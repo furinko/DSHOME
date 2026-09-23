@@ -1,0 +1,19 @@
+{
+  "name": "dshome-conversation",
+  "version": "0.1.0",
+  "description": "DSHOME 对话区卡片化：Think 8 行窗（自动展开 + CSS 限高）+ 工具/命令/系统块卡片隔离。客户端纯插件。",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.cjs",
+  "exports": {
+    ".": "./lib/index.cjs",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

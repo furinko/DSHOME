@@ -105,9 +105,10 @@ const L3_IDS = [
   'dshome-plugin-manager', 'dshome-plugin-center', 'dshome-assistant-identity',
   'dshome-mind', 'dshome-mind-inject', 'dshome-mind-guard', 'dshome-mind-recall',
   'dshome-mind-connect', 'dshome-mind-skill-loader', 'dshome-mind-compaction-log', 'dshome-desktop',
+  'dshome-input', 'dshome-conversation',
 ];
 const missing = L3_IDS.filter((i) => !ids.includes(i));
-check('C1 L3 产品层 16 个自有插件全部命中', missing.length === 0, '缺：' + missing.join(', '));
+check('C1 L3 产品层 18 个自有插件全部命中', missing.length === 0, '缺：' + missing.join(', '));
 const OFFICIAL = ['web-runtime', 'webserver', 'llm-deepseek', 'ui-brand-official'];
 const leaked = ids.filter((i) => OFFICIAL.includes(i));
 check('C2 官方覆盖行一个都没被误禁', leaked.length === 0, '泄漏：' + leaked.join(', '));
