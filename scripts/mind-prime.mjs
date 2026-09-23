@@ -32,7 +32,7 @@ const query = hasExplicitQuery ? args[0] : (taskProject || 'DSHOME 心智');
 // 通用层检索独立用默认焦点（避免 mind 自用会话召回退化）；项目层用当前项目名。
 const generalQuery = hasExplicitQuery ? args[0] : 'DSHOME 心智';
 // --limit N：--limit 是独立 arg，值在它后面一个；支持 "--limit=5" 与 "--limit 5" 两种写法。
-let limit = 5;
+let limit = 4;   // 2026-09-23 注入瘦身：5→4
 {
   const idx = args.findIndex((a) => a === '--limit' || a.startsWith('--limit='));
   if (idx >= 0) {
@@ -194,8 +194,9 @@ function project() {
 // 打分用 **query 覆盖率**（query 的 token 有多少出现在条目里）而不用 jaccard：
 //   条目平均 ~496 字、任务 query 十几字，jaccard 的分母是并集 → 天然低分，长短不对称会失真。
 // 限长 300 字：条目长短不齐，限长后"4+3 条"的总体积与旧"4 条"基本持平（实测 R1 总量 +1% 以内）。
-const LEARN_CLIP = 300;
-const LEARN_RETRIEVED = 3;
+// 2026-09-23 注入瘦身（R1 预算）：300→160；详情按需 read Learn.md
+const LEARN_CLIP = 160;
+const LEARN_RETRIEVED = 2;
 /** 按任务 query 给 Learn 全量条目打分取 top n；要求至少命中 2 个 token，避免短 query 的假命中。 */
 function topByQuery(lines, query, n) {
   const q = tokenize(query);
@@ -215,7 +216,7 @@ function learn() {
   const f = join(PRIV, 'L1', 'Learn.md');
   if (!existsSync(f)) return [];
   const lines = readFileSync(f, 'utf8').split('\n').filter((l) => /^-\s*\[/.test(l));
-  const recent = lines.slice(-4);                                    // 时效：最近 4 条
+  const recent = lines.slice(-3);   // 2026-09-23 瘦身：4→3                                    // 时效：最近 4 条
   const related = topByQuery(lines, generalQuery, LEARN_RETRIEVED);  // 相关：按当前任务检索
   const picked = [...new Set([...recent, ...related])];
   return picked.map((l) => (l.length > LEARN_CLIP ? l.slice(0, LEARN_CLIP) + '…' : l));
@@ -321,8 +322,13 @@ if (ambiguous.length) {
 }
 if (p.progress) out.push(`\n■ project.md「进度状态」\n${p.progress}`);
 const openTodos = p.todos.filter((t) => !t.done);
-if (openTodos.length) out.push(`\n■ project.md「下一步」待办（未勾选 ${openTodos.length}）\n${openTodos.slice(0, 8).map((t) => `- [ ] ${t.text}`).join('\n')}`);
-if (memories.length) out.push(`\n■ L3 相关记忆（top${memories.length}）\n${memories.map((m) => `- [${m.score}] ${m.file} :: ${m.section}\n  ${m.snippet}`).join('\n')}`);
+// 2026-09-23 注入瘦身（R1 预算）：待办**保留 8 条可见性**（不砍条数——它回答"下一步做什么"），改**逐条限长**
+//   （单条实测常 300~900 字，8 条吃掉 R1 近半）；与进度里程碑同款手法，详情按需 read project.md。
+const TODO_CLIP = 160;
+if (openTodos.length) out.push(`\n■ project.md「下一步」待办（未勾选 ${openTodos.length}）\n${openTodos.slice(0, 8).map((t) => `- [ ] ${t.text.length > TODO_CLIP ? t.text.slice(0, TODO_CLIP) + '…' : t.text}`).join('\n')}`);
+// 2026-09-23 注入瘦身：snippet 逐条限长 140（原样全文常 300+ 字）；命中路径/section 仍完整，全文按需 read。
+const SNIPPET_CLIP = 140;
+if (memories.length) out.push(`\n■ L3 相关记忆（top${memories.length}）\n${memories.map((m) => `- [${m.score}] ${m.file} :: ${m.section}\n  ${m.snippet.length > SNIPPET_CLIP ? m.snippet.slice(0, SNIPPET_CLIP) + '…' : m.snippet}`).join('\n')}`);
 if (lrn.length) out.push(`\n■ Learn 最近教训\n${lrn.join('\n')}`);
 if (mp) out.push(`\n■ 上工地图（知识库速览——Tree/Power，深查 read 对应文件）\n${mp}`);
 if (rules) out.push(`\n■ user-rules（用户偏好/铁律）\n${rules}`);
