@@ -127,6 +127,43 @@ async function executeTask(hostCtx, task) {
         }
       },
     });
+    // ── 登记进工作区（2026-09-23 加）─────────────────────────────────────────────
+    // 病灶（2026-09-23 实测）：`executeTask` 走的是**低层 `agents.create`**，不经 GUI
+    //   「新建会话」那条登记路径 ⇒ 这些自治会话**从不进入 workspace 名册**（`sessionIds`），
+    //   于是侧边栏按 `dsh-client-ui-workspace` 的 `sessionVisible()` 判据把它们归进
+    //   **「未分组」（Ungrouped）**——实测本机 4 条全是 cron 会话（self-clean ×2 / self-feed ×1 /
+    //   另一条），且**每跑一次就多一条、只增不减**。
+    // 修法：建完会话补一次 `entity.attachSession(sessionId)`（官方登记动作），与普通会话同待遇。
+    //   路径口径与 host 一致：用包导出的 `realpathNormalize`（该包唯一的 uniqueness canon）。
+    //   失败只告警、**不影响任务执行**（登记是侧边栏归属，不是任务前置条件）。
+    try {
+      const workspace = hostCtx.get('workspace');
+      if (workspace && typeof workspace.list === 'function') {
+        const { realpathNormalize } = require('@deepseek-ai/dsh-workspace');
+        const cwd = task.cwd ?? process.cwd();
+        let cwdCanon = null;
+        try { cwdCanon = await realpathNormalize(cwd); } catch { cwdCanon = null; }
+        if (cwdCanon === null) {
+          console.warn('[dshome-cron]', task.id, '：cwd 非完整限定路径或不存在的目录，会话不登记工作区（将落「未分组」）:', String(cwd));
+        } else {
+          let attached = false;
+          for (const entity of workspace.list()) {
+            const p = entity && entity.record && entity.record.path;
+            if (typeof p !== 'string' || typeof entity.attachSession !== 'function') continue;
+            let pCanon = null;
+            try { pCanon = await realpathNormalize(p); } catch { pCanon = null; }
+            if (pCanon !== null && pCanon === cwdCanon) { await entity.attachSession(sessionId); attached = true; break; }
+          }
+          if (!attached) {
+            console.warn('[dshome-cron]', task.id, '：无匹配的工作区注册，本会话将落「未分组」（可在侧边栏「添加目录」后重跑）:', cwdCanon);
+          }
+        }
+      } else {
+        console.warn('[dshome-cron]', task.id, '：workspace 服务不可用，本会话将落「未分组」');
+      }
+    } catch (e) {
+      console.warn('[dshome-cron]', task.id, '：工作区登记失败（不影响任务执行）:', e && e.message);
+    }
     const { createMessage } = require('@deepseek-ai/dsh-llm');
     // 上工自动召回：把 mind-prime 的输出预置进任务 prompt（定时任务开机即带上下文，不靠 agent 记得）。
     let primeContext = '';

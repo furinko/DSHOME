@@ -31,7 +31,7 @@ const RECIPES = [
 A 维护（Ritual §二 清单 · 🔴 只碰「自己弄脏的」）：① 清自己产生的中间物（临时/中介/日志/缓存）② 轮级缓冲（mind-private\\tasks\\pending\\ 待放行 + mind-private\\L1\\Dream.md）蒸馏或清空 ③ pending 超 7 天 → 列出提醒，不擅毁 ④ 记忆层裁剪按 Memory §十一 范围表（快照按时间窗；Learn/L3 归并退役走 trash 不直接删）⑤ 机器判「无效/恶化」的进化只列待人拍、不自动回滚。仓库内清理一律走 node scripts/evolve-log.mjs trash（不删只移 + 留痕）；构建/删除类等放行。
 B 进化体检（Ritual §三 + §一 step8）：跑 node scripts/evolve-log.mjs health，按自主信号处置——① 判效空转/覆盖不足 → 补绑主信号 ② 未回填 ≥5 → effect auto 机器判 ③ 未裁决「无效/恶化」≥2 → 列人拍 ④ 记录 ≥8 且 repeat-mistakes ≥2 → 审视进化。人拍后用 decide 记账（消费端，§四）。⚠️ 判据/输入缺失不得判「通过」（Invariants #14）。
 C 巡检（Ritual §四「主动找隐患」）：① 记忆健康（Tree↔_index↔实体一致 + 死链/孤儿引用）② 规则冲突（L0/L1 自相矛盾/过时引用）③ 行为信号（Learn 💢/🤗 与 metrics 口径是否还自洽）④ 系统积压（cron 任务状态/pending/curate 候选/.curate-jobs.json）⑤ 能力缺口（Power §三：该收录未收录的 Skill/Exp）⑥ 出厂卫生（mind-validate --strict + verify-payload）⑦ 脚本面全量冒烟（node scripts/verify-scripts-run.mjs --all：补「真跑冒烟在 hook 里只跑暂存脚本」的盲区——依赖侧改动弄坏测试时链上看不见；一条命令覆盖白名单内全部脚本）。
-D 发现分类（Ritual §四）：低危自主修 → 报告，不入待办；需用户定/复杂 → 追加 mind-private\\L3\\projects\\{{projectKey}}\\project.md 待办并提示。
+D 处置口径（Ritual §四）：**能处理的就处理掉；需要决策的进待办；不要在任务中留未决项**——① 能处理＝不需用户取向/放行的（低危、可逆、本轮有验证手段）⇒ 本轮做完 + 给证据，不许只写进报告或待办；② 需决策＝需用户取向或放行的 ⇒ 追加 mind-private\\L3\\projects\\{{projectKey}}\\project.md，一条一句取向问题并提示；③ 不留未决项＝禁止“待查/待定/待实测”悬空：要么本轮实测钉死（给判据+读数），要么明写“已登记待办第 N 条、等用户一句”。
 🔴 边界（Ritual §二）：不删/归档用户记忆内容、不动用户路径与配置（settings/凭证）；用户内容只列不擅动。
 汇报：洗了啥 + 发现哪些隐患 + 建议。`,
   },
@@ -49,6 +49,7 @@ D 发现分类（Ritual §四）：低危自主修 → 报告，不入待办；�
 3 按落点入库：方法论/流程 → mind\\L2\\Skill\\<id>.md（frontmatter 含 contract）+ _index + Tree；工具手册 → mind-private\\L2\\Exp\\<id>.md + 该目录 README 表；教训 → L3\\common\\lessons（+_index）；偏好 → L3\\common\\user-rules；项目决策/事件 → L3\\projects\\<项目>\\知识（项目专属工具不收录，记 project.md）。
 4 灵感池整理（Dream §三：池中 ≥3 条 → 主动提醒用户；该蒸馏的蒸馏、该落待办的落待办、该作废的作废）。
 5 索引与账：Skill → _index+Tree；记忆 → 对应 _index；改「自我类」→ node scripts/evolve-log.mjs snapshot + log（一进化一主信号）。
+6 处置口径（Ritual §四，同 self-clean）：**能处理的就处理掉；需要决策的进待办；不要在任务中留未决项**——① 能处理＝不需用户取向/放行的（低危、可逆、本轮有验证手段）⇒ 本轮做完 + 给证据，不许只写进报告或待办；② 需决策＝需用户取向或放行的 ⇒ 追加 mind-private\\L3\\projects\\{{projectKey}}\\project.md，一条一句取向问题并提示；③ 不留未决项＝禁止“待查/待定/待实测”悬空：要么本轮实测钉死（给判据+读数），要么明写“已登记待办第 N 条、等用户一句”。
 🔴 刹闸（Power §三）：L0/L1 规则、护栏/插件代码、运行时注册、git 提交仍等放行；L2 生长区免放行但要汇报。
 汇报：吃了啥 + 改了哪些索引。`,
   },
