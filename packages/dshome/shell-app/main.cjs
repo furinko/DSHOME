@@ -582,10 +582,25 @@ async function isBackendUp() {
   }
 }
 
+/** 窗口是否漂到了「应有页面」之外（最典型：鼠标侧键退回到历史里的离线页）。
+ *  壳只在「状态变化」时载页 ⇒ 状态未变时的页面漂移无人纠正：窗口会一直停在
+ *  「后端未连接」离线页，连离线页那颗「重新连接」也被同一条早退吃掉（2026-09-23 报障）。 */
+async function fixWindowDrift(up) {
+  if (!up || !window) return;
+  try {
+    if (window.webContents.isLoading()) return; // 正在载页：别与进行中的 loadURL 抢跑
+    const cur = window.webContents.getURL();
+    if (cur.startsWith(targetUrl())) return;    // 已在带 token 的前端页
+    logLine({ state: 'drift-reload', from: cur });
+    await window.loadURL(targetUrl());
+  } catch { /* 失败留给 3s 轮询下一轮 */ }
+}
+
 async function applyBackendState(nowUp, readyKind = null) {
   if (nowUp) offlineStreak = 0; // 探到后端在线：清零失败计数，防抖通道恢复正常
   if (nowUp && readyKind !== null) onlineReadyKind = readyKind;
-  if (nowUp === isOnline) return; // nothing changed
+  // 状态没变也要纠正页面漂移（旧版这里直接 return ⇒ 被侧键退到离线页后永远回不来）
+  if (nowUp === isOnline) { await fixWindowDrift(nowUp); return; }
   isOnline = nowUp;
   if (!isOnline) onlineReadyKind = null;
   logLine({ state: isOnline ? 'online' : 'offline', ready: onlineReadyKind ?? undefined, url: targetUrl() });
@@ -831,6 +846,14 @@ function createWindow() {
     }
   });
   window.on('closed', () => { window = null; });
+  // 🔴 载页完成即清掉本窗口的导航历史（2026-09-23 报障：点鼠标侧键退回「后端未连接」离线页）：
+  //    壳启动的「先 loadFile(离线页) → 后端就绪后 loadURL(带 token 在线页)」序列会在历史里留条目
+  //    ⇒ Chromium 的鼠标侧键（后退）= 一步退回那张离线页；而壳此前完全不感知，applyBackendState
+  //    又在「状态未变」时直接 return ⇒ 窗口卡在离线页，连离线页的「重新连接」都被同一条早退吃掉。
+  //    清历史后 canGoBack()=false，侧键无处可退（API 见 electron.d.ts:10125，Electron 43 实有）。
+  window.webContents.on('did-finish-load', () => {
+    try { window.webContents.navigationHistory.clear(); } catch { /* ignore */ }
+  });
   loadInitial();
 }
 
