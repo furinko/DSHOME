@@ -77,8 +77,21 @@ window.__ModuleLoader__.load({
         if (document.querySelector("style[data-dshome-overrides]")) return;
         const tag = document.createElement("style");
         tag.setAttribute("data-dshome-overrides", "1");
+        // ③ 会话区布局隔离（2026-09-23 主人报「开/没开侧边栏的会话来回切换很卡」）：
+        //     成因链（源码已证）——侧栏开合会改会话列宽 → ConversationRoot 用
+        //     resolveContentWidth() 重算 --dsh-chat-user-width（clamp(680, 列宽*0.64, 920)）
+        //     → 整列文本重新折行；而官方 conversation 的 CSS 里 content-visibility /
+        //     contain 是 0 处 ⇒ 屏幕外几千条消息也一起参与重排（真机实测：每次切换
+        //     280~600ms 长任务，7 簇）。这里让「不在视口附近」的消息块跳过布局：宽度变化时
+        //     它们根本不参与计算，只排眼前那几十块。contain-intrinsic-size 的 auto 关键字
+        //     让浏览器记住实测高度，减少滚动条修正。
+        //     ⚠️ 选择器用官方语义属性 [data-chat-turn]（非打包哈希，升级/重装免疫）；实测该
+        //     属性落在 chat 的**每个消息块**（flowItem，见 ui-chat client.js:1603-1612）上，
+        //     故粒度＝单块，估算高度取单块典型值 200px（助手回复/工具块/思考块的中位量级）。
+        //     ⚠️ content-visibility 官方未声明，无需提权重；改动纯样式，删本行即回滚。
         tag.textContent =
-          "[data-width-handle]{display:none}";
+          "[data-width-handle]{display:none}" +
+          "[data-chat-turn]{content-visibility:auto;contain-intrinsic-size:auto 200px}";
         document.head.appendChild(tag);
       } catch (error) {
         console.warn("dshome-theme: override css failed", error);
