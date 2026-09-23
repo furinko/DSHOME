@@ -31,7 +31,7 @@
 // 测试传临时目录即可。
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Stable Cordis plugin name (row: `name: dshome/agent-roles`). */
@@ -382,7 +382,7 @@ export function normalizeModel(raw, warnings = []) {
 }
 
 /** 已知的顶层 frontmatter 键；其余键进 card.extra（不报错，只留痕）。 */
-const CARD_TOP_KEYS = ['id', 'name', 'description', 'model', 'tools'];
+const CARD_TOP_KEYS = ['id', 'name', 'description', 'model', 'tools', 'paths'];
 
 /**
  * 解析一张角色卡。正文（closing `---` 之后）trim 后即系统提示词。
@@ -438,6 +438,10 @@ export function parseCard(text, sourcePath = '') {
   const model = normalizeModel(fm.model, warnings);
   const toolsRaw = normalizeTools(fm.tools, warnings);
   const tools = { allow: toolsRaw.allow, deny: toolsRaw.deny };
+  // `paths.allow`（可选）：本角色允许写的路径白名单（目录前缀或具体文件；相对按成员 cwd 解析）。
+  // 给了它 ⇒ 起成员时启用**路径闸**；不给 ⇒ 不启用（`role_spawn` 返回值里标注 `writeScope: 'unbounded'`）。
+  const pathsRaw = normalizeTools(fm.paths, warnings);
+  const writePaths = pathsRaw.allow;
 
   const extra = {};
   for (const key of Object.keys(fm)) {
@@ -494,6 +498,55 @@ function writeAuditLine(line) {
   } catch { /* 留痕失败绝不影响功能 */ }
 }
 
+/** 会被"路径闸"覆盖的写工具（`pwsh`/`bash` 不在此列：命令级"是不是写"解析不可靠 ⇒ 只留痕、不拦）。 */
+const WRITE_PATH_TOOLS = ['write', 'edit', 'str_replace_editor'];
+
+/** 归一化路径：相对 → 按 cwd 转绝对；统一分隔符；去尾斜杠；**折小写**（Windows 不区分大小写）。 */
+function normalizePath(target, cwd) {
+  try {
+    const raw = String(target || '');
+    if (raw === '') return '';
+    const abs = isAbsolute(raw) ? raw : resolve(cwd || process.cwd(), raw);
+    return abs.replace(/[\\/]+/g, '\\').replace(/\\+$/, '').toLowerCase();
+  } catch { return ''; }
+}
+
+/**
+ * 路径闸判据（2026-09-23 主人「你定」后落 · 方案乙）：白名单里的**目录前缀或具体文件**之内才放行。
+ * - 白名单为空 ⇒ 返回 true（＝**未启用**路径闸；调用方必须在返回值里标注 `unbounded`，不许静默放宽）
+ * - 白名单非空但**取不到目标路径** ⇒ 返回 false（fail-closed）
+ * @param {string} target - 本次写目标（来自 `describeToolTarget`）
+ * @param {string[]} allowPaths - 允许写的路径（相对按 `cwd` 解析）
+ * @param {string} cwd - 解析相对路径的基准（成员的工作区）
+ */
+export function pathAllowed(target, allowPaths, cwd) {
+  const list = toNameList(allowPaths);
+  if (list.length === 0) return true;
+  const t = normalizePath(target, cwd);
+  if (t === '') return false;
+  return list.some((p) => {
+    const a = normalizePath(p, cwd);
+    return a !== '' && (t === a || t.startsWith(`${a}\\`));
+  });
+}
+
+/**
+ * ③ 自检（2026-09-23 加）：列出"**注册在该 agent 自己 scope、`restrict` mask 不掉**"的工具名。
+ * 为什么：主实例 preset 开 `modelSelectionSettings` 时 `subagent` 就是这一类（本轮实测），
+ * 将来某个开关一开可能再冒出一个 ⇒ 起成员时自动报出来，不靠人肉扫源码。
+ * @param {{visible?:Map<string,unknown>, restrictableNames?:Set<string>}} view - `ctx.tools.view(agent)` 的结果
+ * @returns {string[]|null} 工具名（排序）；拿不到视图时返回 null（未验证，不是"没有"）
+ */
+export function ownScopeTools(view) {
+  try {
+    const visible = view && view.visible;
+    const restrictable = view && view.restrictableNames;
+    if (!visible || typeof visible.keys !== 'function') return null;
+    if (!restrictable || typeof restrictable.has !== 'function') return null;
+    return [...visible.keys()].filter((toolName) => !restrictable.has(toolName)).sort();
+  } catch { return null; }
+}
+
 /** 从工具参数里抽"这次会碰哪里"：`write`/`edit` → 路径；`pwsh`/`bash` → 命令压平后的首段。抽不到返回 ''。 */
 export function describeToolTarget(name, args) {
   try {
@@ -521,12 +574,23 @@ export function buildMemberGuard(filter = {}, options = {}) {
   const predicate = buildToolGuard(filter);
   const label = typeof options.label === 'string' ? options.label : '';
   const record = typeof options.record === 'function' ? options.record : writeAuditLine;
+  const writePaths = toNameList(options.writePaths);
+  const cwd = typeof options.cwd === 'string' ? options.cwd : '';
   return (execution) => {
     const name = execution && typeof execution.name === 'string' ? execution.name : '';
     const denial = predicate(execution);
     if (denial) {
       try { record(JSON.stringify({ ts: new Date().toISOString(), kind: 'deny', label, tool: name, reason: denial })); } catch { /* 忽略 */ }
       return denial;
+    }
+    // 路径闸（opt-in：只有声明了 writePaths 才启用；只覆盖 write/edit/str_replace_editor）
+    if (name !== '' && WRITE_PATH_TOOLS.includes(name) && writePaths.length > 0) {
+      const target = describeToolTarget(name, execution && execution.arguments);
+      if (!pathAllowed(target, writePaths, cwd)) {
+        const reason = `写目标不在本次 write_scope 内：${target || '(未取到路径)'}（允许：${writePaths.join('、')}）`;
+        try { record(JSON.stringify({ ts: new Date().toISOString(), kind: 'deny-path', label, tool: name, target, reason })); } catch { /* 忽略 */ }
+        return reason;
+      }
     }
     if (name !== '' && AUDIT_TOOLS.includes(name)) {
       const target = describeToolTarget(name, execution && execution.arguments);
@@ -629,6 +693,8 @@ export function renderPolicyText() {
     '3. 成员完成后用一条消息回报；你负责验收并给最终答复。成员不得自建成员、不得改分工。',
     '4. 卡正文即成员系统提示词：改卡只影响之后起的成员，已起的成员不受影响。',
     '5. 同一把工具不能同时写进 allow 与 deny —— 那是自相矛盾的声明，role_spawn 会直接报错（不会静默按 deny 处理）。',
+    '6. 派**可写成员**（工程师这类）时尽量给 `write_scope`（路径白名单，目录前缀或具体文件）：给了它，成员的 `write`/`edit` 落到范围外会**当场被拒**；不给＝`unbounded`（只留痕、不拦，返回值会如实标注）。⚠️ `pwsh` **不受路径闸约束**（命令级"是不是写"解析不可靠）——所以卡里的行为契约仍然算数，别把"没被拦"当成"没风险"。',
+    '7. 起成员后看返回值：`guardInstalled` 必须是 true；`ownScopeTools` 非空 ⇒ 这名成员手里有 **`restrict` 管不掉的自注册工具**（真机实测：`subagent` 就是这一类）——插件会自动写 marker，需要时补级联闸。',
   ].join('\n');
 }
 
@@ -848,6 +914,8 @@ const ROLE_SPAWN_SCHEMA = {
     deny: { type: 'array', items: { type: 'string' } },
     guardInstalled: { type: 'boolean' },
     guardReason: { type: 'string' },
+    writeScope: { type: 'string' },
+    ownScopeTools: { type: 'array', items: { type: 'string' } },
     unknown: { type: 'array', items: { type: 'string' } },
     available: { type: 'array', items: { type: 'string' } },
     broken: { type: 'array', items: BROKEN_ROW_SCHEMA },
@@ -1085,6 +1153,11 @@ function makeRoleTools({ ctx, state }) {
           model: { type: 'string', description: '覆盖卡的模型 id（等价 model.model）' },
           save: { type: 'boolean', description: '内联卡是否落盘（需 persona+name；已存在同名文件时拒绝覆盖）' },
           scope: { type: 'string', enum: ['workspace', 'private'], description: '内联卡落盘位置，默认 workspace' },
+          write_scope: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '（可选）本次允许该成员写的路径白名单（目录前缀或具体文件；相对路径按调用者 cwd 解析）。给了它 ⇒ 启用路径闸：成员的 write/edit 落到白名单外会被**当场拒绝**。不给则用卡里的 paths.allow；两者都没有 = 不启用路径闸（返回值标注 writeScope:"unbounded"，只留痕不拦——诚实边界）。注意：**pwsh 不受路径闸约束**（命令级解析不可靠），只能靠留痕 + 卡内行为契约。',
+          },
         },
       },
       output: { schema: ROLE_SPAWN_SCHEMA, render: renderJson },
@@ -1203,8 +1276,10 @@ function makeRoleTools({ ctx, state }) {
             allow: toNameList(built.allow),
             deny: [...new Set([...CASCADE_DENY, ...toNameList(effTools.deny), ...toNameList(built.deny)])],
           };
-          const guard = installChildGuard(ctx, state, childId, guardFilter, spec.label);
-          writeMarker(`guard: ${spec.label} -> ${guard.installed ? 'installed' : `pending/failed: ${guard.reason}`} @ ${new Date().toISOString()}`);
+          // 路径闸（opt-in）：当轮 `write_scope` 优先于卡里的 `paths.allow`；两者都没有 ⇒ 不启用（如实标注）
+          const writePaths = toNameList(input.write_scope).length > 0 ? toNameList(input.write_scope) : toNameList(effCard.writePaths);
+          const guard = installChildGuard(ctx, state, childId, guardFilter, spec.label, writePaths, cwd);
+          writeMarker(`guard: ${spec.label} -> ${guard.installed ? 'installed' : `pending/failed: ${guard.reason}`} · writeScope=${writePaths.length > 0 ? `declared(${writePaths.length})` : 'unbounded'} @ ${new Date().toISOString()}`);
           return {
             ok: true,
             childId,
@@ -1219,6 +1294,8 @@ function makeRoleTools({ ctx, state }) {
             deny: built.deny,
             guardInstalled: guard.installed === true,
             guardReason: guard.reason || '',
+            writeScope: writePaths.length > 0 ? 'declared' : 'unbounded',
+            ownScopeTools: Array.isArray(guard.ownScope) ? guard.ownScope : [],
           };
         } catch (error) {
           writeMarker(`spawn: failed ${describeError(error)} @ ${new Date().toISOString()}`);
@@ -1299,17 +1376,19 @@ function guardFilterForMember(state, cwd, roleId) {
       workspaceDir: join(cwd || process.cwd(), WORKSPACE_CARD_DIRNAME),
     });
     const picked = selectCard(discovery, roleId);
-    if (!picked.ok) return { filter: fallback, reason: `卡 ${roleId} 未找到 ⇒ 只装无条件级联闸` };
+    if (!picked.ok) return { filter: fallback, writePaths: [], reason: `卡 ${roleId} 未找到 ⇒ 只装无条件级联闸` };
     const toolsRaw = picked.card.tools || {};
     return {
       filter: {
         allow: toNameList(toolsRaw.allow),
         deny: [...new Set([...CASCADE_DENY, ...toNameList(toolsRaw.deny)])],
       },
+      // 恢复场景同样带卡里声明的路径白名单（否则重启后成员会"掉闸"）
+      writePaths: toNameList(picked.card.writePaths),
       reason: '',
     };
   } catch (error) {
-    return { filter: fallback, reason: `读卡异常 ⇒ 只装无条件级联闸：${describeError(error)}` };
+    return { filter: fallback, writePaths: [], reason: `读卡异常 ⇒ 只装无条件级联闸：${describeError(error)}` };
   }
 }
 
@@ -1326,8 +1405,8 @@ function ensureMemberGuard(ctx, state, childId, label, cwd) {
   catch { child = null; }
   if (!child) return { installed: false, reason: '成员不在本进程注册表（未持有其 agent，无法装闸）' };
   const built = guardFilterForMember(state, cwd || agentCwd(child), parsed.roleId);
-  const applied = applyChildGuard(state, child, built.filter, typeof label === 'string' ? label : '');
-  return { installed: applied.installed, reason: built.reason || applied.reason };
+  const applied = applyChildGuard(ctx, state, child, built.filter, typeof label === 'string' ? label : '', built.writePaths, cwd || agentCwd(child));
+  return { installed: applied.installed, reason: built.reason || applied.reason, ownScope: applied.ownScope || null };
 }
 
 /** `agent/created` 的异步补装路：label 不在 agent 对象上 ⇒ 向父会话的 listChildren 问一次。 */
@@ -1345,7 +1424,7 @@ async function ensureMemberGuardById(ctx, state, agent) {
     const parsed = parseRoleLabel(label);
     if (!parsed || !parsed.roleId) return;
     const built = guardFilterForMember(state, agentCwd(agent), parsed.roleId);
-    const applied = applyChildGuard(state, agent, built.filter);
+    const applied = applyChildGuard(ctx, state, agent, built.filter, label, built.writePaths, agentCwd(agent));
     writeMarker(`guard(resume): ${id} ${applied.installed ? 'installed' : `skipped ${applied.reason}`} @ ${new Date().toISOString()}`);
   } catch { /* best-effort：补不上不影响主流程（marker 由调用方在主路径留痕） */ }
 }
@@ -1355,30 +1434,41 @@ async function ensureMemberGuardById(ctx, state, agent) {
  * ① 先看注册表里有没有它（`startContinuable` 内部已 materialize，通常立刻能拿到）；
  * ② 拿不到就先记进 `pendingGuards`，由 `agent/created` 处理器补装 —— 两条路合起来无竞态。
  */
-function installChildGuard(ctx, state, childId, filter, label) {
+function installChildGuard(ctx, state, childId, filter, label, writePaths, cwd) {
   const id = String(childId || '');
   if (id === '') return { installed: false, reason: 'childId 为空，无法装闸' };
   let child = null;
   try { child = (ctx.agents.list() || []).find((candidate) => candidate && String(candidate.id) === id) || null; }
   catch { child = null; }
   if (!child) {
-    state.pendingGuards.set(id, { filter, label: typeof label === 'string' ? label : '' });
+    state.pendingGuards.set(id, { filter, label: typeof label === 'string' ? label : '', writePaths: toNameList(writePaths), cwd: typeof cwd === 'string' ? cwd : '' });
     return { installed: false, reason: '子 agent 尚未进注册表：已挂起，等 agent/created 补装' };
   }
-  return applyChildGuard(state, child, filter, label);
+  return applyChildGuard(ctx, state, child, filter, label, writePaths, cwd);
 }
 
-/** 真正装闸（幂等）。闸 ＝ 能力面谓词 + 写操作留痕（见 `buildMemberGuard`）。 */
-function applyChildGuard(state, child, filter, label) {
+/** 真正装闸（幂等）。闸 ＝ 能力面谓词 + 写操作留痕 +（声明了才启用的）路径闸；顺带自检 own-scope 工具。 */
+function applyChildGuard(ctx, state, child, filter, label, writePaths, cwd) {
   try {
     if (!child || !child.ctx || !child.ctx.tools || typeof child.ctx.tools.guard !== 'function') {
       return { installed: false, reason: '子 scope 没有 tools.guard（该 agent 拿不到执行期闸）' };
     }
     const id = String(child.id);
-    if (state.childGuards.has(id)) return { installed: true, reason: '已装过（幂等跳过）' };
-    const dispose = child.ctx.tools.guard(buildMemberGuard(filter, { label: typeof label === 'string' ? label : '' }));
+    if (state.childGuards.has(id)) return { installed: true, reason: '已装过（幂等跳过）', ownScope: state.childOwnScope.get(id) || null };
+    const dispose = child.ctx.tools.guard(buildMemberGuard(filter, {
+      label: typeof label === 'string' ? label : '',
+      writePaths: toNameList(writePaths),
+      cwd: typeof cwd === 'string' ? cwd : agentCwd(child),
+    }));
     state.childGuards.set(id, dispose);
-    return { installed: true, reason: '' };
+    // ③ 自检：成员自己 scope 注册、`restrict` mask 不掉的工具（真机实测：subagent 就是这一类）
+    let ownScope = null;
+    try { ownScope = ownScopeTools(ctx.tools && typeof ctx.tools.view === 'function' ? ctx.tools.view(child) : null); } catch { ownScope = null; }
+    if (ownScope && ownScope.length > 0) {
+      state.childOwnScope.set(id, ownScope);
+      writeMarker(`ownscope: ${id} 出现 mask 不掉的自注册工具 ${ownScope.join('、')} @ ${new Date().toISOString()}（已记录，未自动拦——需要时补级联闸）`);
+    }
+    return { installed: true, reason: '', ownScope };
   } catch (error) {
     return { installed: false, reason: describeError(error) };
   }
@@ -1445,7 +1535,7 @@ export function apply(ctx) {
       return;
     }
 
-    const state = { home: homeRoot(), nameIndex: new Map(), pendingGuards: new Map(), childGuards: new Map() };
+    const state = { home: homeRoot(), nameIndex: new Map(), pendingGuards: new Map(), childGuards: new Map(), childOwnScope: new Map() };
     const installed = new Map();
 
     const maybeInstall = (agent) => {
@@ -1474,7 +1564,7 @@ export function apply(ctx) {
         if (createdId !== '' && state.pendingGuards.has(createdId)) {
           const pending = state.pendingGuards.get(createdId);
           state.pendingGuards.delete(createdId);
-          const applied = applyChildGuard(state, created, pending.filter, pending.label);
+          const applied = applyChildGuard(ctx, state, created, pending.filter, pending.label, pending.writePaths, pending.cwd);
           writeMarker(`guard: child ${createdId} ${applied.installed ? 'installed' : `FAILED ${applied.reason}`} @ ${new Date().toISOString()}`);
         }
       } catch { /* 补装失败不影响主流程 */ }

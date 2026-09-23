@@ -31,6 +31,8 @@ import {
   MEMBER_MAX_DEPTH,
   normalizeModel,
   normalizeTools,
+  ownScopeTools,
+  pathAllowed,
   parseCard,
   parseRoleLabel,
   PERSONA_TAIL,
@@ -226,7 +228,12 @@ function makeHost() {
     on: (ev, handler) => { record.handlers.push({ ev, handler }); return () => {}; },
     effect: (factory) => { record.effectDispose = factory(); return () => {}; },
     tools: {
-      view: () => ({ visible: new Map(), restrictableNames: new Set(VISIBLE) }),
+      view: (scope) => {
+        // 夹具忠实于真机：成员（本 mock 里 id=child-1 那个）的**可见面**含一个 own-scope 注册、
+        // `restrict` 管不到的工具 `subagent`（真机实测同型）；其它 scope 保持空可见面。
+        if (scope && String(scope.id) === 'child-1') return { visible: new Map([['subagent', {}], ['read', {}]]), restrictableNames: new Set(VISIBLE) };
+        return { visible: new Map(), restrictableNames: new Set(VISIBLE) };
+      },
       schemas: () => [],
       register: () => () => {},
       get: () => undefined,
@@ -508,6 +515,34 @@ async function main() {
     assert('audit file records the member label', auditText.includes('role:writer:'), 'label prefix present', auditText.slice(-200));
   }
   assert('reviewer spawn also reports guardInstalled (idempotent on the same mock child)', spawnReviewer.guardInstalled === true, true, spawnReviewer.guardInstalled);
+
+  // ⑥''''' 路径闸（方案乙 · opt-in）+ own-scope 自检（③）
+  const ws = CWD;
+  assert('pathAllowed: empty whitelist = gate off', pathAllowed(`${ws}/a.md`, [], ws) === true, true, pathAllowed(`${ws}/a.md`, [], ws));
+  assert('pathAllowed: file inside an allowed dir', pathAllowed(`${ws}/sub/a.md`, [ws], ws) === true, true, pathAllowed(`${ws}/sub/a.md`, [ws], ws));
+  assert('pathAllowed: exact file allowed', pathAllowed(`${ws}/a.md`, [`${ws}/a.md`], ws) === true, true, pathAllowed(`${ws}/a.md`, [`${ws}/a.md`], ws));
+  assert('pathAllowed: sibling path denied', pathAllowed(`${ws}/other/a.md`, [`${ws}/a.md`], ws) === false, false, pathAllowed(`${ws}/other/a.md`, [`${ws}/a.md`], ws));
+  assert('pathAllowed: relative target resolved against cwd', pathAllowed('sub/b.md', ['sub'], ws) === true, true, pathAllowed('sub/b.md', ['sub'], ws));
+  assert('pathAllowed: empty target fails closed', pathAllowed('', [ws], ws) === false, false, pathAllowed('', [ws], ws));
+  assert('ownScopeTools: lists non-restrictable visible names', JSON.stringify(ownScopeTools({ visible: new Map([['subagent', {}], ['read', {}]]), restrictableNames: new Set(['read']) })) === '["subagent"]', '["subagent"]', ownScopeTools({ visible: new Map([['subagent', {}], ['read', {}]]), restrictableNames: new Set(['read']) }));
+  assert('ownScopeTools: null when the view is unavailable', ownScopeTools(null) === null, null, ownScopeTools(null));
+
+  {
+    const seenPath = [];
+    const scoped = buildMemberGuard({ allow: [], deny: [] }, { label: 'role:engineer:scoped', record: (line) => seenPath.push(line), writePaths: [`${ws}/ok`], cwd: ws });
+    assert('path gate allows a write inside the scope', scoped({ name: 'write', arguments: JSON.stringify({ path: `${ws}/ok/a.md` }) }) === undefined, undefined, scoped({ name: 'write', arguments: JSON.stringify({ path: `${ws}/ok/a.md` }) }));
+    const outside = scoped({ name: 'write', arguments: JSON.stringify({ path: `${ws}/bad/a.md` }) });
+    assert('path gate denies a write outside the scope', typeof outside === 'string' && outside.includes('write_scope'), 'string mentioning write_scope', outside);
+    assert('path gate records the denial as deny-path', seenPath.some((line) => line.includes('"kind":"deny-path"')), 'deny-path recorded', seenPath);
+    assert('path gate does not restrict pwsh (honest boundary)', scoped({ name: 'pwsh', arguments: JSON.stringify({ command: 'Set-Content x' }) }) === undefined, undefined, scoped({ name: 'pwsh', arguments: JSON.stringify({ command: 'Set-Content x' }) }));
+  }
+
+  // 集成：起成员时「当轮 write_scope」优先；不给则如实标注 unbounded；own-scope 自检报出 subagent
+  const spawnScoped = await defs.get('role_spawn').execute({ role: 'writer', name: 'scoped-one', write_scope: [`${ws}/ok`] }, exec);
+  assert('role_spawn reports writeScope=declared when write_scope given', spawnScoped.ok === true && spawnScoped.writeScope === 'declared', 'declared', spawnScoped.writeScope);
+  const spawnUnbounded = await defs.get('role_spawn').execute({ persona: '你是无范围探针。', name: 'unbounded-one' }, exec);
+  assert('role_spawn reports writeScope=unbounded when nothing declared', spawnUnbounded.ok === true && spawnUnbounded.writeScope === 'unbounded', 'unbounded', spawnUnbounded.writeScope);
+  assert('role_spawn surfaces own-scope tools (subagent)', Array.isArray(spawnScoped.ownScopeTools) && spawnScoped.ownScopeTools.includes('subagent'), '["subagent"]', spawnScoped.ownScopeTools);
 
   // ⑥'' 挂起补装路：childId 还不在注册表 ⇒ 记 pending；`agent/created` 一到就补装（无竞态）
   host.record.nextChildId = 'ghost-child';
