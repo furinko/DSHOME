@@ -22,6 +22,7 @@ import {
   apply,
   buildStartSpec,
   buildToolFilter,
+  buildToolGuard,
   composePersona,
   CASCADE_DENY,
   discoverCards,
@@ -159,10 +160,17 @@ put(WORKSPACE_DIR, 'reviewer.md', [
 put(WORKSPACE_DIR, 'writer.md', ['---', 'id: writer', 'tools:', '  deny:', '    - edit', '---', '你是写手。', ''].join('\n'));
 
 // ── mock 宿主（挂载面 + 工具真跑用；不接触真实宿主） ────────────────────────
-const VISIBLE = ['read', 'write', 'edit', 'glob', 'grep', 'pwsh', 'subagent', 'subagent_fork', 'workflow', 'ralph'];
+// ⚠️ 夹具必须忠实于**真机**（2026-09-23 变异测试抓到本夹具自己"恒绿"）：主实例里 `subagent` 由
+// `dsh-tool-subagent` 按**每个 agent 自己的 scope**注册（`modelSelectionSettings: true` 时）⇒ 它
+// **不在 `restrictableNames` 里**（`restrict` 管不到它），但成员手里**确实看得见它**。
+// 早期夹具把 `subagent` 放进 restrictableNames ⇒ "级联闸不无条件生效"的变异**照样 161/161 全绿**
+// —— 夹具与真实缺陷不符 = 断言锁不住修复。所以这里刻意**不含** `subagent`。
+const VISIBLE = ['read', 'write', 'edit', 'glob', 'grep', 'pwsh', 'subagent_fork', 'workflow', 'ralph'];
+/** own-scope 注册、`restrict` 管不到、但真实存在于成员工具面的那一类（真机实测：subagent）。 */
+const OWN_SCOPE_ONLY = ['subagent'];
 
 function makeHost() {
-  const record = { registered: [], sections: [], specs: [], sends: [], warns: [], effectDispose: null };
+  const record = { registered: [], sections: [], specs: [], sends: [], warns: [], handlers: [], childGuards: [], effectDispose: null, nextChildId: null };
   const scope = {
     systemPrompt: {
       section: (section) => { record.sections.push(section); return () => {}; },
@@ -183,9 +191,22 @@ function makeHost() {
       tools: { register: () => { record.childInstalled = true; return () => {}; } },
     },
   };
+  // 第三个 agent：id 与 `startContinuable` 返回的 childId 对齐，用来验「执行期闸真装到成员 scope 上」。
+  // 它的 `register` 故意**不**置 `childInstalled`（那是"子代理被误装工具"的反例探针，必须保持 false）。
+  const guardChildAgent = {
+    id: 'child-1',
+    session: { header: { id: 'child-1', delegationDepth: 1, cwd: CWD } },
+    ctx: {
+      systemPrompt: scope.systemPrompt,
+      tools: {
+        register: () => () => {},
+        guard: (predicate) => { record.childGuards.push(predicate); return () => {}; },
+      },
+    },
+  };
   const ctx = {
     logger: () => ({ info: () => {}, warn: (message) => record.warns.push(String(message)) }),
-    on: () => () => {},
+    on: (ev, handler) => { record.handlers.push({ ev, handler }); return () => {}; },
     effect: (factory) => { record.effectDispose = factory(); return () => {}; },
     tools: {
       view: () => ({ visible: new Map(), restrictableNames: new Set(VISIBLE) }),
@@ -193,11 +214,11 @@ function makeHost() {
       register: () => () => {},
       get: () => undefined,
     },
-    agents: { list: () => [topAgent, childAgent] },
+    agents: { list: () => [topAgent, childAgent, guardChildAgent] },
     subagents: {
       getProvider: () => ({ name: 'spawn' }),
       list: () => ['spawn'],
-      startContinuable: async (spec) => { record.specs.push(spec); return { childId: 'child-1', messageId: 'msg-1' }; },
+      startContinuable: async (spec) => { record.specs.push(spec); return { childId: record.nextChildId || 'child-1', messageId: 'msg-1' }; },
       sendMessage: async (sender, targetId, content) => {
         record.sends.push({ senderId: String(sender.id), targetId: String(targetId), text: content[0].text });
         return 'msg-2';
@@ -342,6 +363,17 @@ async function main() {
     buildStartSpec({ parent: fakeParent, card: { id: 'writer', body: '你是写手。' } }).request.prompt[0].text.slice(-90),
   );
   assert('report hint never enters the persona', !spec.request.persona.includes('回报地址'), 'persona stays card body + fixed tail', spec.request.persona.slice(-90));
+
+  // ⑤' 执行期闸谓词（2026-09-23 加：修真机验收抓到的"subagent mask 不掉"缺陷）
+  const guardDenyOnly = buildToolGuard({ allow: [], deny: ['subagent', 'edit'] });
+  assert('guard denies a cascade/deny name', typeof guardDenyOnly({ name: 'subagent' }) === 'string', 'string (deny)', guardDenyOnly({ name: 'subagent' }));
+  assert('guard denial names the tool', /subagent/.test(guardDenyOnly({ name: 'subagent' }) || ''), 'mentions subagent', guardDenyOnly({ name: 'subagent' }));
+  assert('guard allows a tool outside the deny list', guardDenyOnly({ name: 'read' }) === undefined, undefined, guardDenyOnly({ name: 'read' }));
+  assert('guard tolerates a nameless execution', guardDenyOnly({}) === undefined, undefined, guardDenyOnly({}));
+  const guardAllowOnly = buildToolGuard({ allow: ['read', 'grep'], deny: [] });
+  assert('guard enforces the allow list at execution time', typeof guardAllowOnly({ name: 'write' }) === 'string', 'string (not in allow)', guardAllowOnly({ name: 'write' }));
+  assert('guard allows a listed tool', guardAllowOnly({ name: 'read' }) === undefined, undefined, guardAllowOnly({ name: 'read' }));
+  assert('guard deny wins over allow for the same name', typeof buildToolGuard({ allow: ['read'], deny: ['read'] })({ name: 'read' }) === 'string', 'string (deny wins)', buildToolGuard({ allow: ['read'], deny: ['read'] })({ name: 'read' }));
   assert('start spec carries persona', spec.request.persona.includes('你是写手。'), 'persona contains card body', spec.request.persona.slice(0, 30));
 
   // ── ⑥ 挂载面 + 三把工具真跑（临时 DSH_HOME / mock host） ───────────────────
@@ -401,13 +433,14 @@ async function main() {
   assert('role_spawn writer ok', spawnWriter.ok === true, true, spawnWriter.ok);
   eq('role_spawn label', spawnWriter.label, 'role:writer:writer');
   eq('role_spawn childId', spawnWriter.childId, 'child-1');
-  eq('role_spawn deny (card deny + visible cascade)', spawnWriter.deny, ['edit', 'subagent', 'subagent_fork', 'workflow', 'ralph']);
+  eq('role_spawn deny (card deny + restrictable cascade; own-scope subagent is NOT maskable here)', spawnWriter.deny, ['edit', 'subagent_fork', 'workflow', 'ralph']);
+  assert('fixture models the own-scope leak (subagent not in restrictable surface)', !VISIBLE.includes('subagent') && OWN_SCOPE_ONLY.includes('subagent'), 'VISIBLE excludes subagent, OWN_SCOPE_ONLY lists it', { visibleHasSubagent: VISIBLE.includes('subagent') });
   assert('role_spawn deny never carries role_*', !spawnWriter.deny.includes('role_list'), 'no role_* in deny', spawnWriter.deny);
   const writerSpec = host.record.specs[0];
   eq('startContinuable spec.provider', writerSpec.provider, 'spawn');
   eq('startContinuable request.maxDepth', writerSpec.request.maxDepth, 1);
   eq('startContinuable request.parent is the calling agent', writerSpec.request.parent, host.topAgent);
-  eq('startContinuable request.toolFilter.deny', writerSpec.request.toolFilter && writerSpec.request.toolFilter.deny, ['edit', 'subagent', 'subagent_fork', 'workflow', 'ralph']);
+  eq('startContinuable request.toolFilter.deny', writerSpec.request.toolFilter && writerSpec.request.toolFilter.deny, ['edit', 'subagent_fork', 'workflow', 'ralph']);
   assert('startContinuable request.persona carries card body', writerSpec.request.persona.includes('你是写手。'), 'persona contains "你是写手。"', writerSpec.request.persona.slice(0, 40));
   assert('startContinuable request.persona carries fixed tail', writerSpec.request.persona.includes(PERSONA_TAIL), 'persona contains PERSONA_TAIL', writerSpec.request.persona.slice(-80));
   assert('startContinuable prompt starts with the task', writerSpec.request.prompt[0].text.startsWith('写一段说明'), 'prompt starts with the task text', writerSpec.request.prompt[0].text.slice(0, 40));
@@ -421,7 +454,36 @@ async function main() {
   const reviewerSpec = host.record.specs[1];
   eq('model routing via request.agentOptions', reviewerSpec.request.agentOptions, { provider: 'deepseek', model: 'deepseek-chat' });
   eq('toolFilter.allow narrowed to card allow', reviewerSpec.request.toolFilter && reviewerSpec.request.toolFilter.allow, ['read']);
-  assert('reviewer toolFilter has no cascade tools (allow-only filter + deny for visible cascade)', reviewerSpec.request.toolFilter.deny.includes('subagent'), 'deny includes subagent', reviewerSpec.request.toolFilter.deny);
+  eq('reviewer toolFilter deny = restrictable cascade only (subagent must NOT appear: it is not maskable)', reviewerSpec.request.toolFilter.deny, ['subagent_fork', 'workflow', 'ralph']);
+
+  // ⑥' 执行期闸真装到成员 scope（2026-09-23 加）——这条覆盖 `restrict` 管不到的 own-scope 工具
+  assert('role_spawn reports guardInstalled', spawnWriter.guardInstalled === true, true, spawnWriter.guardInstalled);
+  eq('guard recorded on the member scope', host.record.childGuards.length, 1);
+  const writerGuard = host.record.childGuards[0];
+  assert('installed guard denies subagent (the own-scope leak)', typeof writerGuard({ name: 'subagent' }) === 'string', 'string (deny)', writerGuard({ name: 'subagent' }));
+  assert('installed guard denies card deny (edit)', typeof writerGuard({ name: 'edit' }) === 'string', 'string (deny)', writerGuard({ name: 'edit' }));
+  assert('installed guard allows read', writerGuard({ name: 'read' }) === undefined, undefined, writerGuard({ name: 'read' }));
+  assert('reviewer spawn also reports guardInstalled (idempotent on the same mock child)', spawnReviewer.guardInstalled === true, true, spawnReviewer.guardInstalled);
+
+  // ⑥'' 挂起补装路：childId 还不在注册表 ⇒ 记 pending；`agent/created` 一到就补装（无竞态）
+  host.record.nextChildId = 'ghost-child';
+  const spawnGhost = await defs.get('role_spawn').execute({ persona: '你是幽灵探针，只回报工具面。', name: 'ghost-one' }, exec);
+  assert('spawn ok even when the child is not yet in the registry', spawnGhost.ok === true, true, spawnGhost.ok);
+  assert('guard reports pending when the child is absent', spawnGhost.guardInstalled === false && /挂起|尚未进注册表/.test(spawnGhost.guardReason), 'pending reason', spawnGhost.guardReason);
+  host.record.nextChildId = null;
+  const createdHook = host.record.handlers.find((h) => h.ev === 'agent/created');
+  assert('agent/created handler is subscribed', createdHook !== undefined, true, createdHook !== undefined);
+  if (createdHook) {
+    const ghostAgent = {
+      id: 'ghost-child',
+      session: { header: { id: 'ghost-child', delegationDepth: 1, cwd: CWD } },
+      ctx: { tools: { register: () => () => {}, guard: (predicate) => { host.record.childGuards.push(predicate); return () => {}; } } },
+    };
+    createdHook.handler({ agent: ghostAgent });
+    eq('pending guard installed on agent/created', host.record.childGuards.length, 2);
+    const ghostGuard = host.record.childGuards[1];
+    assert('ghost guard denies subagent (cascade is unconditional in the guard)', typeof ghostGuard({ name: 'subagent' }) === 'string', 'string (deny)', ghostGuard({ name: 'subagent' }));
+  }
 
   const spawnDuplicate = await defs.get('role_spawn').execute({ role: 'reviewer', name: 'alice' }, exec);
   assert('duplicate member name -> ok:false', spawnDuplicate.ok === false, false, spawnDuplicate.ok);

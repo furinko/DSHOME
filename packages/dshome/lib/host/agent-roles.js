@@ -63,6 +63,35 @@ export const ROLE_TOOL_NAMES = ['role_list', 'role_spawn', 'role_send'];
 /** `restrict()` 明确拒收的保留名（PTC 传输层，`dsh-tools/lib/index.js:2800`）。 */
 const RESERVED_TOOL_NAMES = ['run_code'];
 
+/**
+ * 执行期工具闸（guard）谓词：把「角色能力面」从**可见性**升级为**调用即拒绝**。
+ *
+ * 为什么必须有它（2026-09-23 真机验收实测的缺陷）：`toolFilter` 走 `childCtx.tools.restrict()`，
+ * 而 restrict 的语义是「只过滤该 scope **继承来的**工具，不过滤它自己注册的」
+ * （`dsh-tools/lib/index.js:2839-2844`）。主实例的 preset 开了 `modelSelectionSettings: true` ⇒
+ * `subagent` 由 `dsh-tool-subagent` **按每个 agent 自己的 scope 注册**
+ * （`node_modules/@deepseek-ai/dsh-tool-subagent/lib/index.js:582-650` 的 `installScoped` +
+ * `agent/created`），所以 deny/allow 都 mask 不掉它 —— 实测成员手里仍有 `subagent`，
+ * 「成员不得再起成员」的级联闸名存实亡。本闸在**执行期**拦，覆盖 own-scope 工具。
+ *
+ * 语义（`ToolGuard = (execution) => string | undefined`，见
+ * `dsh-tools/lib/types/index.d.ts`）：返回字符串 = 拒绝该次调用，返回 undefined = 放行。
+ * @param {{allow?:string[], deny?:string[]}} filter - 卡解析后的能力面（allow 为空数组 = 不限白）
+ * @returns {(execution:{name?:string}) => string|undefined}
+ */
+export function buildToolGuard(filter = {}) {
+  const allow = toNameList(filter.allow);
+  const deny = new Set(toNameList(filter.deny));
+  const allowSet = allow.length > 0 ? new Set(allow) : null;
+  return (execution) => {
+    const name = execution && typeof execution.name === 'string' ? execution.name : '';
+    if (name === '') return undefined;
+    if (deny.has(name)) return `角色能力面未放行 ${name}（级联闸或卡内 deny）`;
+    if (allowSet && !allowSet.has(name)) return `角色能力面只含 ${allow.join('、')}，未放行 ${name}`;
+    return undefined;
+  };
+}
+
 /** 私密卡目录（相对 home root）：`<home>\mind-private\L0\agents\<id>.md`。 */
 const PRIVATE_CARD_SEGMENTS = ['mind-private', 'L0', 'agents'];
 /** 项目卡目录（相对调用者 cwd）：`<cwd>\.agent-roles\<id>.md`。 */
@@ -736,6 +765,8 @@ const ROLE_SPAWN_SCHEMA = {
     saved: { type: 'boolean' },
     allow: { type: 'array', items: { type: 'string' } },
     deny: { type: 'array', items: { type: 'string' } },
+    guardInstalled: { type: 'boolean' },
+    guardReason: { type: 'string' },
     unknown: { type: 'array', items: { type: 'string' } },
     available: { type: 'array', items: { type: 'string' } },
     broken: { type: 'array', items: BROKEN_ROW_SCHEMA },
@@ -1071,6 +1102,14 @@ function makeRoleTools({ ctx, state }) {
           const childId = started && started.childId ? String(started.childId) : '';
           state.nameIndex.set(indexKey, childId);
           writeMarker(`spawn: ${spec.label} -> ${childId} @ ${new Date().toISOString()}`);
+          // 执行期闸：能力面 = 无条件级联闸 ∪ 卡内 deny ∪ restrict 解析出的 deny；allow 用 restrict 解析出的 allow。
+          // 覆盖 `restrict` 管不到的 own-scope 工具（实测 subagent）——见 buildToolGuard 头注。
+          const guardFilter = {
+            allow: toNameList(built.allow),
+            deny: [...new Set([...CASCADE_DENY, ...toNameList(effTools.deny), ...toNameList(built.deny)])],
+          };
+          const guard = installChildGuard(ctx, state, childId, guardFilter);
+          writeMarker(`guard: ${spec.label} -> ${guard.installed ? 'installed' : `pending/failed: ${guard.reason}`} @ ${new Date().toISOString()}`);
           return {
             ok: true,
             childId,
@@ -1083,6 +1122,8 @@ function makeRoleTools({ ctx, state }) {
             saved,
             allow: built.allow,
             deny: built.deny,
+            guardInstalled: guard.installed === true,
+            guardReason: guard.reason || '',
           };
         } catch (error) {
           writeMarker(`spawn: failed ${describeError(error)} @ ${new Date().toISOString()}`);
@@ -1145,6 +1186,40 @@ function makeRoleTools({ ctx, state }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * 给刚起的成员装「执行期工具闸」。
+ * ① 先看注册表里有没有它（`startContinuable` 内部已 materialize，通常立刻能拿到）；
+ * ② 拿不到就先记进 `pendingGuards`，由 `agent/created` 处理器补装 —— 两条路合起来无竞态。
+ */
+function installChildGuard(ctx, state, childId, filter) {
+  const id = String(childId || '');
+  if (id === '') return { installed: false, reason: 'childId 为空，无法装闸' };
+  let child = null;
+  try { child = (ctx.agents.list() || []).find((candidate) => candidate && String(candidate.id) === id) || null; }
+  catch { child = null; }
+  if (!child) {
+    state.pendingGuards.set(id, filter);
+    return { installed: false, reason: '子 agent 尚未进注册表：已挂起，等 agent/created 补装' };
+  }
+  return applyChildGuard(state, child, filter);
+}
+
+/** 真正装闸（幂等）。 */
+function applyChildGuard(state, child, filter) {
+  try {
+    if (!child || !child.ctx || !child.ctx.tools || typeof child.ctx.tools.guard !== 'function') {
+      return { installed: false, reason: '子 scope 没有 tools.guard（该 agent 拿不到执行期闸）' };
+    }
+    const id = String(child.id);
+    if (state.childGuards.has(id)) return { installed: true, reason: '已装过（幂等跳过）' };
+    const dispose = child.ctx.tools.guard(buildToolGuard(filter));
+    state.childGuards.set(id, dispose);
+    return { installed: true, reason: '' };
+  } catch (error) {
+    return { installed: false, reason: describeError(error) };
+  }
+}
+
+/**
  * 给一个顶层 agent 的精确 scope 装：管控者协议段 + 三把工具。
  * 失败回滚并返回 null（fails-open）。
  */
@@ -1205,7 +1280,7 @@ export function apply(ctx) {
       return;
     }
 
-    const state = { home: homeRoot(), nameIndex: new Map() };
+    const state = { home: homeRoot(), nameIndex: new Map(), pendingGuards: new Map(), childGuards: new Map() };
     const installed = new Map();
 
     const maybeInstall = (agent) => {
@@ -1225,13 +1300,33 @@ export function apply(ctx) {
     try { live = agents.list() || []; } catch (error) { logWarn(ctx, `dshome-agent-roles: agents.list() 失败：${describeError(error)}`); }
     for (const agent of live) maybeInstall(agent);
 
-    ctx.on('agent/created', (payload) => { maybeInstall(payload && payload.agent); });
+    ctx.on('agent/created', (payload) => {
+      const created = payload && payload.agent;
+      maybeInstall(created);
+      // 补装挂起的成员执行期闸：子 agent 进注册表的那一刻装上（早于它跑第一步），无竞态。
+      try {
+        const createdId = created && created.id ? String(created.id) : '';
+        if (createdId !== '' && state.pendingGuards.has(createdId)) {
+          const filter = state.pendingGuards.get(createdId);
+          state.pendingGuards.delete(createdId);
+          const applied = applyChildGuard(state, created, filter);
+          writeMarker(`guard: child ${createdId} ${applied.installed ? 'installed' : `FAILED ${applied.reason}`} @ ${new Date().toISOString()}`);
+        }
+      } catch { /* 补装失败不影响主流程 */ }
+    });
     ctx.on('agent/disposed', (payload) => {
       try {
         const agent = payload && payload.agent;
         const dispose = installed.get(agent);
         if (typeof dispose === 'function') dispose();
         installed.delete(agent);
+        const agentId = agent && agent.id ? String(agent.id) : '';
+        if (agentId !== '') {
+          const childDispose = state.childGuards.get(agentId);
+          if (typeof childDispose === 'function') childDispose();
+          state.childGuards.delete(agentId);
+          state.pendingGuards.delete(agentId);
+        }
       } catch (error) {
         logWarn(ctx, `dshome-agent-roles: agent 卸载异常：${describeError(error)}`);
       }
@@ -1241,6 +1336,11 @@ export function apply(ctx) {
         try { dispose(); } catch { /* 清理失败不回抛 */ }
       }
       installed.clear();
+      for (const dispose of state.childGuards.values()) {
+        try { dispose(); } catch { /* 清理失败不回抛 */ }
+      }
+      state.childGuards.clear();
+      state.pendingGuards.clear();
     }, 'dshome-agent-roles.scopedTools()');
 
     writeMarker(`apply: mounted (top-level scoped install; ${installed.size} agent(s) now) @ ${new Date().toISOString()}`);
