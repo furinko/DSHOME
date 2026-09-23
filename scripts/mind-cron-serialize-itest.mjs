@@ -19,6 +19,10 @@ import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+
+// 把"等闸上限"压到 400ms（**必须在 require cron.cjs 之前**：常量在模块顶层求值）。
+// 不压的话"等满上限则放行"这条失败面要跑 30s，且 B/C 用例会超时。
+process.env.DSHOME_CRON_GATE_WAIT_MS = '400';
 const results = [];
 const check = (name, ok, extra) => results.push([name, ok ? 'PASS' : 'FAIL', extra]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -42,7 +46,17 @@ function makeHome() {
   return home;
 }
 
-function makeHost(withInject) {
+/** @param injectMode
+ *   'sync'  —— 回调**同步**执行（第一版夹具的形状；**不忠实**，见下）
+ *   'async' —— 回调在下一 tick 执行（**真宿主的形状**）
+ *   'never' —— 注册了 inject 但永不回调（sessions 始终不就绪）
+ *   'none'  —— 连 inject 都没有
+ *  🔴 为什么必须改（2026-09-23 实测）：`cron.cjs` 的 `watching = true` 写在 inject 的**回调里**，
+ *     而真宿主该回调**不是同步调用** ⇒ 原 `start()` 里"先接事件、再 catchUp"的顺序保证**不成立**
+ *     ⇒ 补跑走 fail-open 降级分支（**不查 isBusy，直接 run**）⇒ 两条自治会话 2ms 内并发创建
+ *     （本机实测 self-clean / self-feed 的 `createdAt` 差 2ms，并发跑了 3m51s）。
+ *     旧夹具用 'sync' ⇒ `watching` 在 `start()` 内立刻为 true ⇒ 这条路径**永远测不到**（假绿）。 */
+function makeHost(injectMode) {
   const st = { created: [], live: 0, maxLive: 0, handlers: {} };
   const sessions = {
     on(type, fn) {
@@ -67,7 +81,9 @@ function makeHost(withInject) {
     },
     logger: { info() {}, warn() {}, error() {} },
   };
-  if (withInject) hostCtx.inject = (names, cb) => { if (names.includes('sessions')) cb(sessions); return () => {}; };
+  if (injectMode === 'sync') hostCtx.inject = (names, cb) => { if (names.includes('sessions')) cb(sessions); return () => {}; };
+  if (injectMode === 'async') hostCtx.inject = (names, cb) => { if (names.includes('sessions')) setImmediate(() => cb(sessions)); return () => {}; };
+  if (injectMode === 'never') hostCtx.inject = () => () => {};
   return {
     hostCtx, st,
     endSession(id) {
@@ -79,11 +95,13 @@ function makeHost(withInject) {
 
 const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
 
-// ── A 正例：串行闸生效 ───────────────────────────────────────────────────────
+// ── A 正例：串行闸生效（**夹具忠实**：inject 回调异步 = 真宿主的形状）──────────────
+//   ⚠️ 这条在旧夹具（同步 inject）下**恒绿**，恰是本次病灶的藏身之处：把 'async' 换回 'sync'
+//      就等于"闸在 start() 内已就绪"，那条"补跑抢在闸前面"的路径**再也测不到**。
 {
   const home = makeHome();
   process.env.DSH_HOME = home;
-  const { hostCtx, st, endSession } = makeHost(true);
+  const { hostCtx, st, endSession } = makeHost('async');
   const cron = new DshCron(hostCtx);
   cron.start();
   await sleep(600);
@@ -108,13 +126,55 @@ const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
 {
   const home = makeHome();
   process.env.DSH_HOME = home;
-  const { hostCtx, st } = makeHost(false); // 不给 inject
+  const { hostCtx, st } = makeHost('none'); // 连 inject 都没有
   const cron = new DshCron(hostCtx);
   cron.start();
-  await sleep(600);
+  await sleep(900); // 跨过 GATE_WAIT_MS(400ms) + 一轮 GATE_POLL_MS(500ms)
   check('B1 无 sessions 服务 → 退回旧行为（两条都发）', st.created.length === 2, `created=${st.created.length}`);
   check('B2 降级面确实会并发（证明 A 非假绿）', st.maxLive === 2, `maxLive=${st.maxLive}`);
   check('B3 降级不卡死（队列空、未占闸）', cron.queue.length === 0 && cron.active.size === 0, '');
+  cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── C 正例（2026-09-23 加）：闸**没接上**时不许抢跑；等满上限必须放行（"不并发"不能以"不跑"为代价）
+//   反例：把 `deferCatchUp` 的等待去掉（直接 `catchUpMissed()`）⇒ C1 必红；
+//        把超时放行那段删掉 ⇒ C2 必红（补跑永久卡死）；把 GATE_WAIT_MS 当 0 ⇒ C1 必红。
+{
+  const home = makeHome();
+  process.env.DSH_HOME = home;
+  const { hostCtx, st } = makeHost('never'); // inject 注册了但**永不回调**（sessions 始终不就绪）
+  const cron = new DshCron(hostCtx);
+  cron.start();
+  await sleep(150);
+  check('C1 闸未接上时不抢跑（等，而不是降级直发）', st.created.length === 0, `created=${st.created.length}`);
+  await sleep(900); // 跨过 GATE_WAIT_MS(400ms)
+  check('C2 等满上限 → 仍补跑（不卡死）', st.created.length === 2, `created=${st.created.length}`);
+  check('C3 降级确实会并发（证明"等闸"不是白等）', st.maxLive === 2, `maxLive=${st.maxLive}`);
+  cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── D 正例（2026-09-23 加 · **本轮 itest 自己抓出来的真 bug**）──────────────────
+//   现象（日志实证）：`串行闸已接上（等了 0ms）→ 补跑` 之后，**又**出现 `已接上（等了 500ms）→ 补跑`
+//     ⇒ `catchUpMissed()` 被调了**两次**。
+//   成因：tick 里只写 `this._gateTimer = null`（**丢引用**），**没有 `clearTimeout`** ⇒
+//     setImmediate 里"主动叫醒"跑完 tick 后，那个待触发的轮询**仍在**，500ms 后照跑第二遍。
+//   危害：本次靠"已入队/已在跑"去重侥幸没发重复会话，但"补跑只许一次"**本身没有被守**——
+//     若第二次 tick 落在 `lastRunAt` 更新之前，同一个任务就会被补跑两遍。
+//   反例：去掉 tick 里的 `clearTimeout` + `done` 守卫 ⇒ D1 必红（`calls=2`）。
+{
+  const home = makeHome();
+  process.env.DSH_HOME = home;
+  const { hostCtx, st } = makeHost('async');
+  const cron = new DshCron(hostCtx);
+  let calls = 0;
+  const orig = cron.catchUpMissed.bind(cron);
+  cron.catchUpMissed = () => { calls++; return orig(); }; // 记账（deferCatchUp 走 this.xxx ⇒ 动态派发，patch 生效）
+  cron.start();
+  await sleep(1200); // 跨过 GATE_POLL_MS(500ms)：旧实现会在这里再补一遍
+  check('D1 补跑只跑一次（主动叫醒后，轮询不许再补一遍）', calls === 1, `catchUpMissed calls=${calls}`);
+  check('D2 且只建 1 个会话（第二条在队列里等放闸）', st.created.length === 1, `created=${st.created.length}`);
   cron.clear();
   rmSync(home, { recursive: true, force: true });
 }

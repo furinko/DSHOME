@@ -160,6 +160,14 @@ async function executeTask(hostCtx, task) {
 // 失败面（fail-open）：拿不到 sessions 服务 / 事件丢失 ⇒ `BUSY_MAX_MS` 兜底强制放闸，
 //   最坏降级成旧行为（并发不保证），但**绝不把队列卡死**。
 const BUSY_MAX_MS = 45 * 60 * 1000; // 单会话占闸上限（防 turn/end 事件丢失）
+// 补跑前的**等闸**上限（2026-09-23 修 · 见 `deferCatchUp`）：
+//   `watching = true` 写在 `hostCtx.inject` 的**回调**里，而真宿主该回调**不是同步调用** ⇒
+//   原 `start()` 里"先接事件、再 catchUp"的顺序保证**不成立**（2026-09-23 实测同型复发）。
+//   env 覆盖只给测试用（`DSHOME_CRON_GATE_WAIT_MS`）：itest 要能把 30s 压到几百毫秒，
+//   否则"等满上限则放行"这条失败面**没法在测试里验**。
+const GATE_WAIT_MS = Number(process.env.DSHOME_CRON_GATE_WAIT_MS) > 0
+  ? Number(process.env.DSHOME_CRON_GATE_WAIT_MS) : 30 * 1000;
+const GATE_POLL_MS = 500; // 等闸轮询间隔（仅兜底；闸一接上会**主动**叫醒，见 watchSessions）
 
 // ── 任务存储 ────────────────────────────────────────────────────────────────
 function loadCron() {
@@ -180,12 +188,58 @@ class DshCron {
     this.active = new Map(); // sessionId|'pending:<uuid>' -> { id: 任务 id, since: ms }（占闸中的自治会话）
     this.queue = []; // [{ id, reason, at }]（到点却忙 → 排队，放闸后依序补跑）
     this.watching = false; // 串行闸是否真的接上了 sessions 事件
+    this._gateTimer = null; // 等闸轮询定时器（deferCatchUp）
+    this._gateTick = null;  // 闸接上时**主动**叫醒补跑的钩子（不必干等一轮轮询）
   }
   start() {
     for (const t of this.tasks) this.schedule(t);
     this.watchSessions(); // 必须先接事件，再 catchUp —— 否则补跑建出的会话漏听 turn/end（闸卡死）
-    this.catchUpMissed(); // 重启时补跑关机期间错过的任务
+    this.deferCatchUp();  // 重启补跑：**等闸接上再发**（2026-09-23 修 · 见 deferCatchUp 注释）
     this.timer = setInterval(() => this.reload(), 60000); // 每分钟扫新任务/改动
+  }
+  /** 补跑**必须等闸接上**（2026-09-23 修 · 实测同型复发）─────────────────────────────
+   *  病灶：原实现 `watchSessions(); catchUpMissed();` 是**同步**连着的，而 `watching = true`
+   *    写在 `hostCtx.inject(['sessions'], cb)` 的**回调里**——真宿主该回调**不是同步调用**
+   *    ⇒ 补跑的任务全落在 `watching === false` 的窗口内 ⇒ `trigger()` 走 fail-open 降级分支
+   *    （**不查 `isBusy()`，直接 `run()`**）⇒ 并发。
+   *    实测（本机 2026-09-23）：`self-clean` 与 `self-feed` 的会话 `createdAt` 相差 **2ms**
+   *    （22:43:34.031 / .033），并发跑了 3 分 51 秒；与 2026-09-14 那次"差 80ms"**同型复发**。
+   *    而这条路径**每次重启都会走**（catch-up 是启动必经），不是罕见边角。
+   *  修法：拿不到闸就**等**（轮询 + 闸接上时主动叫醒），接上再补跑。
+   *  失败面（仍 fail-open，但**不静默**）：等满 `GATE_WAIT_MS` 还没接上 ⇒ **响亮告警** +
+   *    按旧行为补跑 —— "不并发"不能以"不跑"为代价（原注释担心的正是队列卡死）。
+   *  口径提醒：**并发会话本身不是问题，同时改同一个东西才是**（L2 技能 `concurrent-writers`）。
+   *    本闸是**粗粒度兜底**（整会话串行），不是文件级互斥；它失效的代价是撞车概率上升，
+   *    而不是"必然出错"——所以这里只做"尽量不并发 + 降级必留痕"，不假装它是写锁。
+   */
+  deferCatchUp() {
+    if (this.watching === true) { this.catchUpMissed(); return; }
+    const t0 = Date.now();
+    let done = false; // 只放行一次（tick 有两条触发路：主动叫醒 + 轮询）
+    const tick = () => {
+      if (done) return; // 去重（见 itest D1：旧实现漏了 clearTimeout ⇒ 同一实例补跑两遍）
+      if (this._gateTimer) clearTimeout(this._gateTimer); // 🔴 只置 null 是"丢引用"，定时器照跑
+      this._gateTimer = null;
+      this._gateTick = null;
+      if (this.watching === true) {
+        done = true;
+        console.log('[dshome-cron] 串行闸已接上（等了 ' + (Date.now() - t0) + 'ms）→ 补跑错过的任务');
+        this.catchUpMissed();
+        return;
+      }
+      if (Date.now() - t0 >= GATE_WAIT_MS) {
+        done = true;
+        // 响亮失败（Invariants #14）：绝不静默降级——这条 warning 是"本次补跑不保证串行"的唯一现场证据。
+        console.warn(`[dshome-cron] ⚠️ 等待串行闸 ${GATE_WAIT_MS}ms 仍未接上（sessions 不可用）`
+          + ' ⇒ 按旧行为补跑：**不保证不并发**（2026-09-14 / 09-23 两次并发的成因就是这条路径），'
+          + '但绝不把补跑卡死。请查 sessions 为何不可用。');
+        this.catchUpMissed();
+        return;
+      }
+      this._gateTimer = setTimeout(tick, GATE_POLL_MS);
+    };
+    this._gateTick = tick;
+    this._gateTimer = setTimeout(tick, GATE_POLL_MS);
   }
   /** 订阅会话事件：自治会话结束 → 放闸 + 依序补跑队列。 */
   watchSessions() {
@@ -211,6 +265,9 @@ class DshCron {
         });
         const offDisposed = sctx.on('session/disposed', (session) => this.release(String(session?.header?.id)));
         this.watching = true;
+        // 闸一接上就**主动**叫醒等闸中的补跑（2026-09-23 加）：否则要干等一轮 GATE_POLL_MS。
+        // 叫醒失败也无妨——`_gateTimer` 的轮询会兜底（不把补跑挂在"这一行必须成功"上）。
+        try { this._gateTick?.(); } catch { /* 兜底见 _gateTimer 轮询 */ }
         this._stopWatch = () => { try { offEvent?.(); offDisposed?.(); } catch { /* dispose 期忽略 */ } };
       });
     } catch (e) {
@@ -227,6 +284,10 @@ class DshCron {
         this._warnedDegrade = true;
         console.warn('[dshome-cron] 串行闸未接上（sessions 不可用）：退回旧行为 —— 不保证不并发，但不会入队卡死');
       }
+      // 降级**必留痕**（2026-09-23 补 · 可观测缺口）：此前降级事实只进 `console.log`（stdout，
+      //   被壳 `pipe` 消费后不留存）⇒ 事后从持久记录**看不出这次走没走降级**——当日复盘就卡在这，
+      //   只能靠两条会话 `createdAt` 相差 2ms 反推。现在落一条台账（`status:'degraded'`）。
+      this.recordDegrade(task.id, reason);
       this.run(task, reason + '+unserialized');
       return;
     }
@@ -300,6 +361,21 @@ class DshCron {
         + ` session=${rec.sessionId ?? '—'}（不再静默；台账 mind-private/tasks/cron-runs.jsonl）`);
     }
     return rec;
+  }
+  /** 降级**事件**台账（2026-09-23 加 · 补可观测缺口）────────────────────────────────
+   *  与 `recordRun`（"跑成没成"）**分账**：这里记的是"**闸没接上也照样发了**"。
+   *  为什么不复用 `recordRun`：它会写 `lastResult`，而 `lastResult` 的语义是"成没成"——
+   *  被降级事件污染之后，"这个任务上次成功了吗"就再也答不准了。
+   *  ⚠️ 只落台账 + 响亮告警，**不改任何判定**（降不降级由 `watching` 决定）。 */
+  recordDegrade(taskId, reason) {
+    try {
+      appendCronRun({
+        ts: new Date().toISOString(), taskId,
+        status: 'degraded', errorCode: 'gate-not-attached', source: `${reason}+unserialized`,
+      });
+    } catch { /* 留痕失败不影响任务本身 */ }
+    console.error(`[dshome-cron] ❗串行闸未接上仍发出：task=${taskId} reason=${reason}`
+      + '（本次**不保证与其它自治会话不并发**；台账 mind-private/tasks/cron-runs.jsonl）');
   }
   /** 真正拉会话：**同步占闸**（防同一 tick 双发），成功后换成真实 sessionId。 */
   run(task, reason) {
@@ -378,6 +454,11 @@ class DshCron {
     for (const j of this.jobs.values()) j.stop();
     this.jobs.clear();
     if (this.timer) clearInterval(this.timer);
+    // 等闸轮询也要停（2026-09-23）：否则 clear() 之后它还醒过来补跑一次——测试里会串场，
+    //   运行期则是"已 dispose 的实例仍拉起会话"。清掉钩子，让 tick 没有下一个触发点。
+    if (this._gateTimer) clearTimeout(this._gateTimer);
+    this._gateTimer = null;
+    this._gateTick = null;
     try { this._stopWatch?.(); } catch { /* ignore */ }
     this._stopWatch = null;
     this.watching = false;

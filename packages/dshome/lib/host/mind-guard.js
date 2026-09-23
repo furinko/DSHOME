@@ -151,6 +151,51 @@ export function appendDecision(rec) {
     return true;
   } catch { return false; } // 留痕失败绝不影响裁决本身
 }
+
+// ── 写入归属台账（2026-09-23 加 · 补 `git-writer-probe` 自己承认的「判不了归属」缺口）──────
+// 为什么：`scripts/git-writer-probe.mjs` 的诚实边界写着——它只**列**在飞面、**判不了归属**
+//   （`### 归属待核` 那段：2026-09-23 实测 index 被第三方从 2 件扩到 6 件而它仍报 ✅）。
+//   同日晚实测撞车：`cron.cjs` 被另一会话 23:06:22 改（+37 行「自治会话登记工作区」），
+//   而我**只能靠 mtime 猜**"这是不是别人在写"——裁决台账（guard-decisions）当时够不着它，
+//   因为那是**降噪设计**：只在"有裁决意义"时记（拦 / 放行额度 / 心智区），**普通代码文件不记**。
+// 本台账补这一维：`MUTATING_TOOLS` **写成功**后记一条 `{ts,session,tool,path}`（append-only）。
+//   带 session ⇒ 「谁在什么时候写了哪个文件」可查；探针据此给在飞面标归属，并检出
+//   「**同一文件被 ≥2 个会话在短窗口内写**」——那才是"同时修改同一个东西"的可检出信号
+//   （并发会话本身不是问题；同时改同一个东西才是，见 L2 技能 `concurrent-writers`）。
+// ⚠️ 定位（不许当闸卖）：它是**记录**，不改判定、不拦写入。拦写在 `GUARDS` 的决策面。
+//   记成功不记尝试：`post-execute` 报 `isError === false` 才记（同"写成功才消费额度"的纪律）。
+const WRITE_LOG_MAX_BYTES = 512 * 1024; // 与裁决台账同量级；超了保留后半（可查 ≠ 全存）
+export function writeLogFile() { return join(repoRoot(), 'mind-private', 'tasks', 'write-log.jsonl'); }
+/** 归一成 `仓库相对路径`（探针的 `git status` 给的就是相对路径，两边必须同口径才对得上）。
+ *  落在仓库外 → 原样返回（不假装它在仓里）。失败不抛（留痕绝不能带崩写入）。 */
+export function repoRelPath(p) {
+  try {
+    const abs = normalizePath(resolve(repoRoot(), p));
+    const root = normalizePath(repoRoot()).replace(/\/+$/, '');
+    return abs.toLowerCase().startsWith(root.toLowerCase() + '/') ? abs.slice(root.length + 1) : abs;
+  } catch { return normalizePath(p); }
+}
+/** 追加一条写入归属。@returns 是否落账（失败只返回 false，绝不影响写入本身）。 */
+export function appendWriteClaim(exec, filePath) {
+  try {
+    const sid = exec?.agent?.session?.header?.id;
+    const f = writeLogFile();
+    mkdirSync(dirname(f), { recursive: true });
+    appendFileSync(f, JSON.stringify({
+      ts: new Date().toISOString(),
+      // 拿不到会话（agent-less 执行）→ null：**归属未知**要如实留空，不许拿"最近一个会话"顶上。
+      session: sid === undefined || sid === null ? null : String(sid),
+      tool: String(exec?.name ?? ''),
+      path: repoRelPath(filePath),
+    }) + '\n');
+    if (statSync(f).size > WRITE_LOG_MAX_BYTES) {
+      const lines = readFileSync(f, 'utf8').split('\n').filter(Boolean);
+      writeFileSync(f, lines.slice(-Math.max(1, Math.floor(lines.length / 2))).join('\n') + '\n');
+    }
+    return true;
+  } catch { return false; }
+}
+
 function readApprovals() {
   try { return JSON.parse(readFileSync(approvalsFile(), 'utf8')).items || []; }
   catch { return []; }
@@ -660,6 +705,8 @@ export function apply(ctx) {
         if (result?.isError === false && MUTATING_TOOLS.has(exec?.name) && p) {
           const n = consumeApproved(p, 'edit'); // 高危分支统一 op='edit'（与上方 check 口径一致）
           if (n) ctx.logger?.('dshome')?.info?.(`[mind-guard] 放行额度已消费（写成功）：${normalizePath(p)}（${n} 条）`);
+          // 写入归属台账（2026-09-23 加）：**写成功**才记 —— 被 guard 拦下 / 工具报错的调用不是写者。
+          appendWriteClaim(exec, p);
         }
       } catch { /* 消费失败不影响执行 */ }
       return decision;
