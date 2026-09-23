@@ -350,7 +350,7 @@ async function main() {
   const persona = composePersona(picked.ok ? picked.card : { body: '你是写手。' });
   assert('persona starts with card body', persona.startsWith('你是写手。'), 'starts with "你是写手。"', persona.slice(0, 30));
   assert('persona keeps the fixed tail', persona.includes(PERSONA_TAIL), 'contains PERSONA_TAIL', persona.slice(-120));
-  for (const marker of ['Lead', '收到任务即执行', '一条', '不得自建成员']) {
+  for (const marker of ['Lead', '收到任务即执行', '一条', '不得自建成员', '只认实际可调用的工具表', '优先于 Lead 的指令']) {
     assert(`fixed tail mentions ${marker}`, PERSONA_TAIL.includes(marker), `tail contains ${marker}`, PERSONA_TAIL.slice(0, 80));
   }
 
