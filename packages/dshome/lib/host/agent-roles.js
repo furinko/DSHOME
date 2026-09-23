@@ -784,6 +784,8 @@ const ROLE_SEND_SCHEMA = {
     childId: { type: 'string' },
     messageId: { type: 'string' },
     status: { type: 'string' },
+    guardInstalled: { type: 'boolean' },
+    guardReason: { type: 'string' },
     members: { type: 'array', items: { type: 'string' } },
   },
 };
@@ -891,6 +893,7 @@ async function resolveMember(ctx, state, agent, target) {
   const parentId = String(agent && agent.id ? agent.id : '');
   let childId = '';
   let memberName = '';
+  let label = '';
   for (const [key, value] of state.nameIndex) {
     const parsedKey = splitIndexKey(key);
     if (parsedKey.parentId === parentId && parsedKey.name === target) { childId = value; memberName = parsedKey.name; break; }
@@ -904,8 +907,8 @@ async function resolveMember(ctx, state, agent, target) {
   const members = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!entry || entry.kind !== 'child') continue;
-    const label = typeof entry.label === 'string' ? entry.label : '';
-    const parsedLabel = parseRoleLabel(label);
+    const entryLabel = typeof entry.label === 'string' ? entry.label : '';
+    const parsedLabel = parseRoleLabel(entryLabel);
     const entryName = parsedLabel && parsedLabel.name ? parsedLabel.name : '';
     if (entryName !== '') {
       members.push(`${entryName}(${String(entry.id)})`);
@@ -914,17 +917,28 @@ async function resolveMember(ctx, state, agent, target) {
     if (childId === '' && entryName !== '' && (entryName === target || (parsedLabel && parsedLabel.roleId === target))) {
       childId = String(entry.id);
       memberName = entryName;
+      label = entryLabel;
     }
   }
   if (childId === '') {
     for (const entry of Array.isArray(entries) ? entries : []) {
-      if (entry && entry.kind === 'child' && String(entry.id) === target) { childId = String(entry.id); memberName = memberName || target; break; }
+      if (entry && entry.kind === 'child' && String(entry.id) === target) {
+        childId = String(entry.id);
+        memberName = memberName || target;
+        label = typeof entry.label === 'string' ? entry.label : '';
+        break;
+      }
     }
+  }
+  // 走进程内索引命中时 label 还是空的 ⇒ 从 listChildren 同一次结果里补上（跨进程恢复补闸要用它）
+  if (label === '' && childId !== '') {
+    const hit = (Array.isArray(entries) ? entries : []).find((entry) => entry && String(entry.id) === childId);
+    if (hit && typeof hit.label === 'string') label = hit.label;
   }
   if (childId === '') {
     return { ok: false, members, error: `未找到成员 "${target}"（本会话可用成员：${members.length > 0 ? members.join('、') : '无'}）` };
   }
-  return { ok: true, childId, name: memberName || target, members };
+  return { ok: true, childId, name: memberName || target, label, members };
 }
 
 /**
@@ -1158,6 +1172,11 @@ function makeRoleTools({ ctx, state }) {
           }
           const resolved = await resolveMember(ctx, state, agent, target);
           if (!resolved.ok) return { ok: false, error: resolved.error, members: resolved.members };
+          // 跨进程恢复的老成员：起手前先确认它带闸（幂等；新起的成员在 spawn 时已装 ⇒ 这里秒过）
+          const guard = ensureMemberGuard(ctx, state, resolved.childId, resolved.label, agentCwd(agent));
+          if (guard.installed === false && !/非角色成员/.test(guard.reason || '')) {
+            writeMarker(`guard(send): ${resolved.name} -> ${guard.reason} @ ${new Date().toISOString()}`);
+          }
           const messageId = await ctx.subagents.sendMessage(
             agent,
             resolved.childId,
@@ -1171,6 +1190,8 @@ function makeRoleTools({ ctx, state }) {
             childId: resolved.childId,
             messageId: messageId ? String(messageId) : '',
             status: 'accepted',
+            guardInstalled: guard.installed === true,
+            guardReason: guard.reason || '',
           };
         } catch (error) {
           writeMarker(`send: failed ${describeError(error)} @ ${new Date().toISOString()}`);
@@ -1184,6 +1205,69 @@ function makeRoleTools({ ctx, state }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // scoped install / 生命周期
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 恢复场景的能力面：按 label 里的 roleId **读回角色卡**算 allow/deny。
+ * 读不到卡就只保留**无条件级联闸**（宁可窄一点，绝不因为"卡找不到了"而把闸变成空）。
+ */
+function guardFilterForMember(state, cwd, roleId) {
+  const fallback = { allow: [], deny: [...CASCADE_DENY] };
+  try {
+    const discovery = discoverCards({
+      privateDir: join(state.home, ...PRIVATE_CARD_SEGMENTS),
+      workspaceDir: join(cwd || process.cwd(), WORKSPACE_CARD_DIRNAME),
+    });
+    const picked = selectCard(discovery, roleId);
+    if (!picked.ok) return { filter: fallback, reason: `卡 ${roleId} 未找到 ⇒ 只装无条件级联闸` };
+    const toolsRaw = picked.card.tools || {};
+    return {
+      filter: {
+        allow: toNameList(toolsRaw.allow),
+        deny: [...new Set([...CASCADE_DENY, ...toNameList(toolsRaw.deny)])],
+      },
+      reason: '',
+    };
+  } catch (error) {
+    return { filter: fallback, reason: `读卡异常 ⇒ 只装无条件级联闸：${describeError(error)}` };
+  }
+}
+
+/**
+ * 给**已存在**的成员补执行期闸（跨进程恢复场景）。
+ * `guard` 装在该 agent 的 scope 上、**不在** `subagent/descriptor` 里 ⇒ 进程重启后成员拿不回它，
+ * 于是派生自旧进程的成员可能还能调 `subagent`。这里按 label 认人、按卡算能力面补装。
+ */
+function ensureMemberGuard(ctx, state, childId, label, cwd) {
+  const parsed = parseRoleLabel(label);
+  if (!parsed || !parsed.roleId) return { installed: false, reason: 'label 不是 role: 形态（非角色成员，不补闸）' };
+  let child = null;
+  try { child = (ctx.agents.list() || []).find((candidate) => candidate && String(candidate.id) === String(childId)) || null; }
+  catch { child = null; }
+  if (!child) return { installed: false, reason: '成员不在本进程注册表（未持有其 agent，无法装闸）' };
+  const built = guardFilterForMember(state, cwd || agentCwd(child), parsed.roleId);
+  const applied = applyChildGuard(state, child, built.filter);
+  return { installed: applied.installed, reason: built.reason || applied.reason };
+}
+
+/** `agent/created` 的异步补装路：label 不在 agent 对象上 ⇒ 向父会话的 listChildren 问一次。 */
+async function ensureMemberGuardById(ctx, state, agent) {
+  try {
+    const id = agent && agent.id ? String(agent.id) : '';
+    if (id === '' || state.childGuards.has(id)) return;
+    const header = agent.session && agent.session.header ? agent.session.header : null;
+    const parentId = header && header.parentSession ? String(header.parentSession) : '';
+    if (parentId === '' || parentId === id) return;
+    if (typeof ctx.subagents.listChildren !== 'function') return;
+    const entries = await ctx.subagents.listChildren(parentId, undefined);
+    const entry = (Array.isArray(entries) ? entries : []).find((candidate) => candidate && String(candidate.id) === id);
+    const label = entry && typeof entry.label === 'string' ? entry.label : '';
+    const parsed = parseRoleLabel(label);
+    if (!parsed || !parsed.roleId) return;
+    const built = guardFilterForMember(state, agentCwd(agent), parsed.roleId);
+    const applied = applyChildGuard(state, agent, built.filter);
+    writeMarker(`guard(resume): ${id} ${applied.installed ? 'installed' : `skipped ${applied.reason}`} @ ${new Date().toISOString()}`);
+  } catch { /* best-effort：补不上不影响主流程（marker 由调用方在主路径留痕） */ }
+}
 
 /**
  * 给刚起的成员装「执行期工具闸」。
@@ -1313,6 +1397,8 @@ export function apply(ctx) {
           writeMarker(`guard: child ${createdId} ${applied.installed ? 'installed' : `FAILED ${applied.reason}`} @ ${new Date().toISOString()}`);
         }
       } catch { /* 补装失败不影响主流程 */ }
+      // 跨进程恢复的老成员：label 不在 agent 对象上 ⇒ 异步问一次父会话的 listChildren，认出来就补装。
+      void ensureMemberGuardById(ctx, state, created);
     });
     ctx.on('agent/disposed', (payload) => {
       try {

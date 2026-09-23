@@ -170,7 +170,7 @@ const VISIBLE = ['read', 'write', 'edit', 'glob', 'grep', 'pwsh', 'subagent_fork
 const OWN_SCOPE_ONLY = ['subagent'];
 
 function makeHost() {
-  const record = { registered: [], sections: [], specs: [], sends: [], warns: [], handlers: [], childGuards: [], effectDispose: null, nextChildId: null };
+  const record = { registered: [], sections: [], specs: [], sends: [], warns: [], handlers: [], childGuards: [], effectDispose: null, nextChildId: null, children: null };
   const scope = {
     systemPrompt: {
       section: (section) => { record.sections.push(section); return () => {}; },
@@ -204,6 +204,19 @@ function makeHost() {
       },
     },
   };
+  // 第四个 agent：模拟「跨进程恢复的老成员」——起它的进程已经没了，而 `guard` **不在**
+  // `subagent/descriptor` 里 ⇒ 只能靠 role_send / agent/created 两条路把它认回来补装。
+  const resumeChildAgent = {
+    id: 'child-9',
+    session: { header: { id: 'child-9', delegationDepth: 1, cwd: CWD, parentSession: 'lead-session' } },
+    ctx: {
+      systemPrompt: scope.systemPrompt,
+      tools: {
+        register: () => () => {},
+        guard: (predicate) => { record.childGuards.push(predicate); return () => {}; },
+      },
+    },
+  };
   const ctx = {
     logger: () => ({ info: () => {}, warn: (message) => record.warns.push(String(message)) }),
     on: (ev, handler) => { record.handlers.push({ ev, handler }); return () => {}; },
@@ -214,7 +227,7 @@ function makeHost() {
       register: () => () => {},
       get: () => undefined,
     },
-    agents: { list: () => [topAgent, childAgent, guardChildAgent] },
+    agents: { list: () => [topAgent, childAgent, guardChildAgent, resumeChildAgent] },
     subagents: {
       getProvider: () => ({ name: 'spawn' }),
       list: () => ['spawn'],
@@ -223,7 +236,7 @@ function makeHost() {
         record.sends.push({ senderId: String(sender.id), targetId: String(targetId), text: content[0].text });
         return 'msg-2';
       },
-      listChildren: async () => [{
+      listChildren: async () => record.children || [{
         kind: 'child',
         id: 'child-1',
         activity: 'running',
@@ -485,6 +498,10 @@ async function main() {
     assert('ghost guard denies subagent (cascade is unconditional in the guard)', typeof ghostGuard({ name: 'subagent' }) === 'string', 'string (deny)', ghostGuard({ name: 'subagent' }));
   }
 
+  // ⑥''' 跨进程恢复（一）+（二）见下方（放在既有 role_send 断言**之后**：那几条按 `record.sends[0]`
+  // 取数，先插新发送会把它们的下标顶掉 ⇒ 顺序也是断言的一部分，别随手挪）。
+
+
   const spawnDuplicate = await defs.get('role_spawn').execute({ role: 'reviewer', name: 'alice' }, exec);
   assert('duplicate member name -> ok:false', spawnDuplicate.ok === false, false, spawnDuplicate.ok);
   assertSchemaResult('role_spawn duplicate-name value conforms to its output.schema', 'role_spawn', spawnDuplicate);
@@ -520,6 +537,34 @@ async function main() {
 
   const sendByChildId = await defs.get('role_send').execute({ target: 'child-1', message: '按 id 投递' }, exec);
   assert('role_send by childId ok', sendByChildId.ok === true, true, sendByChildId.ok);
+
+  // ⑥''' 跨进程恢复（一）：`role_send` 冷唤醒时补装——内存映射已空，label 从 listChildren 认回来
+  // （`guard` 不在 `subagent/descriptor` 里 ⇒ 重启后老成员自己拿不回它，必须由这两条路补）
+  host.record.children = [{ kind: 'child', id: 'child-9', activity: 'ready', hasChildren: false, mode: 'continuable', label: 'role:reviewer:bob' }];
+  const coldSend = await defs.get('role_send').execute({ target: 'bob', message: '唤醒一下' }, exec);
+  assert('cold role_send ok', coldSend.ok === true, true, coldSend.ok);
+  assert('cold role_send installs the guard', coldSend.guardInstalled === true, true, coldSend.guardInstalled);
+  eq('resume guard recorded on the member scope', host.record.childGuards.length, 3);
+  const resumeGuard = host.record.childGuards[2];
+  assert('resume guard enforces the card allow list (write denied)', typeof resumeGuard({ name: 'write' }) === 'string', 'string (deny)', resumeGuard({ name: 'write' }));
+  assert('resume guard allows read', resumeGuard({ name: 'read' }) === undefined, undefined, resumeGuard({ name: 'read' }));
+
+  // ⑥'''' 跨进程恢复（二）：不经过 role_send 的那条路 —— `agent/created` 异步补装
+  host.record.children = [{ kind: 'child', id: 'child-42', activity: 'ready', hasChildren: false, mode: 'continuable', label: 'role:reviewer:eve' }];
+  const lateAgent = {
+    id: 'child-42',
+    session: { header: { id: 'child-42', delegationDepth: 1, cwd: CWD, parentSession: 'lead-session' } },
+    ctx: { tools: { register: () => () => {}, guard: (predicate) => { host.record.childGuards.push(predicate); return () => {}; } } },
+  };
+  if (createdHook) {
+    createdHook.handler({ agent: lateAgent });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    eq('agent/created async path installs the guard', host.record.childGuards.length, 4);
+    const lateGuard = host.record.childGuards[3];
+    assert('late guard enforces the card allow list (write denied)', typeof lateGuard({ name: 'write' }) === 'string', 'string (deny)', lateGuard({ name: 'write' }));
+    assert('late guard denies subagent (cascade)', typeof lateGuard({ name: 'subagent' }) === 'string', 'string (deny)', lateGuard({ name: 'subagent' }));
+  }
+  host.record.children = null;
 
   // ── ⑦ 纯函数：normalize / serialize ────────────────────────────────────────
   console.log('[7] normalizeTools / normalizeModel / serializeCard');
