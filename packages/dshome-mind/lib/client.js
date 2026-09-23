@@ -795,6 +795,9 @@ window.__ModuleLoader__.load({
       { id: "L1", label: "L1 法律", color: "#4D6BFE" },
       { id: "L2S", label: "L2 技能", color: "#10b981" },
       { id: "L2E", label: "L2 经验", color: "#14b8a6" },
+      // 2026-09-23：自建角色卡（后端 LAYER_MAP 同步加 `/^L2\/agents\//`）。
+      // ⚠️ 这一侧**必须同时登记**：漏了 ⇒ layoutGraph 不排位 ⇒ 读 p.x 抛 TypeError ⇒ 整块图谱白屏（见下方 OT 条注释）。
+      { id: "AG", label: "角色卡", color: "#a78bfa" },
       { id: "L3I", label: "L3 记忆", color: "#f97316" },
       { id: "L3P", label: "项目记忆", color: "#ef4444" },
       { id: "L3H", label: "L3 历史", color: "#f59e0b" },

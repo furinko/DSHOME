@@ -52,6 +52,13 @@ const SAFE = new Set([
   // 2026-09-23 加：自建角色 agent 的 143 条断言（无参可跑 · 只用临时目录 · PASS 退出 0 / FAIL 退出 1）
   // ⇒ 挂白名单让每次提交都真跑一次；不挂的话它谁也不在链上（= 测试写了没人跑）。
   'scripts/verify-agent-roles.mjs',
+  // 2026-09-23 加：心智面板「层带登记一致性」——客户端 LAYER_ORDER 漏登记 ⇒ 整块图谱白屏
+  // （2026-09-16 实录）。无参可跑、只读两个源文件、PASS 退出 0 / FAIL 退出 1。
+  'scripts/verify-mind-panel-layers.mjs',
+  // 2026-09-23 加：并发写者盘点探针。无参＝**一次只读盘点**（退出码 0 无风险信号 / 2 提交会撞，
+  // 都是"读数"不是崩溃）；本冒烟只认运行期崩溃特征与 itest 退出码 ⇒ 挂它不会造成假红，
+  // 而挂上就让它每次提交都真跑一次（不挂＝写了没人跑）。
+  'scripts/git-writer-probe.mjs',
   'scripts/verify-l1-versions.mjs',
   'scripts/verify-payload.mjs',
   'scripts/verify-safe-overlay.mjs',

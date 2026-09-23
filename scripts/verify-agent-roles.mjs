@@ -20,11 +20,13 @@ import { join } from 'node:path';
 
 import {
   apply,
+  buildMemberGuard,
   buildStartSpec,
   buildToolFilter,
   buildToolGuard,
   composePersona,
   CASCADE_DENY,
+  describeToolTarget,
   discoverCards,
   MEMBER_MAX_DEPTH,
   normalizeModel,
@@ -32,6 +34,7 @@ import {
   parseCard,
   parseRoleLabel,
   PERSONA_TAIL,
+  PRIVATE_CARD_SEGMENTS,
   renderPolicyText,
   reportHint,
   ROLE_TOOL_NAMES,
@@ -111,7 +114,8 @@ function validateValue(schema, value, path = 'value') {
 // ── 临时世界 ────────────────────────────────────────────────────────────────
 const TMP = mkdtempSync(join(tmpdir(), 'agent-roles-verify-'));
 const TMP_HOME = join(TMP, 'home');                       // 临时 DSH_HOME
-const PRIVATE_DIR = join(TMP_HOME, 'mind-private', 'L0', 'agents');
+// 夹具必须镜像真机布局：私密卡在 L2\agents（2026-09-23 从 L0 搬出高危区；见 agent-roles.js 的常量注释）
+const PRIVATE_DIR = join(TMP_HOME, 'mind-private', 'L2', 'agents');
 const CWD = join(TMP, 'workspace');                       // 临时工作区
 const WORKSPACE_DIR = join(CWD, '.agent-roles');
 const ORIGINAL_DSH_HOME = process.env.DSH_HOME;
@@ -387,6 +391,24 @@ async function main() {
   assert('guard enforces the allow list at execution time', typeof guardAllowOnly({ name: 'write' }) === 'string', 'string (not in allow)', guardAllowOnly({ name: 'write' }));
   assert('guard allows a listed tool', guardAllowOnly({ name: 'read' }) === undefined, undefined, guardAllowOnly({ name: 'read' }));
   assert('guard deny wins over allow for the same name', typeof buildToolGuard({ allow: ['read'], deny: ['read'] })({ name: 'read' }) === 'string', 'string (deny wins)', buildToolGuard({ allow: ['read'], deny: ['read'] })({ name: 'read' }));
+
+  // ⑤'' 写操作留痕（2026-09-23 主人拍板「甲」）：闸只看工具名 ⇒ 含 pwsh 的角色判据恒绿；留痕给事后 oracle
+  eq('private cards live under L2 (moved out of the guard high-risk zone)', PRIVATE_CARD_SEGMENTS, ['mind-private', 'L2', 'agents']);
+  assert('describeToolTarget extracts a write path', describeToolTarget('write', { path: 'E:/x/y.md' }) === 'E:/x/y.md', 'E:/x/y.md', describeToolTarget('write', { path: 'E:/x/y.md' }));
+  assert('describeToolTarget accepts a JSON string arg', describeToolTarget('edit', '{"file_path":"E:/a/b.js"}') === 'E:/a/b.js', 'E:/a/b.js', describeToolTarget('edit', '{"file_path":"E:/a/b.js"}'));
+  assert('describeToolTarget flattens a pwsh command', describeToolTarget('pwsh', { command: 'Get-Content  a.txt\n  |\tSet-Content b.txt' }) === 'Get-Content a.txt | Set-Content b.txt', 'flattened command', describeToolTarget('pwsh', { command: 'Get-Content  a.txt\n  |\tSet-Content b.txt' }));
+  assert('describeToolTarget tolerates garbage args', describeToolTarget('write', 'not json') === '', '', describeToolTarget('write', 'not json'));
+  {
+    const seen = [];
+    const memberGuard = buildMemberGuard({ allow: [], deny: ['subagent'] }, { label: 'role:x:probe', record: (line) => seen.push(line) });
+    assert('member guard denies like the plain predicate', typeof memberGuard({ name: 'subagent' }) === 'string', 'string (deny)', memberGuard({ name: 'subagent' }));
+    assert('member guard records the denial', seen.some((l) => l.includes('"kind":"deny"') && l.includes('subagent')), 'deny line recorded', seen);
+    assert('member guard allows a permitted tool', memberGuard({ name: 'read' }) === undefined, undefined, memberGuard({ name: 'read' }));
+    assert('member guard skips read in the audit trail', !seen.some((l) => l.includes('"kind":"pass"')), 'no pass line for read', seen);
+    memberGuard({ name: 'write', arguments: '{"path":"E:/DSHOME/scratch.md"}' });
+    assert('member guard audit line carries the target path', seen.some((l) => l.includes('"kind":"pass"') && l.includes('scratch.md')), 'pass line with path', seen);
+    assert('member guard audit line carries the label', seen.some((l) => l.includes('role:x:probe')), 'label in audit line', seen);
+  }
   assert('start spec carries persona', spec.request.persona.includes('你是写手。'), 'persona contains card body', spec.request.persona.slice(0, 30));
 
   // ── ⑥ 挂载面 + 三把工具真跑（临时 DSH_HOME / mock host） ───────────────────
@@ -476,6 +498,15 @@ async function main() {
   assert('installed guard denies subagent (the own-scope leak)', typeof writerGuard({ name: 'subagent' }) === 'string', 'string (deny)', writerGuard({ name: 'subagent' }));
   assert('installed guard denies card deny (edit)', typeof writerGuard({ name: 'edit' }) === 'string', 'string (deny)', writerGuard({ name: 'edit' }));
   assert('installed guard allows read', writerGuard({ name: 'read' }) === undefined, undefined, writerGuard({ name: 'read' }));
+  // 留痕必须落在**临时 DSH_HOME**（绝不许写进仓库）：放行一次 write → 审计文件里应出现该路径
+  writerGuard({ name: 'write', arguments: '{"path":"E:/DSHOME/scratch-audit.md"}' });
+  const auditPath = join(TMP_HOME, 'profiles', 'dshome', '.dsh-market', 'agent-roles-writes.jsonl');
+  assert('audit file lands under the temp DSH_HOME (not the repo)', existsSync(auditPath), true, existsSync(auditPath));
+  if (existsSync(auditPath)) {
+    const auditText = readFileSync(auditPath, 'utf8');
+    assert('audit file records the allowed write target', auditText.includes('scratch-audit.md') && auditText.includes('"kind":"pass"'), 'pass line with target', auditText.slice(-200));
+    assert('audit file records the member label', auditText.includes('role:writer:'), 'label prefix present', auditText.slice(-200));
+  }
   assert('reviewer spawn also reports guardInstalled (idempotent on the same mock child)', spawnReviewer.guardInstalled === true, true, spawnReviewer.guardInstalled);
 
   // ⑥'' 挂起补装路：childId 还不在注册表 ⇒ 记 pending；`agent/created` 一到就补装（无竞态）

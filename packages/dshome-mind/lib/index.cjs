@@ -101,6 +101,9 @@ const LAYER_MAP = [
   [/^L1\//, { id: 'L1', label: 'L1 法律', color: '#4D6BFE' }],
   [/^L2\/Skill\//, { id: 'L2S', label: 'L2 技能', color: '#10b981' }],
   [/^L2\/Exp\//, { id: 'L2E', label: 'L2 经验', color: '#14b8a6' }],
+  // 2026-09-23：自建角色卡（`dshome/agent-roles` 读的目录）。加档前它们落进兜底档 `OT`（label＝`L2`），
+  // 面板上分不出"这是角色卡"。加这一行后图谱会多出一条「角色卡」层带，点开仍用现成的读文件面。
+  [/^L2\/agents\//, { id: 'AG', label: '角色卡', color: '#a78bfa' }],
   [/^L3\/history\//, { id: 'L3H', label: 'L3 历史', color: '#f59e0b' }],
   [/^L3\/projects\//, { id: 'L3P', label: '项目记忆', color: '#ef4444' }],
   [/^L3\//, { id: 'L3I', label: 'L3 记忆', color: '#f97316' }],

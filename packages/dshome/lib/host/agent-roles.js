@@ -92,8 +92,15 @@ export function buildToolGuard(filter = {}) {
   };
 }
 
-/** 私密卡目录（相对 home root）：`<home>\mind-private\L0\agents\<id>.md`。 */
-const PRIVATE_CARD_SEGMENTS = ['mind-private', 'L0', 'agents'];
+/**
+ * 私密卡目录（相对 home root）：`<home>\mind-private\L2\agents\<id>.md`。
+ *
+ * **2026-09-23 从 `L0\agents` 搬到 `L2\agents`**（主人拍板）：`mind-private\L0\` 在 `mind-guard` 的
+ * **高危区**名单里（`mind-guard.js:295`）⇒ 卡改动要走批准面、**子成员一律改不了卡**——连"优化提示词"
+ * 这件已授权的活都派不出去。搬到 L2（能力层；卡本质是能力不是宪法）后，卡改动降为 🟢 可逆·非高危，
+ * 可以正常派给成员执行。
+ */
+export const PRIVATE_CARD_SEGMENTS = ['mind-private', 'L2', 'agents'];
 /** 项目卡目录（相对调用者 cwd）：`<cwd>\.agent-roles\<id>.md`。 */
 const WORKSPACE_CARD_DIRNAME = '.agent-roles';
 /** 角色卡 id 合法性：不含 `:`（label 用 `:` 分段），非空、以字母数字开头。 */
@@ -458,6 +465,74 @@ export function parseCard(text, sourcePath = '') {
       source: 'inline',
       overridesPrivate: false,
     },
+  };
+}
+
+/** 成员写操作留痕文件（独立于 marker：marker 只留最近 20 行，这里是审计面，留最近 2000 行）。 */
+const AUDIT_FILE = 'agent-roles-writes.jsonl';
+/** 会被留痕的"可能落盘"工具（`pwsh`/`bash` 在 danger-full-access 下能写任何文件）。 */
+const AUDIT_TOOLS = ['write', 'edit', 'str_replace_editor', 'pwsh', 'bash'];
+
+/**
+ * 2026-09-23 主人拍板「甲」：**成员写操作留痕**。
+ *
+ * 为什么需要：`restrict` 与 `guard` 都只按**工具名**判定，而 `pwsh` 在 `danger-full-access` 下
+ * 能写任何文件 ⇒ "只读角色"原本只是**文本承诺**，判据 #1（不越界）对含 `pwsh` 的角色**恒绿**。
+ * 留痕给它一个**事后可核**的 oracle（谁、什么时候、动了哪个路径/跑了什么命令）。
+ *
+ * **诚实上限**：它只记录、**不能当场拦住**；真正防越界要靠下一轮「卡声明 paths + 路径闸」。
+ */
+function writeAuditLine(line) {
+  try {
+    const dir = join(homeRoot(), 'profiles', 'dshome', '.dsh-market');
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, AUDIT_FILE);
+    let prev = '';
+    try { prev = readFileSync(file, 'utf8'); } catch { /* 首次写 */ }
+    const lines = [...prev.split('\n').filter(Boolean), line].slice(-2000);
+    writeFileSync(file, lines.join('\n') + '\n', 'utf8');
+  } catch { /* 留痕失败绝不影响功能 */ }
+}
+
+/** 从工具参数里抽"这次会碰哪里"：`write`/`edit` → 路径；`pwsh`/`bash` → 命令压平后的首段。抽不到返回 ''。 */
+export function describeToolTarget(name, args) {
+  try {
+    const parsed = typeof args === 'string' ? JSON.parse(args) : args;
+    if (!parsed || typeof parsed !== 'object') return '';
+    if (name === 'write' || name === 'edit' || name === 'str_replace_editor') {
+      const path = parsed.path ?? parsed.file_path ?? parsed.filePath ?? parsed.target ?? '';
+      return typeof path === 'string' ? path.slice(0, 240) : '';
+    }
+    if (name === 'pwsh' || name === 'bash') {
+      const command = parsed.command ?? parsed.script ?? '';
+      return typeof command === 'string' ? command.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+    }
+  } catch { /* 参数不是 JSON：当抽不到 */ }
+  return '';
+}
+
+/**
+ * 成员执行期闸 ＝ 能力面谓词（`buildToolGuard`）＋ **写操作留痕**。
+ * 语义与 `buildToolGuard` 完全一致（拒绝理由原样返回），只是**放行**时对"可能落盘"的工具多记一行。
+ * @param {{allow?:string[], deny?:string[]}} filter
+ * @param {{label?:string, record?:function}} options - `label` 用于审计行；`record` 默认写审计文件
+ */
+export function buildMemberGuard(filter = {}, options = {}) {
+  const predicate = buildToolGuard(filter);
+  const label = typeof options.label === 'string' ? options.label : '';
+  const record = typeof options.record === 'function' ? options.record : writeAuditLine;
+  return (execution) => {
+    const name = execution && typeof execution.name === 'string' ? execution.name : '';
+    const denial = predicate(execution);
+    if (denial) {
+      try { record(JSON.stringify({ ts: new Date().toISOString(), kind: 'deny', label, tool: name, reason: denial })); } catch { /* 忽略 */ }
+      return denial;
+    }
+    if (name !== '' && AUDIT_TOOLS.includes(name)) {
+      const target = describeToolTarget(name, execution && execution.arguments);
+      try { record(JSON.stringify({ ts: new Date().toISOString(), kind: 'pass', label, tool: name, target })); } catch { /* 忽略 */ }
+    }
+    return undefined;
   };
 }
 
@@ -955,7 +1030,7 @@ function makeRoleTools({ ctx, state }) {
   return {
     roleList: {
       name: 'role_list',
-      description: '列出可用角色卡（角色卡 = 独立系统提示词 + 工具面 + 模型路由）。卡目录：私密 <DSH_HOME>/mind-private/L0/agents 与项目 <cwd>/.agent-roles；同 id 时项目卡覆盖私密卡。坏卡（缺 id / frontmatter 语法不支持 / 正文为空）在 broken 里带原因，不会静默跳过。',
+      description: '列出可用角色卡（角色卡 = 独立系统提示词 + 工具面 + 模型路由）。卡目录：私密 <DSH_HOME>/mind-private/L2/agents 与项目 <cwd>/.agent-roles；同 id 时项目卡覆盖私密卡。坏卡（缺 id / frontmatter 语法不支持 / 正文为空）在 broken 里带原因，不会静默跳过。',
       parameters: { type: 'object', properties: {} },
       output: { schema: ROLE_LIST_SCHEMA, render: renderJson },
       async execute(_args, exec) {
@@ -1128,7 +1203,7 @@ function makeRoleTools({ ctx, state }) {
             allow: toNameList(built.allow),
             deny: [...new Set([...CASCADE_DENY, ...toNameList(effTools.deny), ...toNameList(built.deny)])],
           };
-          const guard = installChildGuard(ctx, state, childId, guardFilter);
+          const guard = installChildGuard(ctx, state, childId, guardFilter, spec.label);
           writeMarker(`guard: ${spec.label} -> ${guard.installed ? 'installed' : `pending/failed: ${guard.reason}`} @ ${new Date().toISOString()}`);
           return {
             ok: true,
@@ -1251,7 +1326,7 @@ function ensureMemberGuard(ctx, state, childId, label, cwd) {
   catch { child = null; }
   if (!child) return { installed: false, reason: '成员不在本进程注册表（未持有其 agent，无法装闸）' };
   const built = guardFilterForMember(state, cwd || agentCwd(child), parsed.roleId);
-  const applied = applyChildGuard(state, child, built.filter);
+  const applied = applyChildGuard(state, child, built.filter, typeof label === 'string' ? label : '');
   return { installed: applied.installed, reason: built.reason || applied.reason };
 }
 
@@ -1280,28 +1355,28 @@ async function ensureMemberGuardById(ctx, state, agent) {
  * ① 先看注册表里有没有它（`startContinuable` 内部已 materialize，通常立刻能拿到）；
  * ② 拿不到就先记进 `pendingGuards`，由 `agent/created` 处理器补装 —— 两条路合起来无竞态。
  */
-function installChildGuard(ctx, state, childId, filter) {
+function installChildGuard(ctx, state, childId, filter, label) {
   const id = String(childId || '');
   if (id === '') return { installed: false, reason: 'childId 为空，无法装闸' };
   let child = null;
   try { child = (ctx.agents.list() || []).find((candidate) => candidate && String(candidate.id) === id) || null; }
   catch { child = null; }
   if (!child) {
-    state.pendingGuards.set(id, filter);
+    state.pendingGuards.set(id, { filter, label: typeof label === 'string' ? label : '' });
     return { installed: false, reason: '子 agent 尚未进注册表：已挂起，等 agent/created 补装' };
   }
-  return applyChildGuard(state, child, filter);
+  return applyChildGuard(state, child, filter, label);
 }
 
-/** 真正装闸（幂等）。 */
-function applyChildGuard(state, child, filter) {
+/** 真正装闸（幂等）。闸 ＝ 能力面谓词 + 写操作留痕（见 `buildMemberGuard`）。 */
+function applyChildGuard(state, child, filter, label) {
   try {
     if (!child || !child.ctx || !child.ctx.tools || typeof child.ctx.tools.guard !== 'function') {
       return { installed: false, reason: '子 scope 没有 tools.guard（该 agent 拿不到执行期闸）' };
     }
     const id = String(child.id);
     if (state.childGuards.has(id)) return { installed: true, reason: '已装过（幂等跳过）' };
-    const dispose = child.ctx.tools.guard(buildToolGuard(filter));
+    const dispose = child.ctx.tools.guard(buildMemberGuard(filter, { label: typeof label === 'string' ? label : '' }));
     state.childGuards.set(id, dispose);
     return { installed: true, reason: '' };
   } catch (error) {
@@ -1397,9 +1472,9 @@ export function apply(ctx) {
       try {
         const createdId = created && created.id ? String(created.id) : '';
         if (createdId !== '' && state.pendingGuards.has(createdId)) {
-          const filter = state.pendingGuards.get(createdId);
+          const pending = state.pendingGuards.get(createdId);
           state.pendingGuards.delete(createdId);
-          const applied = applyChildGuard(state, created, filter);
+          const applied = applyChildGuard(state, created, pending.filter, pending.label);
           writeMarker(`guard: child ${createdId} ${applied.installed ? 'installed' : `FAILED ${applied.reason}`} @ ${new Date().toISOString()}`);
         }
       } catch { /* 补装失败不影响主流程 */ }
