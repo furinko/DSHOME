@@ -19,6 +19,30 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 
+/**
+ * `TRASH\` 里"**可清的大件**"（Memory §十一 乙档＝可再生产物）——按扩展名 / 单件体积判定，**机器可证**。
+ * 2026-09-23 加：原判据是 `trash.count > 100` 绝对件数，而 §十一 的"只增不减"让它**永不熄灭**（`limits.md`「恒亮灯＝没灯」）。
+ * 现在 TRASH 行盯的是**有可执行动作的那部分**（主人放行后可清 ⇒ 可熄灭），总件数只作信息行。
+ */
+function cleanableBytes(dir) {
+  const RE = /\.(exe|msi|zip|7z|iso|tar|gz|tgz|rar|bak|tmp|ndjson|log)$/i;
+  let bytes = 0;
+  let n = 0;
+  const walk = (d) => {
+    let items = [];
+    try { items = readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const it of items) {
+      const p = join(d, it.name);
+      if (it.isDirectory()) { walk(p); continue; }
+      let b = 0;
+      try { b = statSync(p).size; } catch { continue; }
+      if (RE.test(it.name) || b > 20 * 1024 * 1024) { bytes += b; n += 1; }
+    }
+  };
+  walk(dir);
+  return { bytes, n };
+}
+
 /** 一行一条的检查项。kind: 'hard' | 'warn'。 */
 function checks(root) {
   const priv = join(root, 'mind-private');
@@ -60,7 +84,16 @@ function checks(root) {
   const snap = cap(join(priv, 'tasks', 'evolution', 'snapshots'));
   if (snap) out.push({ face: 'snapshots\\', current: `${snap.count} 文件 / ${Math.round(snap.bytes / 1048576 * 10) / 10} MB`, limit: 'warn>400 文件', kind: snap.count > 400 ? 'warn' : 'ok', note: '有时间窗裁剪流程（Memory §十一）' });
   const trash = cap(join(priv, 'TRASH'));
-  if (trash) out.push({ face: 'TRASH\\', current: `${trash.count} 文件`, limit: 'warn>100', kind: trash.count > 100 ? 'warn' : 'ok', note: '回收流程' });
+  if (trash) {
+    const cl = cleanableBytes(join(priv, 'TRASH'));
+    out.push({
+      face: 'TRASH\\',
+      current: `${trash.count} 件(顶层) / 可清大件 ${cl.n} 件 ${Math.round(cl.bytes / 1048576)} MB`,
+      limit: 'warn>可清大件 100 MB',
+      kind: cl.bytes > 100 * 1048576 ? 'warn' : 'ok',
+      note: '总件数只作信息行（只增不减 ⇒ 设绝对阈值＝恒亮灯；Memory §十一 2026-09-23 订正）；本行盯**可清的大件**（乙档可再生产物，主人放行后可清 ⇒ 可熄灭）',
+    });
+  }
   return out;
 }
 
