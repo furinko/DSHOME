@@ -8,7 +8,8 @@
 #
 # ── 做这些事 ─────────────────────────────────────────────────────────────────
 #   ① scripts/syntax-check.mjs             —— 语法检查（= `pnpm build` 的实质内容）
-#   ② scripts/mind-validate.mjs --strict   —— 记忆层布局/出厂卫生/版本四元/概念路由… 有 critical 或 warn 即拒
+#   ② scripts/mind-validate.mjs --strict --defer-content-drift —— 记忆层布局/出厂卫生/版本四元/概念路由… 有 critical 或 warn 即拒；
+#      末尾开关只把「payload\AGENTS.md 快照漂移」的判定推迟到打包时（2026-09-23 主人放行「改」，详见 ② 接线处说明）
 #   ③ scripts/verify-host-plugins.mjs      —— host 插件「挂载面」真加载验证
 #      （`node --check` 只查语法、查不出未定义标识符：2026-09-11 一夜之间同型 bug 两例——
 #        mind-inject.js 的 `payload.length`、mind-skill-loader.js 的 `skills.length`，
@@ -34,7 +35,9 @@ cd "$(git rev-parse --show-toplevel)"
 #    C2 指摘：原 hook 不跑 build/smoke/verify-payload → 非 host 插件的语法错误在提交时无门。
 node scripts/syntax-check.mjs
 # ② 心智校验（记忆层布局 / 出厂卫生 / 版本四元 / 概念路由…；有 critical 即拒）
-node scripts/mind-validate.mjs --strict
+#    `--defer-content-drift`（2026-09-23 主人放行「改」）：只把 ⑦(c)「payload\AGENTS.md
+#    快照漂移」这条 warn 的判定推迟到打包时（与 ⑦ verify-payload 同口径）；其余项照旧。
+node scripts/mind-validate.mjs --strict --defer-content-drift
 # ③ host 插件挂载面（真加载 + 调 apply + handler 真跑 + 行为断言）
 node scripts/verify-host-plugins.mjs
 # 门禁判定真值表（2026-09-11 加）：autoApprove 开着时自动降级为「只跑 privacy 类用例」并明确标注，
@@ -50,12 +53,16 @@ node scripts/verify-safe-overlay.mjs
 #    host 插件面已由 ③ 覆盖，本项补 scripts/ 面。只跑**安全白名单**（无参=只读/自检）；
 #    有副作用的脚本（stage-payload / install-hooks / backup-settings / patch-* …）跳过并**显式打印**，不静默。
 node scripts/verify-scripts-run.mjs
-# ⑦ payload 新鲜度（2026-09-12 加）：源码改了而 `build-stage/payload` 没同步 ⇒ 装机版**带旧代码出门**。
-#    实测：payload 里两份 host 插件仍是修复前 `form:'skill-hint'` 版本——正是"让 46 个会话历史加载失败"
-#    的旧 source，而该漂移当时只算 WARN、本脚本又不在任何门禁链里（两道门禁都看不见）。
-#    mind/packages/scripts 漂移即拒（docs 仍 WARN）；修复办法：先 `node scripts/stage-payload.mjs` 再提交。
+# ⑦ payload 门禁（2026-09-12 加；2026-09-23 **收窄判定时机**——主人放行「改」）：
+#    它管两件事，风险点不同、处置也不同：
+#      ⓐ 毒树 junction / 版本单源 / 私有面残留 / AGENTS 快照 —— 错误状态与双区红线 ⇒ **照旧硬拦**；
+#      ⓑ 内容漂移（源码改了而 `build-stage/payload` 没同步 ⇒ 装机版**带旧代码出门**）
+#         —— 风险点在**装箱**不在**存档** ⇒ 日常提交不再拦。依据＝主人偏好「payload 陈旧
+#         只在我要打包时提醒」（`mind-private/L3/common/user-rules/rules.md:73`）。
+#    所以本行带 `--defer-content-drift`：只跳过 ⓑ 整类（不判、不打印）；
+#    打包 / 显式验证（`pnpm verify`、不带该参数）**仍然硬拦**并给出 stage-payload 指引。
 #    未 staging（payload 目录不存在）时脚本自行 exit 0 ⇒ 不拦纯开发提交。
-node scripts/verify-payload.mjs
+node scripts/verify-payload.mjs --defer-content-drift
 # ⑧ TRASH 回收站真值表（2026-09-12 加）：建 `evolve-log trash` 时我**手工**跑过 8 项测试并抓到 1 个真 bug
 #    （缺 `--reason` 时误报"用法"而非"必须给理由"）—— 但那些测试是**一次性的**，跑完就没了。
 #    本项把它机器化：10 例（含 4 个反例），每例一个**独立临时 DSH_HOME** ⇒ 真仓库的

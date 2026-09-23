@@ -16,6 +16,14 @@ const repoRoot = resolve(process.env.DSH_HOME || join(dirname(fileURLToPath(impo
 const MIND = join(repoRoot, 'mind');
 const PRIV = join(repoRoot, 'mind-private');
 const strict = process.argv.includes('--strict');
+// 内容漂移（payload 打包快照落后权威版）的**判定时机**（2026-09-23 主人放行「改」）：
+//   与 scripts/verify-payload.mjs 同口径——pre-commit 带 `--defer-content-drift` 调本脚本时，
+//   ⑦(c)「payload\AGENTS.md 快照漂移」**不产 warn**（故 --strict 不再阻塞日常提交）；
+//   打包 / 显式验证（`pnpm verify`、不带该参数）**仍拦**（这条 warn 原样生效）。
+//   ⚠️ 只降「快照漂移」这一条；布局/出厂卫生/版本/概念路由等其余项一律照旧。
+//   反证（gate-ledger: reverse-cases）：带该参数时 payload 漂移 → exit 0 不阻塞；
+//   去掉参数**应当变红**（warn → --strict exit 1）。
+const deferContentDrift = process.argv.includes('--defer-content-drift');
 
 const issues = []; // {sev:'critical'|'warn', file, msg}
 
@@ -516,7 +524,8 @@ else issues.push({ sev: 'critical', file: 'packages/dshome/lib/host/mind-inject.
 function normalizeEOL(s) { return String(s).replace(/\r\n/g, '\n'); }
 const authoritativeAgentsFile = join(MIND, 'L0', 'AGENTS.md');
 const payloadAgentsFile = join(repoRoot, 'build-stage', 'payload', 'AGENTS.md');
-if (existsSync(authoritativeAgentsFile) && existsSync(payloadAgentsFile)) {
+// 日常提交（--defer-content-drift）跳过「快照漂移」判定——风险在打包时，见文件头说明。
+if (!deferContentDrift && existsSync(authoritativeAgentsFile) && existsSync(payloadAgentsFile)) {
   const authC = normalizeEOL(readFileSync(authoritativeAgentsFile, 'utf8'));
   const payloadC = normalizeEOL(readFileSync(payloadAgentsFile, 'utf8'));
   if (authC !== payloadC) {

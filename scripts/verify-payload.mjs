@@ -24,6 +24,16 @@ import { CONSUMERS, readCanonical, syncAll } from './version-lib.mjs';
 const argv = process.argv.slice(2);
 const fix = argv.includes('--fix');
 const quiet = argv.includes('--quiet');
+// 内容漂移（payload 比源码旧）的**判定时机**（2026-09-23 主人放行「改」）：
+//   主人偏好＝「payload 陈旧只在我要打包时提醒」⇒ pre-commit 用 `--defer-content-drift`
+//   调本脚本：日常提交**整类不判、不打印**，不再出现「改了源码就提交不了」；
+//   而打包 / 显式验证（`pnpm verify`、不带该参数）**仍然硬拦**并给出 stage-payload 指引
+//   —— 风险点在**装箱**，不在**存档**。
+//   ⚠️ 只降「内容漂移」这一类；毒树 junction / 版本单源 / 私有面残留 / AGENTS 快照
+//   一律照旧硬拦（那些是错误状态与双区红线，与快照新旧无关）。
+//   反证（gate-ledger: reverse-cases）：2026-09-23 实测——带 `--defer-content-drift` 时
+//   `packages\` 陈旧不报红、exit 0；去掉该参数**应当变红**（exit 1 + stage-payload 指引）。
+const deferContentDrift = argv.includes('--defer-content-drift');
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
@@ -66,6 +76,9 @@ function countEntries(dir, cap = 5000) {
 //   warn=true → 通过但告警（不影响退出码）
 //   !ok       → 失败（影响退出码）
 function agentsStatus() {
+  // 与 contentDriftStatus 同类：payload\AGENTS.md 快照落后权威版 ⇒ 风险在**打包**，不在存档。
+  // 日常提交（--defer-content-drift）不判；打包 / 显式验证（不带该参数）仍硬拦（见文件头说明）。
+  if (deferContentDrift) return { ok: true };
   const authAgents = join(repoRoot, 'mind', 'L0', 'AGENTS.md');
   const payloadAgents = join(payloadDir, 'AGENTS.md');
   if (!existsSync(authAgents) || !existsSync(payloadAgents)) return { ok: true };
@@ -134,6 +147,9 @@ function listFiles(root, cap = 20000) {
 //   WARN 且本脚本不在任何门禁链里 ⇒ 装机版会带旧 bug 出门）→ 现在漂移即 FAIL。
 // docs\ → WARN（文档漂移没有功能后果）
 function contentDriftStatus() {
+  // 日常提交（pre-commit 带 --defer-content-drift）：内容漂移整类不判、不打印。
+  // 见文件头说明——只在打包/显式验证时硬拦。
+  if (deferContentDrift) return { ok: true };
   const GROUPS = [
     { root: 'mind', hard: true },
     { root: 'scripts', hard: true },
