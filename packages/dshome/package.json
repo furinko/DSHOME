@@ -19,7 +19,8 @@
     "./desktop": "./lib/host/desktop.js",
     "./package.json": "./package.json",
     "./mind-skill-loader": "./lib/host/mind-skill-loader.js",
-    "./mind-compaction-log": "./lib/host/mind-compaction-log.js"
+    "./mind-compaction-log": "./lib/host/mind-compaction-log.js",
+    "./agent-roles": "./lib/host/agent-roles.js"
   },
   "dsh": {
     "bundle": {

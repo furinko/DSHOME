@@ -18,13 +18,19 @@
 #    后端启动 20s 后 ERR_MODULE_NOT_FOUND 必死 → 壳连试 3 次弹「启动失败」→ 曾整块停用。
 # ✅ 2026-09-11 22:05 恢复：三包已由官方 pnpm 10 `install --frozen-lockfile` 落地
 #    （@deepseek-ai/dsh-experimental-{agent,tool-agent,client-ui-agent}-team 均 0.1.5-rc.2，实测存在）。
-- insert:
-    - id: dsh-experimental-agent-team
-      name: '@deepseek-ai/dsh-experimental-agent-team'
-    - id: dsh-experimental-tool-agent-team
-      name: '@deepseek-ai/dsh-experimental-tool-agent-team'
-    - id: dsh-experimental-client-ui-agent-team
-      name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
+# ⏸ 2026-09-23 停用：改自建 agent-roles，只留一套团队协议。
+#    原因：官方三包的九个团队工具与自建 `dshome/agent-roles`（登记在 L3 packages/dshome/cordis.patch.yml）
+#    职责重叠——两套都往同一批 subagent 控件/协议面挂，同时启用是两套团队协议并存、工具名互相取代
+#    （官方工具包会**取代**同名旧 subagent 控件，见上方说明）。故官方那段整块注释、只留自建一套。
+#    恢复方式：删掉下面四行行首的 `# `（`- insert:` + 三条 id/name 行）即可原样启用；
+#    自建包的停用见 packages/dshome/cordis.patch.yml 的 `- id: dshome-agent-roles`（Level 3 产品层）。
+# - insert:
+#     - id: dsh-experimental-agent-team
+#       name: '@deepseek-ai/dsh-experimental-agent-team'
+#     - id: dsh-experimental-tool-agent-team
+#       name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+#     - id: dsh-experimental-client-ui-agent-team
+#       name: '@deepseek-ai/dsh-experimental-client-ui-agent-team'
 
 # ── 权限档位：拆开「沙箱」与「批准」两个旋钮（2026-09-18 主人放行 · 方案④「拆档」）──
 # 上游把「能写哪里」与「要不要问我」绑成一档（read-only/workspace-write → approval: ask；

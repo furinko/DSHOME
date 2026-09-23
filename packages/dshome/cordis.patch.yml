@@ -62,6 +62,13 @@
     # 释放量口径 = start/end 两次 tokenMeter.measure 差值；取不到记 unknown（#14）。只追加、fail-open。
     - id: dshome-mind-compaction-log
       name: dshome/mind-compaction-log
+    # dshome-agent-roles（host）：自建角色 agent 接缝——角色卡=独立系统提示词 + per-role 工具面/模型路由；
+    # 三把工具（role_list/role_spawn/role_send）+ 管控者协议段装进**顶层 agent 的精确 scope**
+    # （不是宿主平面全局），toolFilter/persona 靠 DSH 原生子代理接缝落地（照官方
+    # dsh-experimental-tool-agent-team 的 scoped install 写法）。2026-09-23 起取代官方实验三包，
+    # 只留一套团队协议（官方三包在 L4 profiles/dshome/cordis.patch.yml 已整块注释停用）。
+    - id: dshome-agent-roles
+      name: dshome/agent-roles
     # dshome-desktop（market 装/卸）：自供 desktopProfiles/desktopPnpm/
     # desktopPlugins/desktopActions 四服务，让 dsh-community-market 的安装/卸载
     # 脱离 DSH Desktop（纯 dsh CLI + pnpm）即可工作；requestRestart 只发信号。

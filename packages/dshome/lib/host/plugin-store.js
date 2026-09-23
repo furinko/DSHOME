@@ -28,6 +28,7 @@ const DESC_CN = {
   'dshome/mind-recall': '上工自动召回：每主会话第一步注入 project 待办 + L3 记忆 + Learn 教训 + user-rules，不靠 agent 记得跑',
   'dshome/mind-skill-loader': 'Skill 关键词触发加载：命中注入方法论摘要卡，同 Skill 同会话只提示一次，fails-open',
   'dshome/mind-compaction-log': '压缩留痕：订阅 compaction/* 事件，把静默的上下文压缩写成审计记录（mind-private/tasks/evolution/compaction-log.md）',
+  'dshome/agent-roles': '自建角色 agent：角色卡=独立系统提示词 + per-role 工具/模型，Lead 按角色分派成员',
   'dsh-imagegen': '本地 ComfyUI 生图插件：generate_image 工具（DS 前缀参数注入）+ 生图卡片 UI（复制/再生成/放大/参数卡）',
   // 本地预设插件（router-standard 等；moduleName 形如 ./router-bootstrap-v34.mjs?v=N）
   'router-bootstrap': 'router-standard 预设核心：阶段化工具解锁 / 交付门禁',

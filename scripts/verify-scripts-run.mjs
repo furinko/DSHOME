@@ -49,6 +49,9 @@ const SAFE = new Set([
   'scripts/verify-boot-recall.mjs',
   'scripts/verify-guard-decisions.mjs',
   'scripts/verify-host-plugins.mjs',
+  // 2026-09-23 加：自建角色 agent 的 143 条断言（无参可跑 · 只用临时目录 · PASS 退出 0 / FAIL 退出 1）
+  // ⇒ 挂白名单让每次提交都真跑一次；不挂的话它谁也不在链上（= 测试写了没人跑）。
+  'scripts/verify-agent-roles.mjs',
   'scripts/verify-l1-versions.mjs',
   'scripts/verify-payload.mjs',
   'scripts/verify-safe-overlay.mjs',

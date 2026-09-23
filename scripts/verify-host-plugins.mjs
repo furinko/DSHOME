@@ -53,7 +53,7 @@ const PLUGINS = cordisPlugins.list;
  *  所以必须另有一份"应有清单"来对比"实有清单"。
  *  这不是重复硬编码：`PLUGINS` 是**实际挂了什么**（易变），`REQUIRED` 是**必须挂什么**（不变式），语义不同。
  *  新增核心心智插件时请登记在此。 */
-const REQUIRED = ['mind-inject', 'mind-guard', 'mind-recall', 'mind-connect', 'mind-skill-loader'];
+const REQUIRED = ['mind-inject', 'mind-guard', 'mind-recall', 'mind-connect', 'mind-skill-loader', 'agent-roles'];
 
 /** **行为断言表**（应对 C2 的最强反例 A）：handler 不抛错 ≠ 行为发生了。
  *  反例 A 把 `isMindConnected` 改恒 false → `mind-inject` 的守卫**永远早退**（合法路径、不抛错），
@@ -103,8 +103,34 @@ function makeCtx(record) {
     error: (...a) => record.logs.push(['error', fmt(a)]),
     debug: noop,
   });
+  // 2026-09-23（agent-roles 上线时补）：有些 host 插件**不往宿主平面注册任何东西**，而是按 agent
+  //   精确 scope 安装（`agent.ctx.tools.register` / `agent.ctx.systemPrompt.section`，范式 = 官方
+  //   `dsh-experimental-tool-agent-team`）。它们需要 `agents`/`subagents` 服务才肯往下走，而注册
+  //   落在假 agent 的 ctx 上 —— 上面的 `strict` 判据要求 `registered.length > 0`，缺这一块会**假红**
+  //   （不是插件坏了，是 mock 不认这种安装面）。这里补最小桩：一个顶层假 agent + 两个服务桩。
+  //   ⚠️ 只加"够走完注册路径"的量；`getProvider: () => undefined` 等**故意不给能力**，免得探针
+  //   替真实宿主做它不该做的保证。
+  const probeAgent = {
+    id: 'verify-probe-agent',
+    session: { header: { id: 'verify-probe-agent', delegationDepth: 0, cwd: repoRoot } },
+    ctx: {
+      tools: { register: () => { record.registered.push('agent.tools.register'); return noop; } },
+      systemPrompt: {
+        section: () => { record.registered.push('agent.systemPrompt.section'); return noop; },
+        getSectionOrder: () => 0,
+      },
+    },
+  };
   const ctxObj = {
     logger,
+    agents: { list: () => [probeAgent] },
+    subagents: {
+      getProvider: () => undefined,
+      list: () => [],
+      startContinuable: async () => ({ childId: 'verify-probe-child' }),
+      sendMessage: async () => 'verify-probe-message',
+      listChildren: async () => [],
+    },
     // 2026-09-11（第四轮盲评 · C2 指摘）：原版**只记录不调用** handler → 只能证明"apply 跑到了
     // 注册那一行"，证明不了 handler 有效。C2 的反例 A：把 `mind-connect` 的 `isMindConnected`
     // 改成恒 false → `mind-inject` 的注入守卫永远早退、R0 每会话都不注入，而本脚本照样打印 ✅
@@ -171,7 +197,10 @@ const MARKET_DIR = join(repoRoot, 'profiles', 'dshome', '.dsh-market');
 /** 本脚本可能弄脏的固定落点：**即使此刻不存在也要登记**（值 null = 跑前不存在 → 跑后删除）。
  *  ⚠️ `mind-guard-hints.txt` 必须**显式登记**：它名字里没有 "marker"，不在下面 `/marker/i` 的兜底扫描里
  *  （2026-09-12 分环时同步加，否则新环会被本门禁写脏且永不恢复）。 */
-const KNOWN_MARKERS = ['mind-guard-marker.txt', 'mind-guard-hints.txt'];
+/** ⚠️ 2026-09-23 加 `agent-roles-marker.txt`：agent-roles 的 apply 会写自己的挂载 marker（同 mind-inject
+ *  形态）。它此刻**通常不存在**（宿主还没带它启动过）⇒ 必须显式登记为 null，本门禁跑完才会删掉自己
+ *  写进去的那行；否则每跑一次门禁就在真 marker 里留一条假挂载行 —— 正是本机制当初要防的污染。 */
+const KNOWN_MARKERS = ['mind-guard-marker.txt', 'mind-guard-hints.txt', 'agent-roles-marker.txt'];
 function snapshotMarkers() {
   const snap = new Map();
   for (const f of KNOWN_MARKERS) snap.set(join(MARKET_DIR, f), null);
