@@ -124,8 +124,13 @@ function search(limit2) {
   if (generalHits.length === 0 && general.length) {
     generalHits = searchL3('', general, limit2, { minScore: 0 });
   }
-  // 项目层：当前项目专属记忆全部列入（项目专属即相关；不靠 query——中英不匹配会漏），minScore 0 保证在场。
-  const projHits = projectKey && proj.length ? searchL3(projectKey, proj, limit2, { minScore: 0 }) : [];
+  // 项目层：当前项目专属记忆全部列入（项目专属即相关；`minScore: 0` 保证在场）。
+  //   2026-09-23 修（实测「写得进却召不回」，同主题见 L3 `2026-09-23_注入面瘦身与token账本实测`）：
+  //   原排序 query 传的是 `projectKey`（项目名，如 "DSHOME"）⇒ 项目层 top-N **恒按"哪个文件提到项目名更多"排、
+  //   与本次任务无关**（实测：新落卡在底层 `searchL3("<任务>", 全候选)` 是 top1/score 50，经本文件装配后**掉出 top4**；
+  //   旁证＝每次上工注入的 L3 记忆恒为同一批老卡）。改为**任务 query 排序**（`generalQuery`），`minScore: 0` 保留
+  //   —— 原注释的意图（"项目专属都在场、不靠 query 过滤"）不变，只是让**排序**重新与任务相关。
+  const projHits = projectKey && proj.length ? searchL3(generalQuery, proj, limit2, { minScore: 0 }) : [];
   // 合并：项目优先保留（当前项目上下文），通用知识补充；去重取前 limit。
   //   2026-09-18 修（实测「通用记忆被项目层饿死」）：项目层用 `minScore: 0` ⇒ **恒返回 limit 条**，
   //   而原来的 `[...projHits, ...generalHits]` 逐个 break ⇒ 只要项目知识 ≥ limit（本机实测 **32 条** vs
