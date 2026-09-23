@@ -582,16 +582,34 @@ async function isBackendUp() {
   }
 }
 
+/** 漂移纠正的自伤护栏（🔴 2026-09-23 实测回归：初版判据用**带 token 的完整 URL** 做
+ *  `startsWith`，而前端加载后会把 `?token=` 从地址栏清掉 ⇒ 判据恒不成立 ⇒ 每 3 秒重载一次
+ *  界面，日志刷了 23 条 `drift-reload from: http://127.0.0.1:3099/`）。
+ *  ⇒ 一个在线周期内**最多纠 2 次**，再触发就彻底停手（`driftStop`），直到后端状态翻转
+ *  才重新武装：**判据一错，绝不允许把错放大成刷屏**。 */
+let driftReloads = 0;
+let driftStop = false;
+
 /** 窗口是否漂到了「应有页面」之外（最典型：鼠标侧键退回到历史里的离线页）。
  *  壳只在「状态变化」时载页 ⇒ 状态未变时的页面漂移无人纠正：窗口会一直停在
- *  「后端未连接」离线页，连离线页那颗「重新连接」也被同一条早退吃掉（2026-09-23 报障）。 */
+ *  「后端未连接」离线页，连离线页那颗「重新连接」也被同一条早退吃掉（2026-09-23 报障）。
+ *  判据用 **origin**（协议+主机+端口）而不是完整 URL：前端自己会把 `?token=` 清掉，
+ *  拿带 token 的 URL 去前缀匹配永远不成立（离线页 `file://` 的 origin 是 `null`，天然不匹配）。 */
 async function fixWindowDrift(up) {
-  if (!up || !window) return;
+  if (!up || !window || driftStop) return;
   try {
     if (window.webContents.isLoading()) return; // 正在载页：别与进行中的 loadURL 抢跑
     const cur = window.webContents.getURL();
-    if (cur.startsWith(targetUrl())) return;    // 已在带 token 的前端页
-    logLine({ state: 'drift-reload', from: cur });
+    let sameOrigin = false;
+    try { sameOrigin = new URL(cur).origin === new URL(targetUrl()).origin; } catch { sameOrigin = false; }
+    if (sameOrigin) return; // 就在前端页上（token 清没清都算）
+    if (driftReloads >= 2) {
+      driftStop = true;       // 纠两次还回不来 ⇒ 停手，等后端状态翻转再武装
+      logLine({ state: 'drift-giveup', from: cur });
+      return;
+    }
+    driftReloads += 1;
+    logLine({ state: 'drift-reload', from: cur, n: driftReloads });
     await window.loadURL(targetUrl());
   } catch { /* 失败留给 3s 轮询下一轮 */ }
 }
@@ -602,6 +620,7 @@ async function applyBackendState(nowUp, readyKind = null) {
   // 状态没变也要纠正页面漂移（旧版这里直接 return ⇒ 被侧键退到离线页后永远回不来）
   if (nowUp === isOnline) { await fixWindowDrift(nowUp); return; }
   isOnline = nowUp;
+  driftReloads = 0; driftStop = false; // 后端状态翻转 = 重新武装漂移纠正（见 fixWindowDrift 护栏）
   if (!isOnline) onlineReadyKind = null;
   logLine({ state: isOnline ? 'online' : 'offline', ready: onlineReadyKind ?? undefined, url: targetUrl() });
   try {
