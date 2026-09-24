@@ -164,6 +164,10 @@ function appendLedger(rec) {
 // 判定读"基线→现"，朝好方向=有效、朝坏方向=恶化、没动=无效（修方向盲，2026-09-10）。
 const METRIC_DIRECTION = {
   'repeat-mistakes': 'down',
+  // 2026-09-24 定案（B④ 审视 + 待办「corrections 计数口径」· 主人「你定」取候选③）：
+  //   `corrections` 是**人工记账且无人 bump** 的计数（停在 7，而 `Learn.md` 实测 💢 83 ⇒ 差一个量级）
+  //   ⇒ **只作信息行、不再当行为信号**；行为信号的真源 = `mind-private\L1\Learn.md` 实测。
+  //   保留该键只为不破坏历史 `log` 行的 `[corrections=N]` 解析。
   'corrections': 'down',
   'rejections': 'down',
   'redos': 'down',
@@ -174,10 +178,22 @@ const KNOWN_METRICS = Object.keys(METRIC_DIRECTION);
 const AUTO_COLLECTED = ['search-hit'];
 // 绑主信号从这天起成为要求（此前存量封存不追）——覆盖率报警只看这之后的新账，保证报警"可熄灭"
 const BINDING_SINCE = '2026-09-10';
-function readMetrics() {
-  try { return JSON.parse(readFileSync(METRICS, 'utf8')).metrics || {}; }
-  catch { return {}; }
+/** 读 metrics.json 的**完整对象**（含 `updatedAt`）。
+ *  2026-09-24 改（本日实测照出）：原实现 `try { JSON.parse } catch { return {} }` ——
+ *  文件存在但解析失败（实测：PowerShell `Set-Content -Encoding utf8` 写出的 **BOM**）会
+ *  **静默退化成"全部为 0"**，连 `repeat-mistakes >= 2` 这类报警也一起不响 ⇒
+ *  正是 `Invariants #14` 禁止的"输入缺失/坏掉却静默通过"。现在：**容 BOM**，其余解析失败**响亮 exit 1**。 */
+function readMetricsFile() {
+  if (!existsSync(METRICS)) return {};
+  const raw = readFileSync(METRICS, 'utf8').replace(/^\uFEFF/, ''); // 容 BOM（Windows 侧常见）
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error(`[evolve-log] ❌ ${METRICS} 存在但解析失败（${e.message}）——拒绝静默当成"全部为 0"（Invariants #14）；修好或删掉该文件。`);
+    process.exit(1);
+  }
 }
+function readMetrics() { return readMetricsFile().metrics || {}; }
 function writeMetrics(m) {
   mkdirSync(EVO, { recursive: true });
   writeFileSync(METRICS, JSON.stringify({ metrics: m, updatedAt: new Date().toISOString() }, null, 2));
@@ -659,9 +675,17 @@ if (cmd === 'snapshot') {
   console.log(`[evolve-log] bump ${metric} → ${m[metric]}`);
 } else if (cmd === 'metrics') {
   const m = readMetrics();
-  console.log('[evolve-log] 可测信号（发生事件时 bump 记账）:');
+  const mMeta = readMetricsFile(); // 与 readMetrics 同源：坏文件已在那边响亮失败（不再静默退化成 0）
+  const updatedAt = mMeta.updatedAt || null;
+  const staleDays = updatedAt ? Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86400000) : null;
+  // 2026-09-24 加（B④ 审视处置）：把"台账最后 bump 时间"摆到脸上——人工记账信号的**陈旧**应当自证，
+  // 而不是靠人记「它停在 7」。只作 ℹ️ 信息行，不参与报警、不改退出码（恒亮灯纪律：人工记账量一律信息行）。
+  console.log(`[evolve-log] 可测信号（发生事件时 bump 记账）· 台账最后 bump：${updatedAt ? `${updatedAt.slice(0, 10)}（${staleDays} 天前）` : '无 updatedAt'}:`);
   for (const k of KNOWN_METRICS) {
-    console.log(`  ${k}: ${m[k] || 0}（方向:${METRIC_DIRECTION[k] === 'up' ? '越高越好' : '越低越好'}${AUTO_COLLECTED.includes(k) ? '·自动采集' : '·人工记账'}）`);
+    console.log(`  ${k}: ${m[k] || 0}（方向:${METRIC_DIRECTION[k] === 'up' ? '越高越好' : '越低越好'}${AUTO_COLLECTED.includes(k) ? '·自动采集' : '·人工记账(纯信息行)'}）`);
+  }
+  if (staleDays !== null && staleDays >= 3) {
+    console.log(`  ℹ️ 人工记账信号已 ${staleDays} 天无人 bump ⇒ **别把它当行为信号**（2026-09-24 定案：真源＝\`mind-private\\L1\\Learn.md\` 实测；本计数只作信息行、不参与报警）`);
   }
 } else if (cmd === 'pending-invalid') {
   // 机器判「无效/恶化」且【未人拍】的条目 → 收工第 9 步裁决（留观/回滚/改进化）。机器只标，不自动回滚。
@@ -685,7 +709,12 @@ if (cmd === 'snapshot') {
 } else if (cmd === 'health') {
   // 自主元进化：智能体做事/进化中自己跑它，命中信号 → 自主触发元进化（不等收工/用户）
   const src = existsSync(LOG) ? readFileSync(LOG, 'utf8') : '';
-  const rows = src.split('\n').filter((l) => l.startsWith('|') && !l.includes('时间') && !l.startsWith('|---') && !l.startsWith('| ---'));
+  // 2026-09-24 修（本日 B④ 新增"档案构成"读数时**照出来的既有缺陷**）：原判据 `!l.includes('时间')` 想排的是
+  //   表头行 `| 时间 | 对象 | 为什么改 | 改了啥 | 快照 |`，但**子串判据**把正文里出现「时间」二字的**数据行整片丢掉**
+  //   ——实测正好是**全部「↳退役」行**（理由都写"Memory §十一 快照**时间窗**裁剪"）⇒ 本行 839 个表行只认 618 个、
+  //   退役行 255 只认 35。**既有读数未受影响**（objectRows 反正会把 ↳ 行滤掉），是我新增的"退役/流水"读数把它照出来。
+  //   同族：09-23「门禁的匹配口径比门禁存在本身更要命」。改法＝**只按行首形状排表头**，不按正文子串。
+  const rows = src.split('\n').filter((l) => l.startsWith('|') && !/^\|\s*时间\s*\|/.test(l) && !l.startsWith('|---') && !l.startsWith('| ---'));
   const snapRows = rows.filter((l) => /\|\s*↳快照:/.test(l)).length;
   // 真正的进化对象行：排除一切 ↳ 派生行（快照/回测/纠偏/裁决——原来只排前两种，↳纠偏 被误算成进化）
   const objectRows = rows.filter((l) => !/\|\s*↳/.test(l));
@@ -696,10 +725,22 @@ if (cmd === 'snapshot') {
   const backfills = parseBackfills(src);
   const decided = decidedObjects(src);
   // 未回填 = 绑了信号但还没有对应回测行（去重键 对象+信号+基线）
-  const unwrapped = machineRows.filter((l) => {
+  // 2026-09-24 修（本日实测照出）：`effect auto` **按既定口径不判人工记账信号**（无自动采集点 ⇒ 见 AUTO_COLLECTED），
+  //   而原 `unwrapped` 把人工信号行也计进"未回填 ≥5"报警 ⇒ **该报警用规则给的处置动作熄灭不了**（实测：5 条里
+  //   4 条是人工信号、已躺 7~14 天；再加一条就恒亮）＝又一处"恒亮灯"。改为：**报警只认有自动采集点的信号**，
+  //   人工信号的未回填**降为信息行**（与 AUTO_COLLECTED 那条"人工记账只作信息行"的既定口径对齐，不是新政策）。
+  const missingBacktest = (l) => {
     const r = parseRow(l);
     if (!r) return false;
     return !new RegExp(`\\|\\s*↳回测:${esc(r.obj)}\\s*\\|\\s*信号${esc(r.signal)} 基线${r.baseline}→`).test(src);
+  };
+  const unwrapped = machineRows.filter((l) => {
+    const r = parseRow(l);
+    return r && AUTO_COLLECTED.includes(r.signal) && missingBacktest(l);
+  }).length;
+  const manualUnwrapped = machineRows.filter((l) => {
+    const r = parseRow(l);
+    return r && !AUTO_COLLECTED.includes(r.signal) && missingBacktest(l);
   }).length;
   const invalidAll = backfills.filter((r) => r.verdict === '无效').length;
   const worsenedAll = backfills.filter((r) => r.verdict === '恶化').length;
@@ -724,6 +765,13 @@ if (cmd === 'snapshot') {
   console.log('[evolve-log] 元进化（自主信号）:');
   console.log(`  进化记录 ${logRows} 条（近7天 ${recentRows} 条 · 另 ↳快照 ${snapRows} 行不计）· 判效覆盖 ${machineRows.length}/${logRows} = ${coverage}%（其中新账 ≥${BINDING_SINCE}：${newBound}/${newRows.length}）· 已回填 ${backfilled} 条 · 未回填 ${unwrapped} 条 · 封存 legacy-unbound ${legacyUnbound} 条(不追不洗)`);
   console.log(`  机器判 无效 ${invalidAll} / 恶化 ${worsenedAll}（未裁决 ${pending}·已人拍 ${invalidAll + worsenedAll - pending}）· 自评回填 ${selfInvalid} 条`);
+  // 2026-09-24 加（B④ 审视处置 · 主人「你定」取**甲-lite**）：把"档案构成 / 信噪比"做成**天天可看的读数**，
+  //   而不是每次重做一遍一次性分析。**只读、不搬历史**——搬历史要动 3 个写入点、还要破 `verify-trash`
+  //   用例④ 的「changelog 留痕」断言，换来的仍只是一行信息。只作 ℹ️，不参与报警、不改退出码。
+  const retiredRows = rows.filter((l) => /\|\s*↳退役:/.test(l)).length;
+  const otherDerivedRows = Math.max(0, rows.length - logRows - snapRows - retiredRows);
+  const flowRatio = rows.length ? Math.round(((rows.length - logRows) / rows.length) * 100) : 0;
+  console.log(`  ℹ️ 档案构成：进化解 ${logRows} 行 / ↳快照 ${snapRows} / ↳退役 ${retiredRows} / 其它 ↳ 派生 ${otherDerivedRows}（非进化流水共 ${flowRatio}%）——**信噪比高 ≠ 进化有效**，别把它当判效信号；缺的是"可判信号"，不是"更干净的账本"`);
   const manualMetrics = KNOWN_METRICS.filter((k) => !AUTO_COLLECTED.includes(k));
   console.log(`  ℹ️ 信号：${KNOWN_METRICS.map((k) => `${k}=${m[k] || 0}${AUTO_COLLECTED.includes(k) ? '' : '(人工)'}`).join(' · ')}`);
   console.log(`  ℹ️ 无自动采集点（人工记账·不参与报警）：${manualMetrics.join(', ')}——2026-09-10 定案：这类事件无机器可测信号（只能自报），故只作信息行；发生当下 bump 一笔即可（依据见 limits.md）`);
@@ -731,6 +779,9 @@ if (cmd === 'snapshot') {
   // **天生没有可测信号**，"绑满 50%"不是能可靠做到的动作 → 当 ⚠️ 会退化成又一盏恒亮灯。⚠️ 只留"判效空转"。
   if (newRows.length && newCoverage < 0.5) {
     console.log(`  ℹ️ 新账判效覆盖 ${newBound}/${newRows.length}（<50%）——多数进化天生无信号，绑得上的就绑，绑不上属正常（不报警）`);
+  }
+  if (manualUnwrapped > 0) {
+    console.log(`  ℹ️ 人工记账信号绑定、未回测 ${manualUnwrapped} 条（\`effect auto\` 按既定口径不判人工信号 ⇒ **不计入"未回填"报警**；要闭环就手写 \`effect "<对象>|<观察>|<verdict>"\`）`);
   }
   let hit = false;
   if (machineRows.length === 0 && logRows >= 8) { console.log('  ⚠️ 判效空转：一条信号绑定都没有 → 机器判效形同虚设，改自我类文件时请绑主信号'); hit = true; }
