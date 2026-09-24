@@ -1,6 +1,6 @@
 # Concepts.md — 心智概念注册表（L1 契约）
 
-> 版本：1.6 | 2026-09-18 | 规则层订正批次（旧批残项 · 批次② ⑩）：**`suggestion` 消费时机订正**——原文写「**命中即删**」，而实现在 2026-09-12 已改为「**写成功之后才消费**」（命中只记 in-flight，`tools/post-execute` 报成功才删；见 `packages\dshome\lib\host\mind-guard.js:181-224`）；本批同改 `L29` 与路由表「建议」行 | 1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | B3 首启自举闭环（上工无档即建档）+ V4 跨设备立场（主线档各设备独立，不做合并）
+> 版本：1.7 | 2026-09-24 | **规则层订正批次 ③ ⑥**：去私有主线档条目名——`projects\DSHOME\project.md` → `projects\<项目>\project.md`（**key＝本机仓库目录名**；表内两行 + 下方三处注）| 1.6 | 2026-09-18 | 规则层订正批次（旧批残项 · 批次② ⑩）：**`suggestion` 消费时机订正**——原文写「**命中即删**」，而实现在 2026-09-12 已改为「**写成功之后才消费**」（命中只记 in-flight，`tools/post-execute` 报成功才删；见 `packages\dshome\lib\host\mind-guard.js:181-224`）；本批同改 `L29` 与路由表「建议」行 | 1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | B3 首启自举闭环（上工无档即建档）+ V4 跨设备立场（主线档各设备独立，不做合并）
 > 定位：这是"某一概念的**权威源/入口在哪**"的**挂号处**。系统要查询/流转一个概念，只在本表查一次；
 > 加载：按需（查询层，L1 参考文档）——概念权威源/路由表，按需查
 > 其他文档（AGENTS.md、Skill、记忆）**引用本表**，**不得各自重复定义**同一概念的权威源。
@@ -10,16 +10,16 @@
 
 | 概念 | 权威源 | 关系（它回答什么） | 接口 | 机器可读薄字段（开放标签，不设死枚举） |
 |---|---|---|---|---|
-| todo | `mind-private\L3\projects\DSHOME\project.md`「下一步」 | 需要/要求/该做/计划 | `/api/mind/todos` 读写 | status / priority / source / promotedFrom |
-| progress | `mind-private\L3\projects\DSHOME\project.md`「进度状态」 | 现状/阶段/到哪一步 | `/api/mind/read`?zone=private（读 project.md）或 mind-prime | phase / health / updated |
+| todo | `mind-private\L3\projects\<项目>\project.md`「下一步」（**体系主线档**；key＝本机仓库目录名） | 需要/要求/该做/计划 | `/api/mind/todos` 读写 | status / priority / source / promotedFrom |
+| progress | `mind-private\L3\projects\<项目>\project.md`「进度状态」（同主线档） | 现状/阶段/到哪一步 | `/api/mind/read`?zone=private（读 project.md）或 mind-prime | phase / health / updated |
 | suggestion | 待裁决的"动作/修改/评估产出"（`mind-private\tasks\approvals.json`——guard 护栏写入 + 面板裁决） | 建议/可改/改进点/需放行的动作 | 经护栏 `dshome-mind-guard` 面板 ✓/✗ 裁决 | 薄字段（开放标签）：id / kind(action·edit·delete) / path / op / reason / status(pending·approved) / requestedAt / decidedAt / decidedBy |
 | memory | 记忆层三区：`L3\common\<主题>\`（通用）+ `L3\projects\<项目>\知识\<主题>\`（专属）+ 各目录 `_index` | 教训/偏好/跨会话记忆 | `/api/mind/search` + `/api/mind/dup-check` | kind / importance / scope / topic / project / tags |
 | skill | `mind\L2\Skill\<id>.md` + `_index` | 怎么做/能力/流程/积木 | 关键词触发加载 | name / version / triggers / inputs / outputs |
 
-> 📌 **todo/progress 权威源 = 体系主线档（跨设备语义）**：`mind-private\L3\projects\DSHOME\project.md` 是**心智体系自身**的运行档
+> 📌 **todo/progress 权威源 = 体系主线档（跨设备语义）**：`mind-private\L3\projects\<项目>\project.md`（**key＝本机仓库目录名**）是**心智体系自身**的运行档
 > （每台设备的智能体都维护同语义的一份：记录心智本体的进度/待办），**不是**任何本机业务项目档。
-> 用户业务项目（各自独立目录）在 `L3\projects\<项目>\project.md`，**不入 todo API**。
-> **新设备首启自举（B3 闭环 2026-09-05）**：`mind-prime` 上工召回时若无 `mind-private\L3\projects\DSHOME\project.md` → **当场按 `mind\L1\Memory.md` §四 模板初始化一份**（含「进度状态」表 + 「下一步」`- [ ]` 列表，标题不带序号前缀），再装配——不等收工（收工 step1 假定档已存在，鸡生蛋由此解开）；mind-prime 无档时目前容错返回空，初始化动作由智能体在首会话开场补做。
+> 用户业务项目（各自独立目录，key＝该业务项目目录名）在 `L3\projects\<项目>\project.md`，**不入 todo API**。
+> **新设备首启自举（B3 闭环 2026-09-05）**：`mind-prime` 上工召回时若无 `mind-private\L3\projects\<项目>\project.md` → **当场按 `mind\L1\Memory.md` §四 模板初始化一份**（含「进度状态」表 + 「下一步」`- [ ]` 列表，标题不带序号前缀），再装配——不等收工（收工 step1 假定档已存在，鸡生蛋由此解开）；mind-prime 无档时目前容错返回空，初始化动作由智能体在首会话开场补做。
 > **跨设备立场（V4 2026-09-05）**：主线档**每设备独立演化、不跨设备自动同步**——出厂区（mind\）经 git 多设备同步（规则/技能/本文）；私有区（mind-private\）有意本机私有（gitignore），各设备的心智进度/待办各自为政（上班的公司机 vs 家里的个人机进度不同是**设计预期**，不是 bug）。心智本体跨设备延续靠"任务带走/结论蒸馏后 git 同步出厂规则"，不靠主线档合并；**不做双机主线档 diff/合并机制**（业务项目档同）。
 
 > 📌 **suggestion 权威源 = 动作放行记录（实况对齐 2026-09-05）**：suggestion 概念落地为护栏的动作放行机制
@@ -63,4 +63,4 @@
 
 ---
 
-_版本：1.6 | 2026-09-18 | 规则层订正批次（旧批残项 · 批次② ⑩）：**`suggestion` 消费时机订正**——原文「命中即删」→ **「写成功之后才消费」**（命中只记 in-flight，`post-execute` 成功才删；`mind-guard.js:181-224`）；同批改 `L29` 与路由表「建议」行 | 1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | v1.2（suggestion 对齐 approvals）→ B3 首启自举 + V4 跨设备立场_
+_版本：1.7 | 2026-09-24 | 与文件头版本行同步：**规则层订正批次 ③ ⑥**——主线档路径去 `DSHOME` 具名，改 `projects\<项目>\project.md`（key＝本机仓库目录名）| 1.6 | 2026-09-18 | 规则层订正批次（旧批残项 · 批次② ⑩）：**`suggestion` 消费时机订正**——原文「命中即删」→ **「写成功之后才消费」**（命中只记 in-flight，`post-execute` 成功才删；`mind-guard.js:181-224`）；同批改 `L29` 与路由表「建议」行 | 1.5 | 2026-09-15 | 规则层订正批次：L62「`AGENTS.md` §五 硬流程」→ **§四**（修改协议）+ 正文两处权威源路径（L19「📌 权威源」、L22「B3 首启自举」）补 `mind-private\` 前缀 | 1.4 | 2026-09-09 | 记忆层重构：todo/progress/memory 权威源路径改 `L3\projects\DSHOME\project.md` 与 `L3\common`+`L3\projects\<项目>\知识` | 1.3 | 2026-09-05 | v1.2（suggestion 对齐 approvals）→ B3 首启自举 + V4 跨设备立场_

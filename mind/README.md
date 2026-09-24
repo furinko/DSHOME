@@ -16,7 +16,7 @@
 
 ## 二、三层加载模型
 
-> 完整加载策略（注入/强制/查询 每层含哪些文件）的**权威在 `mind\L1\HUB.md` §三**。此处仅速览：
+> 完整加载策略（**注入层 R0 / 上工装配层 R1 / 按需层** 各含哪些文件）的**权威在 `mind\L1\HUB.md` §三**。此处仅速览：
 
 ```
 注入层（R0）：dshome-mind-inject 运行时读 `mind\L0\SOUL.md` + `AGENTS.md` 全文注入（人格宪法+运行宪法，正文=注入源，无手写副本）｜ 上工装配层（R1）：dshome-mind-recall 调 `mind-prime` 装六件——`project.md` 进度/待办 + L3 相关记忆 top-N + `mind-private\L1\Learn.md` 末尾 4 条 + `user-rules` + 人设卡 + `Tree.md`/`Power.md` **速览** ｜ 按需层：`Memory` / `Invariants` / `Ritual` / `Concepts` / `Wisdom` / `Design-Philosophy` / `Dream` + L2/L3 按需 read（**原写「强制层（R2 触发）：Tree/Power/Memory/Learn/Invariants」是空头义务——`Memory`/`Invariants` 从不在装配面**，2026-09-18 按机制订正）
