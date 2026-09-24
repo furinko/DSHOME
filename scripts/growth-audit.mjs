@@ -60,6 +60,18 @@ function checks(root) {
     if (n === null) continue;
     out.push({ face: name, current: `${n} 行`, limit: `≤${max} 行`, kind: n > max ? 'hard' : 'ok', note: Math.max(...Object.values(rings)) === max ? '环/覆盖式（本插件负责封顶）' : '覆盖式单行' });
   }
+  // ①' dshome/agent-roles 自己的两个产物（2026-09-24 加）：两者都有环上限
+  //     （marker `slice(-20)` / 审计面 `slice(-2000)`，见 `packages/dshome/lib/host/agent-roles.js:194` 与 `:524`），
+  //     但此前**不在本清单里** ⇒ 上限若被改坏，**没有任何门禁会红**（本脚本存在的意义正是"把体积变成机器可见"）。
+  //     反证（可执行、零触碰真仓库）：`node scripts/growth-audit.mjs --root <临时树>`，树里放
+  //     `profiles/dshome/.dsh-market/agent-roles-marker.txt` 共 21 行 ⇒ 本行由 ✅ 变 ❌ 且 exit 1。
+  const roleFaces = { 'agent-roles-marker.txt': 20, 'agent-roles-writes.jsonl': 2000 };
+  for (const [name, max] of Object.entries(roleFaces)) {
+    const p = join(market, name);
+    const n = lines(p);
+    if (n === null) continue;
+    out.push({ face: name, current: `${n} 行`, limit: `≤${max} 行`, kind: n > max ? 'hard' : 'ok', note: `环/审计面（slice(-${max})；本插件负责封顶）` });
+  }
   // ② 第三方 log.ndjson：无轮转，只提醒
   const log = join(market, 'log.ndjson');
   const logB = size(log);
