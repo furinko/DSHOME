@@ -138,8 +138,21 @@ function main() {
   const paths = args.filter((a) => !a.startsWith('--'));
   const roots = paths.length > 0 ? paths : ['mind', 'mind-private/L1', 'mind-private/L3'].map((p) => join(repoRoot, p));
   const files = [];
+  const missing = [];
   for (const p of roots) {
-    try { if (statSync(p).isDirectory()) walk(p, files); else if (p.endsWith('.md')) files.push(p); } catch { /* 路径不存在：跳过并计入分母 */ }
+    try { if (statSync(p).isDirectory()) walk(p, files); else if (p.endsWith('.md')) files.push(p); else missing.push(p); }
+    catch { missing.push(p); }
+  }
+  // 🔴 缺输入即**响亮失败**（`verify-integrity` 配方：判据拿不到输入却打印全绿 = 假绿）。
+  //    2026-09-24 实测踩到：路径写错（`$env:USERPROFILE\..\DSHOME\…`）⇒ 若静默"扫 0 个文件、exit 0"，
+  //    人会把"没扫到"读成"没问题"。路径不存在 / 一个文件都没扫到 ⇒ exit 1。
+  if (missing.length > 0) {
+    console.error(`[check-md-tables] ❌ 路径不存在（不是"没问题"，是没扫到）：${missing.join(' · ')}`);
+    process.exit(1);
+  }
+  if (files.length === 0) {
+    console.error('[check-md-tables] ❌ 一个 md 都没扫到（检查传入路径 / 工作目录；缺输入即失败，不返回"全绿"）');
+    process.exit(1);
   }
   let red = 0; let blocks = 0; let longs = 0;
   for (const f of files) {
