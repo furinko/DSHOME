@@ -154,12 +154,16 @@ async function resolveRunTarget(hostCtx, task) {
 async function attachToWorkspace(hostCtx, { taskId, sessionId, runTarget, registryWaitMs = ATTACH_REGISTRY_WAIT_MS } = {}) {
   if (!runTarget || runTarget.skipAttach) return { attached: false, reason: runTarget ? 'declared-none' : 'no-target', registryWaitedMs: 0 };
   const t0 = Date.now();
+  // 预算夹紧（独立复核 2026-09-24 指出）：`registryWaitMs` 传 `Infinity` 会让 while 条件**恒真**（无限轮询）；
+  //   非有限值（NaN/undefined/Infinity）一律退默认，有限值夹到 `[0, ATTACH_WAIT_MAX_MS]`。
+  const budgetMs = Number.isFinite(registryWaitMs)
+    ? Math.min(Math.max(0, registryWaitMs), ATTACH_WAIT_MAX_MS) : ATTACH_REGISTRY_WAIT_MS;
   try {
     // ① **先等"服务引用"**（2026-09-24 加）：冷启动补跑会跑在旁路 inject 之前，原实现此时**立刻放弃**
     //    ⇒ 重启后第一次补跑**必然**落「未分组」（见 ATTACH_REGISTRY_WAIT_MS 注释）。有界轮询、不无限等。
     let registry = workspaceRegistryOf(hostCtx);
     while ((!registry || typeof registry.resolveByPath !== 'function')
-      && Date.now() - t0 < Math.max(0, registryWaitMs)) {
+      && Date.now() - t0 < budgetMs) {
       await new Promise((r) => setTimeout(r, ATTACH_POLL_MS));
       registry = workspaceRegistryOf(hostCtx);
     }
@@ -250,6 +254,15 @@ function deferAttachInBackground(hostCtx, task, sessionId, runTarget) {
       }
       console.warn('[dshome-cron]', task.id, `：**后台补登记仍未成功**（${out.reason}${out.error ? ': ' + out.error : ''}；`
         + `等了 ${out.registryWaitedMs}ms）——本会话会落「未分组」；结果已记进任务 lastAttach`);
+      // **站得住的消费者**（2026-09-24 加，独立复核指"灯装上了没人接线"）：失败也落 `cron-runs.jsonl`——
+      //   那条台账是既有真源（JSONL 追加、天然时间序列、已有体积上界），比"只写 lastAttach（只留最后一次）"
+      //   更能看出**连续失败**；且不依赖 `recordAttach` 的落盘路径成功。
+      try {
+        appendCronRun({
+          ts: new Date().toISOString(), taskId: task.id, sessionId: String(sessionId),
+          status: 'attach-failed', errorCode: String(out.reason ?? 'unknown'), source: 'attach',
+        });
+      } catch { /* 留痕失败不影响自治 */ }
     })
     .catch((e) => { console.warn('[dshome-cron]', task.id, '：后台补登记异常（不影响自治）', e?.message ?? e); });
 }
@@ -387,8 +400,12 @@ const GATE_POLL_MS = 500; // 等闸轮询间隔（仅兜底；闸一接上会**�
 //   与 `GATE_WAIT_MS` **同族同款口径**（都是"服务晚到"）：**有界等待 + 界内失败留痕**，
 //     不无限等、也不静默降级（等不到照样建会话、只是归属失败，且这次会记进 `lastAttach`）。
 //   env 覆盖只给测试用（itest 要把 45s 压到几百毫秒才验得了"有界"）；口径同 `DSHOME_CRON_GATE_WAIT_MS`。
-const ATTACH_REGISTRY_WAIT_MS = Number(process.env.DSHOME_CRON_ATTACH_WAIT_MS) > 0
-  ? Number(process.env.DSHOME_CRON_ATTACH_WAIT_MS) : 45 * 1000;
+//   ⚠️ 2026-09-24 复核加固：`Number('Infinity') > 0` 为真、`Math.max(0, Infinity) === Infinity` ⇒ while 恒真、
+//     **无限轮询**。env 虽只给测试，宿主插件里也不该留 inf-loop ⇒ 预算一律**夹在 `[0, ATTACH_WAIT_MAX_MS]`**。
+const ATTACH_WAIT_ENV = Number(process.env.DSHOME_CRON_ATTACH_WAIT_MS);
+const ATTACH_WAIT_MAX_MS = 10 * 60 * 1000; // 预算上界（10min）
+const ATTACH_REGISTRY_WAIT_MS = Number.isFinite(ATTACH_WAIT_ENV) && ATTACH_WAIT_ENV > 0
+  ? Math.min(ATTACH_WAIT_ENV, ATTACH_WAIT_MAX_MS) : 45 * 1000;
 const ATTACH_POLL_MS = 500; // 等 registry 的轮询间隔
 // attach 失败的**能力面**（依赖还没就绪 / 瞬态坏 ⇒ 值得有界重试）白名单；**不在**这里的一律算**内容面**
 //   （工作区没注册 / 路径不匹配 / 实体没这个方法 ⇒ 等多久都一样，重试是白等）。
@@ -764,4 +781,6 @@ let __instance = null;
 function setCronInstance(i) { __instance = i; }
 function getCronInstance() { return __instance; }
 
-module.exports = { DshCron, loadCron, saveCron, executeTask, normalizeModel, CRON_FILE, CRON_RUNS_FILE, outcomeOfTurnEnd, appendCronRun, setCronInstance, getCronInstance, resolveRunTarget, attachToWorkspace, WS_NONE, setWorkspaceRegistry, getWorkspaceRegistry };
+module.exports = { DshCron, loadCron, saveCron, executeTask, normalizeModel, CRON_FILE, CRON_RUNS_FILE, outcomeOfTurnEnd, appendCronRun, setCronInstance, getCronInstance, resolveRunTarget, attachToWorkspace, WS_NONE, setWorkspaceRegistry, getWorkspaceRegistry,
+  // 导出让 itest 能**断言**"预算就是 45s / 轮询 500ms / 上界 10min"（独立复核：不导出只能读源码，等于不可断言）
+  ATTACH_REGISTRY_WAIT_MS, ATTACH_POLL_MS, ATTACH_WAIT_MAX_MS, ATTACH_CAPABILITY_FAILS };

@@ -76,8 +76,11 @@ const SAFE = new Set([
   'scripts/mind-cron-recipes-itest.mjs',
   // 2026-09-24 加：cron 自治「工作区归属登记」——registry 晚到时有界等待 + 每次 run 落 `lastAttach`。
   // 病灶＝冷启动补跑抢跑（宿主 22:22:55 启动、catch-up 22:23:09 就拉起会话）⇒ 归属静默失败、**无人能归因**。
-  // 无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· 18 项含 4 反例 · PASS 0 / FAIL 1；env 覆盖（
-  // `DSHOME_CRON_ATTACH_WAIT_MS`）把 45s 预算压到 2s ⇒ 全程 ~8.6s（同 `DSHOME_CRON_GATE_WAIT_MS` 口径）。
+  // 无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· 20 项含 4 反例 · PASS 0 / FAIL 1；env 覆盖（
+  // `DSHOME_CRON_ATTACH_WAIT_MS`）把 45s 预算压到 2s ⇒ 全程 ~10.7s（同 `DSHOME_CRON_GATE_WAIT_MS` 口径）。
+  // K1/K2（2026-09-24 复核后加）：常量导出后可**断言**（POLL=500 / 上界 10min / 预算=env 值）；
+  //   `registryWaitMs: Infinity` **不再无限轮询**（K2 自带 `Promise.race` 超时 ⇒ 退化会**报红**，
+  //   不会把门禁链**挂住**——挂住的测试比红的测试更坏）。
   // H 用例（2026-09-24 复核后加）专钉一条**静默丢账**：`reload()` 每 60s 整表换对象 ⇒ 后台补登记的落账
   //   会被 `inst.tasks.includes(旧对象)` 判否、再被 `catch{}` 吞掉（修复前盘上 `cron.json` 是 null、无告警）。
   'scripts/mind-cron-attach-itest.mjs',

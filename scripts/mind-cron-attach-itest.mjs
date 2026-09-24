@@ -81,7 +81,8 @@ function fakeRegistry(ws) {
   return { list: () => [ws], resolveByPath: async (p) => (String(p).toLowerCase() === String(ws.path).toLowerCase() ? ws : null) };
 }
 
-const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance } = require('../packages/dshome-mind/lib/cron.cjs');
+const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance,
+  ATTACH_REGISTRY_WAIT_MS, ATTACH_POLL_MS, ATTACH_WAIT_MAX_MS } = require('../packages/dshome-mind/lib/cron.cjs');
 
 // ── A/B/C/D：直接打 attachToWorkspace（参数级控制预算，不在生产面加旋钮）──────
 {
@@ -129,6 +130,27 @@ const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance } = re
   const d2 = await attachToWorkspace({}, { taskId: 'itest-attach', sessionId: 'sid-D2', runTarget: { cwd: 'E:\\别的目录', workspacePath: null, skipAttach: false, declared: false } });
   check('D2 回归·无匹配工作区 → attached=false / reason=no-matching-workspace',
     d2.attached === false && d2.reason === 'no-matching-workspace', JSON.stringify(d2));
+
+  // K 加固（独立复核 2026-09-24 指出：常量不导出 ⇒ "预算就是 45s" 不可断言；`Infinity` ⇒ while 恒真、无限轮询）
+  check('K1 常量可断言（导出后）：POLL=500 · 上界=600000 · 预算=env 覆盖值 2000',
+    ATTACH_POLL_MS === 500 && ATTACH_WAIT_MAX_MS === 600000 && ATTACH_REGISTRY_WAIT_MS === 2000,
+    `poll=${ATTACH_POLL_MS} max=${ATTACH_WAIT_MAX_MS} wait=${ATTACH_REGISTRY_WAIT_MS}`);
+  setWorkspaceRegistry(null);
+  const tK = Date.now();
+  // ⚠️ 用 `Promise.race` 给一道**超时保险**：万一将来有人删掉夹紧，这里会**报红**而不是把门禁链**挂住**
+  //   （挂住的测试比红的测试更坏——它会卡住 pre-commit 与整条冒烟）。
+  const kk = await Promise.race([
+    attachToWorkspace({}, {
+      taskId: 'itest-attach', sessionId: 'sid-K',
+      runTarget: { cwd: home, workspacePath: null, skipAttach: false, declared: false },
+      registryWaitMs: Infinity, // 🔴 以前这里会让 while 条件恒真 ⇒ 永不返回
+    }),
+    new Promise((r) => setTimeout(() => r({ __timeout: true, reason: '__timeout' }), 6000)),
+  ]);
+  const kMs = Date.now() - tK;
+  check('K2 加固·`registryWaitMs: Infinity` **不再无限轮询**（夹紧后退默认，有界返回）',
+    !kk.__timeout && kk.attached === false && kk.reason === 'workspace-registry-unavailable' && kMs < 6000,
+    `total=${kMs}ms reason=${kk.reason}`);
 
   setWorkspaceRegistry(null);
   rmSync(home, { recursive: true, force: true });

@@ -801,7 +801,7 @@ export function renderPolicyText() {
     '规则：',
     '1. **派活前先定线**：任何委派（含一次性临时活）都先 role_list 看有没有匹配岗位卡 —— 有就走 role_spawn（带卡的工具面 + 执行期闸 + 可给写范围）；**岗位对不上卡**才退到官方 `subagent`（⚠️ 裸线无工具面闸，"只读/别写"全靠 prompt 撑着）。同 id 时项目卡优先，别凭印象猜卡里有什么。',
     '1·补：`subagent_fork`（继承本对话上下文的 fork）是卡线**没有**的能力 —— 只在"要独立复核我自己"时用它。',
-    '1·补2：成员名就用**中文短名**（如「多代理审计」）——它进 label，也就是子代理列表里显示的标题；省略 name 时默认取卡的中文名。',
+    '1·补2：成员名用**中文短名**（如「多代理审计」）——它进 label，也就是子代理列表里显示的标题；省略 name 时默认取卡的中文名。⚠️ **但「内联建卡」时同一个 `name` 会同时当卡 `id`**（= 磁盘文件名 + `role_list` 的 id 校验），而**卡 id 只允许 ASCII `[A-Za-z0-9._-]`**（2026-09-24：中文名曾写出「`saved:true` 却 `role_list` 判 id 不合法」的坏卡）⇒ 现在传中文名时**插件自动另折算 ASCII id**（`inline-<名字UTF8的hex>`），中文仍作显示名；要 `role=<…>` 复用请用**卡中文名**或折算后的 id。',
     '1·补3：**入口优先级**：派活默认走本协议的角色卡线；官方 `subagent` 的工具说明只描述**那把工具本身**，不构成"该用哪条线"的指引——两条指引并列时，以本协议为准（2026-09-24：独立审查实测顶层系统提示里两套说明并列且互不引用，正是"顺手走官方线"的结构性原因）。',
     '2. 成员工具面 = 卡声明（allow/deny）+ 固定级联闸（subagent/subagent_fork/workflow/ralph **一律禁**）——⚠️ 闸在**调用期**拒绝、**不裁清单**：`subagent` 由官方按每个 agent 自己的 scope 注册，`restrict` 裁不掉 ⇒ 成员工具表里**仍列着它**，列着≠能用（调用即报「角色能力面未放行」，2026-09-24 实测）。卡里写了子成员不可解析的工具名会**直接报错**，不会静默放宽。',
     '3. 成员完成后用一条消息回报；你负责验收并给最终答复。成员不得自建成员、不得改分工。',
@@ -1375,8 +1375,15 @@ function makeRoleTools({ ctx, state }) {
               return { ok: false, error: `name 不合法：${JSON.stringify(nameArg)}（允许中文/小写字母/数字与连字符，不能含 ":" 或空格）` };
             }
             const effToolsForCard = overrideTools ? { allow: overrideTools.allow, deny: overrideTools.deny } : { allow: [], deny: [] };
+            // 卡 id 只允许 ASCII（`role_list` 的 id 校验 + 磁盘文件名）；而内联建卡的 `name` 会**同时当 id**
+            //   ⇒ 中文名以前会写出「`saved:true` 但 `role_list` 判「id 不合法」」的**坏卡**（2026-09-24 实测）。
+            //   折算规则：纯 ASCII 名原样用；含非 ASCII ⇒ `inline-<名字 UTF-8 的 hex>`（确定性、无新依赖、不截断）。
+            //   中文仍留在 `name`（label 左段）⇒ 标题照旧、`role_spawn(role='独立复核')` 也能按**卡中文名**认回来。
+            const cardId = /^[A-Za-z0-9._-]+$/.test(nameArg)
+              ? nameArg
+              : `inline-${Buffer.from(nameArg, 'utf8').toString('hex')}`;
             card = {
-              id: nameArg,
+              id: cardId,
               name: nameArg,
               description: '',
               model: overrideModel,
@@ -1394,12 +1401,12 @@ function makeRoleTools({ ctx, state }) {
               const dir = scope === 'private'
                 ? join(state.home, ...PRIVATE_CARD_SEGMENTS)
                 : join(cwd, WORKSPACE_CARD_DIRNAME);
-              const target = join(dir, `${nameArg}.md`);
+              const target = join(dir, `${cardId}.md`);
               if (existsSync(target)) {
-                return { ok: false, error: `角色卡已存在，拒绝覆盖：${target}（改用 role=${nameArg} 复用，或换一个 name）` };
+                return { ok: false, error: `角色卡已存在，拒绝覆盖：${target}（改用 role=${cardId} 复用，或换一个 name）` };
               }
               saveCardAtomic(target, serializeCard({
-                id: nameArg,
+                id: cardId,
                 name: nameArg,
                 persona: personaArg,
                 model: overrideModel,
