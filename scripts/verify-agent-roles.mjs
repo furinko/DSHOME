@@ -285,6 +285,13 @@ async function main() {
   assert('CRLF + inline list parses ok', crlf.ok === true, true, crlf.ok ? true : crlf.reason);
   if (crlf.ok) eq('CRLF card tools.allow', crlf.card.tools.allow, ['read']);
 
+  // 2026-09-24 修：`paths.allow` 原先**解析了但没进返回对象** ⇒ 卡的「默认写范围」形同虚设，
+  // 而当时回归 201 全绿（这个字段零覆盖 ⇒ 修了也会再退化）。以下断言把它钉住。
+  const withPaths = parseCard('---\nid: paths-card\ntools:\n  allow: [read, write]\npaths:\n  allow:\n    - out-dir/\n---\n带写范围的卡\n', 'paths.md');
+  assert('card with paths parses ok', withPaths.ok === true, true, withPaths.ok ? true : withPaths.reason);
+  if (withPaths.ok) eq('parseCard 保留 paths.allow（卡默认写范围）', withPaths.card.writePaths, ['out-dir/']);
+  if (crlf.ok) eq('无 paths 的卡 ⇒ writePaths 为空数组（路径闸不启用）', crlf.card.writePaths, []);
+
   const nofm = parseCard('没有 frontmatter', 'nofm.md');
   assert('missing frontmatter -> ok:false', nofm.ok === false, false, nofm.ok);
   assert('missing frontmatter reason names frontmatter', nofm.ok === false && /frontmatter/.test(nofm.reason), 'reason mentions "frontmatter"', nofm.ok ? '(parsed)' : nofm.reason);
