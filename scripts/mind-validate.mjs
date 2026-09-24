@@ -542,7 +542,15 @@ function versionPair(content) {
   const c = String(content || '').replace(/\r\n/g, '\n');
   const num = (s) => { const m = String(s || '').trim().match(/^(\d+)\.(\d+)/); return m ? Number(m[1]) * 100 + Number(m[2]) : null; };
   const headLines = c.slice(0, 1500).split('\n');
-  const tailLines = c.slice(-1500).split('\n');
+  // 2026-09-24 修（承重·本机实测）：原 `c.slice(-1500)` 是**字符切片**、会从**行中间**切断。
+  //   规则类文件（Skill）的尾行是一条沿革链（`_版本：<最新> | … | <旧> | …`，越往右越旧）；
+  //   链长 >1500 字符时**链首（=真尾版本）被切出窗口**，窗口内首个匹配落到链中段旧版本 ⇒ 误报
+  //   （实录：`dshome-plugin-dev.md` 升 1.4.0 后报「头 1.4.0 vs 尾 1.3.5」；基线绿是 `num()` 只比 major.minor 的侥幸）。
+  //   改法：窗口起点**回退到该位置之前最近的换行之后** ⇒ 覆盖到的最后一个逻辑行（含那条沿革链尾行）始终完整。
+  //   `c.length ≤ 1500` ⇒ `tailStart=0` ⇒ `cut=-1` ⇒ 从头切，与改前逐字一致。
+  const tailStart = Math.max(0, c.length - 1500);
+  const cut = c.lastIndexOf('\n', tailStart);
+  const tailLines = c.slice(cut === -1 ? 0 : cut + 1).split('\n');
   let head = null;
   const fm = /^---\n([\s\S]*?)\n---/.exec(c);
   if (fm) { const v = /^version:\s*([0-9.]+)/m.exec(fm[1]); if (v) head = v[1]; }

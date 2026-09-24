@@ -80,6 +80,11 @@ const SAFE = new Set([
   // 视觉自检工具（2026-09-18 加）：无参只打用法 + exit 2 ⇒ 属于"usage 退出不算失败"那一类，
   // 挂白名单只是为了每次提交都真跑一次"它至少能起来"（它自身要带目标文件才有实际动作）。
   'scripts/shot.mjs',
+  // 2026-09-24 加：**活 SPA** 截图探针（CDP + 真实时间）。为什么单列而不并进 shot.mjs：`shot.mjs` 走
+  // `--virtual-time-budget`（虚拟时间），对 DSHOME GUI 这种 SSE 长连接、**永不 idle** 的活页面会**卡死超时**
+  // （本机实测拿不到帧）。无参只打用法 + exit 2 ⇒ 同 `shot.mjs` 那一类「usage 退出不算失败」，
+  // 挂白名单只是让每次提交都真跑一次"它至少能起来"。
+  'scripts/gui-shot.mjs',
 ]);
 
 function toRel(p) {
