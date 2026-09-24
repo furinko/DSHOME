@@ -41,6 +41,10 @@ evolve-workspace/
 # fish mind: private runtime half (memory/projects/learn — never push)
 mind-private/
 
+# 角色卡「项目卡」目录（role_spawn save=true 的默认落点；卡可含私域内容 ⇒ 出厂仓不入库）
+#   加前已核实：全仓 0 个被跟踪的 .agent-roles 文件、该目录当时不存在 ⇒ 规则零副作用（2026-09-24）
+.agent-roles/
+
 # 私有暂存区（历史资产暂存；含私有项目名/本机路径 — never push）
 /私有暂存区/
 

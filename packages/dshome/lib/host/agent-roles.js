@@ -144,12 +144,15 @@ const DEFAULT_TASK = '（初始唤醒）请确认你的角色；等待 Lead 下�
  *   适用性须按当时的注入器配置重核：`mind-inject.js` 现只判「接入心智开关 + 首步 + 去重」，
  *   **不看委派深度** ⇒ 子会话首步同样被注入。尾注第 7 条**仍保留**——它是卡正文覆盖不了的纪律，
  *   不依赖 R0 是否在场（且 R1 上工召回另算：`verify-boot-recall` 的验收项明列"跳子代理"）。
+ *   2026-09-24 再加半句（并入第 1 条）：成员**带完整 R0**，而 R0 §八 把"分工派成员"指向 `Ritual §四`
+ *   （那里写着"你是管理层…生产性执行优先派成员"）——成员顺指针读就会撞墙（它没有 `role_*`），
+ *   故明写"面向 Lead 的分工口径对成员不适用"。
  *   尾注＝成员的启动成本，只放跨岗位通用且不可覆盖的硬规则。
  */
 export const PERSONA_TAIL = [
   '---',
   '【协作协议（固定尾注，角色卡正文不得覆盖）】',
-  '1. 身份：你是顶层 Lead 派出的成员，身份与分工由 Lead 决定；你只对自己的任务负责。',
+  '1. 身份：你是顶层 Lead 派出的成员，身份与分工由 Lead 决定；你只对自己的任务负责。（R0 宪法里那套「Lead 岗位」分工口径——`Ritual §四` 团队分工、"生产性执行优先派成员"——是写给你 Lead 的，**对你不适用**；你没有 `role_*` 工具。）',
   '2. 收到任务即执行：不要先反问确认；只有缺关键信息导致无法动手时，才在回报里说明缺什么。',
   '3. 完成后用**一条**消息向上回报：做完什么 / 证据（命令与原始输出）/ 未完成或存疑的部分。',
   '4. 不得自建成员、不得改分工、不得请求扩大工具面；需要更多能力时在回报里说明，由 Lead 决策。',
@@ -800,12 +803,12 @@ export function renderPolicyText() {
     '1·补：`subagent_fork`（继承本对话上下文的 fork）是卡线**没有**的能力 —— 只在"要独立复核我自己"时用它。',
     '1·补2：成员名就用**中文短名**（如「多代理审计」）——它进 label，也就是子代理列表里显示的标题；省略 name 时默认取卡的中文名。',
     '1·补3：**入口优先级**：派活默认走本协议的角色卡线；官方 `subagent` 的工具说明只描述**那把工具本身**，不构成"该用哪条线"的指引——两条指引并列时，以本协议为准（2026-09-24：独立审查实测顶层系统提示里两套说明并列且互不引用，正是"顺手走官方线"的结构性原因）。',
-    '2. 成员工具面 = 卡声明（allow/deny）+ 固定级联闸（subagent/subagent_fork/workflow/ralph 一律禁），卡里写了子成员不可解析的工具名会**直接报错**，不会静默放宽。',
+    '2. 成员工具面 = 卡声明（allow/deny）+ 固定级联闸（subagent/subagent_fork/workflow/ralph **一律禁**）——⚠️ 闸在**调用期**拒绝、**不裁清单**：`subagent` 由官方按每个 agent 自己的 scope 注册，`restrict` 裁不掉 ⇒ 成员工具表里**仍列着它**，列着≠能用（调用即报「角色能力面未放行」，2026-09-24 实测）。卡里写了子成员不可解析的工具名会**直接报错**，不会静默放宽。',
     '3. 成员完成后用一条消息回报；你负责验收并给最终答复。成员不得自建成员、不得改分工。',
     '4. 卡正文即成员系统提示词：改卡只影响之后起的成员，已起的成员不受影响。',
     '5. 同一把工具不能同时写进 allow 与 deny —— 那是自相矛盾的声明，role_spawn 会直接报错（不会静默按 deny 处理）。',
     '6. 派**可写成员**（工程师这类）时尽量给 `write_scope`（路径白名单，目录前缀或具体文件）：给了它，成员的 `write`/`edit` 落到范围外会**当场被拒**；不给＝`unbounded`（只留痕、不拦，返回值会如实标注）。⚠️ `pwsh` **不受路径闸约束**（命令级"是不是写"解析不可靠）——所以卡里的行为契约仍然算数，别把"没被拦"当成"没风险"。',
-    '7. 起成员后看返回值：`guardInstalled` 必须是 true；`ownScopeTools` 非空 ⇒ 这名成员手里有 **`restrict` 管不掉的自注册工具**（真机实测：`subagent` 就是这一类）——插件会自动写 marker，需要时补级联闸。',
+    '7. 起成员后看返回值：`guardInstalled` 必须是 true；`ownScopeTools` 非空 ⇒ 这名成员手里有 **`restrict` 裁不掉的自注册工具**（真机实测：`subagent` 就是这一类）——**它仍在执行期闸的枪口下**（`buildToolGuard` 默认装上并拒调用，实测成员会话 `c779743f` 调用即报「角色能力面未放行」）；真正已在闸下被拒的那些由返回值 `ownScopeBlocked` 单列，别把"列在表里"读成"能用"。插件另写 marker 留痕。',
     '【管理层宪章（Lead 岗位）】',
     '你的岗位 = 判断（做什么 / 验收判据）+ 分工（派谁 / 工具面 / 写范围）+ 演绎（与用户对话、汇报）；生产性执行（写码 / 改文件 / 大范围检索 / 构建 / 写文档）优先派成员。',
     '例外（自己做，不派）：一行改动、读文件即答、纯核查（抽查证据 / 复跑验证）。',
@@ -1096,6 +1099,7 @@ const ROLE_SPAWN_SCHEMA = {
     guardReason: { type: 'string' },
     writeScope: { type: 'string' },
     ownScopeTools: { type: 'array', items: { type: 'string' } },
+    ownScopeBlocked: { type: 'array', items: { type: 'string' } },
     unknown: { type: 'array', items: { type: 'string' } },
     available: { type: 'array', items: { type: 'string' } },
     broken: { type: 'array', items: BROKEN_ROW_SCHEMA },
@@ -1482,6 +1486,9 @@ function makeRoleTools({ ctx, state }) {
             guardReason: guard.reason || '',
             writeScope: writePaths.length > 0 ? 'declared' : 'unbounded',
             ownScopeTools: Array.isArray(guard.ownScope) ? guard.ownScope : [],
+            // 自注册工具里**实际已被执行期闸拒**的那些（`restrict` 裁不掉它们，但 guard 拦得住）——
+            // 让"可见 ≠ 放行"在返回值里一眼可读（2026-09-24 加：Lead 曾据 ownScopeTools 误判成"闸没生效"）。
+            ownScopeBlocked: (Array.isArray(guard.ownScope) ? guard.ownScope : []).filter((toolName) => guardFilter.deny.includes(toolName)),
           };
         } catch (error) {
           writeMarker(`spawn: failed ${describeError(error)} @ ${new Date().toISOString()}`);
@@ -1715,7 +1722,7 @@ function applyChildGuard(ctx, state, child, filter, label, writePaths, cwd) {
     try { ownScope = ownScopeTools(ctx.tools && typeof ctx.tools.view === 'function' ? ctx.tools.view(child) : null); } catch { ownScope = null; }
     if (ownScope && ownScope.length > 0) {
       state.childOwnScope.set(id, ownScope);
-      writeMarker(`ownscope: ${id} 出现 mask 不掉的自注册工具 ${ownScope.join('、')} @ ${new Date().toISOString()}（已记录，未自动拦——需要时补级联闸）`);
+      writeMarker(`ownscope: ${id} 出现 mask 不掉的自注册工具 ${ownScope.join('、')} @ ${new Date().toISOString()}（已记录：可见面 mask 不掉；执行期已由 buildToolGuard 拒绝——schema 未裁剪）`);
     }
     return { installed: true, reason: '', ownScope };
   } catch (error) {
