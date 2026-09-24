@@ -26,11 +26,11 @@
 // 不抛穿工具边界（`dispatchToolBody` 虽会兜住 throw，但结构化错误对模型更可读）。
 //
 // 导出纯函数（供 `scripts/verify-agent-roles.mjs` 真断言）：parseCard / discoverCards / selectCard /
-// buildToolFilter / composePersona / renderPolicyText / buildStartSpec / reportHint / parseRoleLabel /
-// normalizeTools / normalizeModel。fs 只出现在 discoverCards / saveCardAtomic / writeMarker 里，
-// 测试传临时目录即可。
+// buildToolFilter / composePersona / renderPolicyText / buildStartSpec / reportHint / roleLabel /
+// legacyRoleLabel / parseRoleLabel / normalizeTools / normalizeModel。fs 只出现在 discoverCards /
+// saveCardAtomic / writeMarker 里，测试传临时目录即可。
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,9 +46,20 @@ const POLICY_SECTION_NAME = 'agent-roles:policy';
 const POLICY_SECTION_ORDER_NAME = 'TEAM_POLICY';
 /** 诊断 marker 文件名（`profiles/dshome/.dsh-market/` 下，追加式、最近 20 行）。 */
 const MARKET_MARKER_FILE = 'agent-roles-marker.txt';
+/**
+ * 成员归属表文件名（`profiles/dshome/.dsh-market/` 下，**append-only**）：`childId → cardId`（JSONL）。
+ *
+ * 为什么单独一个文件、且**不设行数上限**：老成员重启后正是靠它认人（见 `recognizeMember`），而
+ * `agent-roles-marker.txt` 是**诊断面**（`slice(-20)`，且 `scripts/growth-audit.mjs:68` 把「≤20 行」当硬判据）
+ * ⇒ 把认人依据塞进诊断环里，迟早被滚掉 = 老成员认不出 = 不补闸。这份是**契约面**：只追加、不裁剪
+ * （每行 ~150B，只在「重启后认人」路径上读一次）。
+ */
+const MEMBER_MAP_FILE = 'agent-roles-members.jsonl';
 
-/** 成员创建 label 前缀：`role:<roleId>:<memberName>`（进程重启后靠它回填 name→childId）。 */
+/** 旧格式 label 前缀：`role:<cardId>:<memberName>`。**保留**：老成员的 label 永远是它，是判据。 */
 export const ROLE_LABEL_PREFIX = 'role:';
+/** label 左段与成员名的分隔符（新旧格式都用 `:`；新旧格式的区别只在左段是卡 id 还是卡中文名）。 */
+export const ROLE_LABEL_SEP = ':';
 /** 默认子代理 provider（`dsh-subagent-spawn-in-process/lib/index.js:13`）。 */
 export const DEFAULT_PROVIDER = 'spawn';
 /**
@@ -107,9 +118,10 @@ const WORKSPACE_CARD_DIRNAME = '.agent-roles';
 const CARD_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 /** 成员名合法性（2026-09-24 放开中文）：汉字/小写字母/数字开头，其后可含汉字·小写字母·数字·连字符。
  *  ⚠️ **不能含 `:`** —— label 用 `:` 分段（`parseRoleLabel` 只切**第一个**冒号，name 段可含汉字）。
- *  为什么放开：成员名进 `label = role:<roleId>:<name>`，而 **label 就是子代理列表里显示的名字**
- *  （官方 `subagent` 用 `description` 当 label，那边天然是中文；本插件默认名原来是卡 id 折算出的
- *  英文 ⇒ 主人看到的标题是 `role:reviewer:xxx`）。放开后默认名取卡的中文 `name`（`defaultMemberName`）。 */
+ *  为什么放开：成员名进 `label`（2026-09-24 起 label = `<卡中文名>:<name>`，旧格式 `role:<cardId>:<name>`
+ *  仍能生成/解析），而 **label 就是子代理列表里显示的名字**（官方 `subagent` 用 `description` 当 label，
+ *  那边天然是中文；本插件默认名原来是卡 id 折算出的英文 ⇒ 主人看到的标题是 `role:reviewer:xxx`）。
+ *  放开后默认名取卡的中文 `name`（`defaultMemberName`）。 */
 const MEMBER_NAME_RE = /^[\u4e00-\u9fffa-z0-9][\u4e00-\u9fffa-z0-9-]*$/;
 /** 成员名判定（handler 与断言共用同一口径，避免两处正则漂）。 */
 export function isValidMemberName(name) {
@@ -194,6 +206,71 @@ function writeMarker(line) {
     const lines = [...prev.split('\n').filter(Boolean), line].slice(-20);
     writeFileSync(file, lines.join('\n') + '\n', 'utf8');
   } catch { /* 诊断 marker 失败不影响插件 */ }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 成员归属表：childId → cardId（append-only 的认人依据）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 归属表路径（`.dsh-market` 下，与 marker / 留痕同目录）。 */
+function memberMapFile() {
+  return join(homeRoot(), 'profiles', 'dshome', '.dsh-market', MEMBER_MAP_FILE);
+}
+
+/** 追加一行归属（JSONL）；失败绝不影响起成员（进程内索引仍在，重启后的认人退到 label 解析）。 */
+function appendMemberMap(entry) {
+  try {
+    const dir = join(homeRoot(), 'profiles', 'dshome', '.dsh-market');
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, MEMBER_MAP_FILE), `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch { /* 归属表写失败不影响功能 */ }
+}
+
+/**
+ * 记一条成员归属：进程内 Map + 落盘各一份。
+ * 为什么落盘也要记：闸装在 agent scope 上、**不在** `subagent/descriptor` 里 ⇒ 进程重启后拿不回它，
+ * 只能按 label / 归属表认人补装 —— 而 label 的左段（卡名）可能改过名、可能重名、可能压根没有（外来成员
+ * 的自由文本），此时**只有 childId→cardId 是确定的**。
+ */
+function rememberMember(state, childId, cardId, label) {
+  const id = String(childId ?? '');
+  if (id === '') return;
+  const card = String(cardId ?? '');
+  if (state.memberCards) state.memberCards.set(id, card);
+  appendMemberMap({ childId: id, cardId: card, label: String(label ?? ''), at: new Date().toISOString() });
+}
+
+/** 确保 state 上的归属索引可用（防御：state 由 apply 建，但纯函数被单测直接调时可能没带）。 */
+function memberCardIndex(state) {
+  if (!(state.memberCards instanceof Map)) {
+    state.memberCards = new Map();
+    state.memberCardsLoaded = false;
+  }
+  return state.memberCards;
+}
+
+/**
+ * 查归属（`childId → cardId`）：先内存索引，首次调用时从落盘表读一遍（只读一次）。
+ * 读不回来 = `''` = **不认**（fail-closed，见 recognizeMember）。
+ */
+function memberCardId(state, childId) {
+  const id = String(childId ?? '');
+  if (id === '') return '';
+  const index = memberCardIndex(state);
+  if (!state.memberCardsLoaded) {
+    state.memberCardsLoaded = true;
+    let text = '';
+    try { text = readFileSync(memberMapFile(), 'utf8'); } catch { text = ''; }
+    for (const line of text.split('\n')) {
+      if (line.trim() === '') continue;
+      let row = null;
+      try { row = JSON.parse(line); } catch { continue; }   // 半截尾行（写中断）在这里被挡掉
+      if (!row || typeof row.childId !== 'string' || row.childId === '') continue;
+      index.set(row.childId, typeof row.cardId === 'string' ? row.cardId : '');   // 同 childId 后写赢
+    }
+  }
+  const hit = index.get(id);
+  return typeof hit === 'string' ? hit : '';
 }
 
 /** 只在 ctx.logger 可用时 warn（cordis 的 logger 是 intrinsic，不在 inject 里）。 */
@@ -820,18 +897,78 @@ export function buildToolFilter({ card, visible, localOnly = ROLE_TOOL_NAMES } =
 // 起成员：request 组装（纯函数，便于断言 maxDepth / persona / toolFilter）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** `role:<roleId>:<memberName>`。 */
-export function roleLabel(roleId, memberName) {
-  return `${ROLE_LABEL_PREFIX}${roleId}:${memberName}`;
+/**
+ * 新格式 label：`<卡中文名>:<成员名>`（**label 就是子代理列表标题** ⇒ 显示面全中文）。
+ *
+ * 卡中文名缺失（空/非字符串）时退回 `cardId`：**绝不产出以 `:` 开头的半截 label**（半截 label 谁都解析不出来 ⇒
+ * 重启后认不回成员 ⇒ 不补闸）。
+ * @param {string} cardName - 卡的中文 `name`
+ * @param {string} memberName - 成员名
+ * @param {{cardId?:string}} [options] - 卡名不可用时的退回值（卡 id）
+ */
+export function roleLabel(cardName, memberName, { cardId = '' } = {}) {
+  const name = String(cardName ?? '').trim();
+  const display = name !== '' ? name : String(cardId ?? '').trim();
+  return `${display}${ROLE_LABEL_SEP}${String(memberName ?? '').trim()}`;
 }
 
-/** 解析 label；不是 `role:` 开头则返回 null。 */
-export function parseRoleLabel(label) {
-  if (typeof label !== 'string' || !label.startsWith(ROLE_LABEL_PREFIX)) return null;
-  const rest = label.slice(ROLE_LABEL_PREFIX.length);
-  const idx = rest.indexOf(':');
-  if (idx < 0) return { roleId: rest, name: '' };
-  return { roleId: rest.slice(0, idx), name: rest.slice(idx + 1) };
+/**
+ * 旧格式 label：`role:<cardId>:<memberName>`。
+ *
+ * 保留生成能力（回滚 / 老会话重放 / 断言里的旧格式正例）——**新代码不该再调它**：卡 id 只能 ASCII
+ * （`CARD_ID_RE`）⇒ 旧格式天生中英混，正是本次要改掉的显示面。
+ */
+export function legacyRoleLabel(cardId, memberName) {
+  return `${ROLE_LABEL_PREFIX}${cardId}${ROLE_LABEL_SEP}${memberName}`;
+}
+
+/**
+ * 新格式左段判定（内部）：`<左段>:<成员名>`，左段必须**唯一命中已知卡的 name**。
+ *
+ * 为什么必须唯一命中：官方 `subagent` 的 label 是**自由文本**（工具 `description`，允许中文和冒号）
+ * ⇒ 只按 `:` 切会把别人的 label 误认成我们的成员、进而给它**错装闸**。重名卡 ⇒ 无法唯一确定 ⇒ 不认
+ * （倒向安全侧：不补闸只是少了闸；错认卡则是按错的卡装闸，比不装更坏）。
+ * @returns `{status:'unique',cardId,name,matched}` / `{status:'ambiguous',matched}` / `{status:'none',matched}`
+ */
+function classifyNameLabel(label, knownCards) {
+  const idx = label.indexOf(ROLE_LABEL_SEP);
+  if (idx < 0) return { status: 'none', matched: [] };
+  const left = label.slice(0, idx).trim();
+  if (left === '') return { status: 'none', matched: [] };
+  const matched = [];
+  for (const card of Array.isArray(knownCards) ? knownCards : []) {
+    if (!card || typeof card !== 'object') continue;
+    const cardName = typeof card.name === 'string' ? card.name.trim() : '';
+    const id = typeof card.id === 'string' ? card.id.trim() : '';
+    if (id === '' || cardName === '' || cardName !== left) continue;
+    if (!matched.includes(id)) matched.push(id);
+  }
+  if (matched.length === 1) return { status: 'unique', cardId: matched[0], name: label.slice(idx + 1), matched };
+  if (matched.length > 1) return { status: 'ambiguous', matched };
+  return { status: 'none', matched: [] };
+}
+
+/**
+ * 解析 label。**双格式**（⚠️ 老成员的 label 永远是旧格式 ⇒ 旧路一个字都不许改）：
+ *   ① `role:` 开头 ⇒ 旧格式 `role:<cardId>:<memberName>`；
+ *   ② 否则按第一个 `:` 切，**左段必须唯一命中已知卡的 name** 才认，`cardId` = 命中卡的 id。
+ * 认不出返回 `null`（调用方一律按「不补闸」处理）。
+ * @param {string} label
+ * @param {Array<{id?:string,name?:string}>} [knownCards] - 已知角色卡（新格式唯一匹配用；给不出 ⇒ 新格式一律不认）
+ * @returns {{roleId:string,name:string,cardId:string,format:'legacy'|'name'}|null}
+ */
+export function parseRoleLabel(label, knownCards = []) {
+  if (typeof label !== 'string' || label === '') return null;
+  if (label.startsWith(ROLE_LABEL_PREFIX)) {
+    const rest = label.slice(ROLE_LABEL_PREFIX.length);
+    const idx = rest.indexOf(ROLE_LABEL_SEP);
+    const roleId = idx < 0 ? rest : rest.slice(0, idx);
+    const name = idx < 0 ? '' : rest.slice(idx + 1);
+    return { roleId, name, cardId: roleId, format: 'legacy' };
+  }
+  const classified = classifyNameLabel(label, knownCards);
+  if (classified.status !== 'unique') return null;
+  return { roleId: classified.cardId, name: classified.name, cardId: classified.cardId, format: 'name' };
 }
 
 /**
@@ -856,6 +993,11 @@ export function reportHint(parent) {
  */
 export function buildStartSpec({ parent, card, name, task, toolFilter, persona } = {}) {
   const roleId = card && card.id ? String(card.id) : 'inline';
+  // 显示名（label 左段 = 子代理列表标题的左半）：卡的中文 `name`。
+  // 退回卡 id 的两种情形：① 卡没有 name（内联卡/卡作者没写）；② name 里含 `:` —— 那会破坏 label 分段
+  //   （解析只切第一个冒号）⇒ 认不回成员 ⇒ 与其产出一个解析不出来的 label，不如退回 ASCII 卡 id。
+  const cardNameRaw = card && typeof card.name === 'string' ? card.name.trim() : '';
+  const cardName = cardNameRaw !== '' && !cardNameRaw.includes(ROLE_LABEL_SEP) ? cardNameRaw : roleId;
   const requested = typeof name === 'string' && name.trim() !== '' ? name.trim() : '';
   const memberName = requested !== '' ? requested : (sanitizeMemberName(roleId) || roleId);
   const taskText = typeof task === 'string' && task.trim() !== '' ? task.trim() : DEFAULT_TASK;
@@ -869,7 +1011,7 @@ export function buildStartSpec({ parent, card, name, task, toolFilter, persona }
   };
   if (model && Object.keys(model).length > 0) request.agentOptions = { ...model };
   if (toolFilter && typeof toolFilter === 'object') request.toolFilter = toolFilter;
-  return { provider: DEFAULT_PROVIDER, label: roleLabel(roleId, memberName), request };
+  return { provider: DEFAULT_PROVIDER, label: roleLabel(cardName, memberName, { cardId: roleId }), request };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1075,9 +1217,11 @@ export function serializeCard({ id, name, description, persona, model, tools }) 
   return lines.join('\n');
 }
 
-/** 成员寻址：name（进程内索引 + listChildren 回填 label）/ childId / roleId。 */
+/** 成员寻址：name（进程内索引 + listChildren 回填 label）/ childId / 卡 id / 卡中文名。 */
 async function resolveMember(ctx, state, agent, target) {
   const parentId = String(agent && agent.id ? agent.id : '');
+  // 新格式 label 的左段要靠「已知卡的 name」才认得出（见 parseRoleLabel）⇒ 这里先发现一次本会话的卡。
+  const knownCards = knownCardsFor(state, agentCwd(agent));
   let childId = '';
   let memberName = '';
   let label = '';
@@ -1095,13 +1239,15 @@ async function resolveMember(ctx, state, agent, target) {
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!entry || entry.kind !== 'child') continue;
     const entryLabel = typeof entry.label === 'string' ? entry.label : '';
-    const parsedLabel = parseRoleLabel(entryLabel);
+    const parsedLabel = parseRoleLabel(entryLabel, knownCards);
     const entryName = parsedLabel && parsedLabel.name ? parsedLabel.name : '';
     if (entryName !== '') {
       members.push(`${entryName}(${String(entry.id)})`);
       state.nameIndex.set(indexKeyOf(parentId, entryName), String(entry.id));
     }
-    if (childId === '' && entryName !== '' && (entryName === target || (parsedLabel && parsedLabel.roleId === target))) {
+    // 兜底寻址：解析出的 **cardId** 或**卡中文名** === target（旧代码只认 roleId === target）
+    const entryCardName = parsedLabel ? cardNameOf(knownCards, parsedLabel.cardId) : '';
+    if (childId === '' && entryName !== '' && (entryName === target || (parsedLabel && (parsedLabel.cardId === target || entryCardName === target)))) {
       childId = String(entry.id);
       memberName = entryName;
       label = entryLabel;
@@ -1177,7 +1323,7 @@ function makeRoleTools({ ctx, state }) {
         properties: {
           role: { type: 'string', description: '角色卡 id（与 persona+name 二选一）' },
           persona: { type: 'string', description: '内联卡正文=系统提示词（与 role 二选一，须配 name）' },
-          name: { type: 'string', description: '成员名＝子代理标题（用中文短名，如「多代理审计」；允许中文/小写字母/数字与连字符，不含 ":" 与空格）。省略时默认取卡的中文名。内联建卡时必填，也是 role_send 的寻址名' },
+          name: { type: 'string', description: '成员名＝子代理标题的右半（标题＝`<卡中文名>:<成员名>`；用中文短名，如「闸复验」；允许中文/小写字母/数字与连字符，不含 ":" 与空格）。省略时默认取卡的中文名。内联建卡时必填，也是 role_send 的寻址名' },
           task: { type: 'string', description: '首条任务消息；省略则只发一条初始唤醒' },
           tools: {
             type: 'object',
@@ -1307,7 +1453,9 @@ function makeRoleTools({ ctx, state }) {
           });
           const childId = started && started.childId ? String(started.childId) : '';
           state.nameIndex.set(indexKey, childId);
-          writeMarker(`spawn: ${spec.label} -> ${childId} @ ${new Date().toISOString()}`);
+          // 归属先落（进程内 + append-only 落盘）：重启后按 childId 认人补闸，是**唯一不受 label 改名/重名影响的依据**
+          rememberMember(state, childId, effCard.id, spec.label);
+          writeMarker(`spawn: ${childId} card=${effCard.id} name=${memberName} label=${spec.label} @ ${new Date().toISOString()}`);
           // 执行期闸：能力面 = 无条件级联闸 ∪ 卡内 deny ∪ restrict 解析出的 deny；allow 用 restrict 解析出的 allow。
           // 覆盖 `restrict` 管不到的 own-scope 工具（实测 subagent）——见 buildToolGuard 头注。
           const guardFilter = {
@@ -1344,7 +1492,7 @@ function makeRoleTools({ ctx, state }) {
 
     roleSend: {
       name: 'role_send',
-      description: '给本会话已起的角色成员发一条唤醒/steer 消息：target 给成员 name（role_spawn 的 name）或 childId。成员在跑就在最近一步边界收到；空闲就被唤醒；进程重启后按 label "role:<roleId>:<name>" 从 listChildren 回填。返回投递确认，不含成员答复。',
+      description: '给本会话已起的角色成员发一条唤醒/steer 消息：target 给成员 name（role_spawn 的 name）、childId、卡 id 或卡中文名。成员在跑就在最近一步边界收到；空闲就被唤醒；进程重启后按 label 从 listChildren 回填——新格式 "<卡中文名>:<name>"（老成员仍是旧格式 "role:<cardId>:<name>"，**两种都能认**），另有 append-only 归属表按 childId→cardId 兜底。返回投递确认，不含成员答复。',
       parameters: {
         type: 'object',
         properties: {
@@ -1431,23 +1579,81 @@ function guardFilterForMember(state, cwd, roleId) {
 }
 
 /**
+ * 本会话可见的角色卡（**认人用**：新格式 label 的左段要拿它对；卡里也能读回能力面）。
+ * 读不到就返回空数组 —— 新格式认不出 ⇒ **不补闸**（倒向安全侧；旧格式不受影响，它不依赖卡发现）。
+ */
+function knownCardsFor(state, cwd) {
+  try {
+    return discoverCards({
+      privateDir: join(state.home, ...PRIVATE_CARD_SEGMENTS),
+      workspaceDir: join(cwd || process.cwd(), WORKSPACE_CARD_DIRNAME),
+    }).cards;
+  } catch { return []; }
+}
+
+/** 已知卡里按 id 取卡中文名（「按卡中文名寻址」用）。 */
+function cardNameOf(knownCards, cardId) {
+  const id = String(cardId ?? '');
+  if (id === '') return '';
+  const hit = (Array.isArray(knownCards) ? knownCards : []).find((card) => card && String(card.id) === id);
+  return hit && typeof hit.name === 'string' ? hit.name.trim() : '';
+}
+
+/** label 左段（`:` 之前）——只用于诊断文本。 */
+function labelLeft(label) {
+  if (typeof label !== 'string' || !label.includes(ROLE_LABEL_SEP)) return '';
+  return label.slice(0, label.indexOf(ROLE_LABEL_SEP)).trim();
+}
+
+/**
+ * 认人（跨进程恢复的关键，**fail-closed**：认不出 ⇒ 不补闸）。顺序：
+ *   ① **成员归属表**（`childId → cardId`，append-only）：唯一不受 label 改名 / 重名 / 缺失影响的依据；
+ *   ② label 解析（旧格式 `role:<cardId>:…` / 新格式 `<卡中文名>:…` 且左段唯一命中已知卡 name）；
+ *   ③ 都不中 ⇒ 不认。
+ * `plausible` 只影响**诊断留痕**：像是我们的成员却认不出（旧形态但卡 id 段空 / 卡重名）要留痕；
+ * 自由文本 label（官方 `subagent` 那类）不吵（与今天的 marker 口径一致）。
+ * @returns {{ok:true,cardId:string,via:'map'|'legacy'|'name'}|{ok:false,reason:string,plausible:boolean}}
+ */
+function recognizeMember(state, childId, label, knownCards) {
+  const mapped = memberCardId(state, childId);
+  if (mapped !== '') return { ok: true, cardId: mapped, via: 'map' };
+  const parsed = parseRoleLabel(label, knownCards);
+  if (parsed && parsed.cardId) return { ok: true, cardId: parsed.cardId, via: parsed.format };
+  if (typeof label === 'string' && label.startsWith(ROLE_LABEL_PREFIX)) {
+    return { ok: false, plausible: true, reason: `label "${label}" 是旧格式但卡 id 段为空（不补闸）` };
+  }
+  const classified = classifyNameLabel(typeof label === 'string' ? label : '', knownCards);
+  if (classified.status === 'ambiguous') {
+    return {
+      ok: false,
+      plausible: true,
+      reason: `卡中文名 "${labelLeft(label)}" 命中 ${classified.matched.length} 张卡（重名 ⇒ 无法唯一确定卡片，不补闸；给卡改名或让该成员走旧格式 label）`,
+    };
+  }
+  return { ok: false, plausible: false, reason: 'label 不是本插件的成员形态（或卡中文名不在已知卡里）——非角色成员，不补闸' };
+}
+
+/**
  * 给**已存在**的成员补执行期闸（跨进程恢复场景）。
  * `guard` 装在该 agent 的 scope 上、**不在** `subagent/descriptor` 里 ⇒ 进程重启后成员拿不回它，
- * 于是派生自旧进程的成员可能还能调 `subagent`。这里按 label 认人、按卡算能力面补装。
+ * 于是派生自旧进程的成员可能还能调 `subagent`。这里按归属表 / label 认人、按卡算能力面补装。
+ * ⚠️ 认不出 **绝不**「按猜的卡装闸」、也**绝不**装一个空闸——就是不补闸（fail-closed，语义与今天一致）。
  */
 function ensureMemberGuard(ctx, state, childId, label, cwd) {
-  const parsed = parseRoleLabel(label);
-  if (!parsed || !parsed.roleId) return { installed: false, reason: 'label 不是 role: 形态（非角色成员，不补闸）' };
+  const baseCwd = cwd || '';
+  const recognized = recognizeMember(state, childId, label, knownCardsFor(state, baseCwd));
+  if (!recognized.ok) return { installed: false, reason: recognized.reason };
   let child = null;
   try { child = (ctx.agents.list() || []).find((candidate) => candidate && String(candidate.id) === String(childId)) || null; }
   catch { child = null; }
   if (!child) return { installed: false, reason: '成员不在本进程注册表（未持有其 agent，无法装闸）' };
-  const built = guardFilterForMember(state, cwd || agentCwd(child), parsed.roleId);
-  const applied = applyChildGuard(ctx, state, child, built.filter, typeof label === 'string' ? label : '', built.writePaths, cwd || agentCwd(child));
+  const childCwd = baseCwd || agentCwd(child);
+  const built = guardFilterForMember(state, childCwd, recognized.cardId);
+  const applied = applyChildGuard(ctx, state, child, built.filter, typeof label === 'string' ? label : '', built.writePaths, childCwd);
   return { installed: applied.installed, reason: built.reason || applied.reason, ownScope: applied.ownScope || null };
 }
 
-/** `agent/created` 的异步补装路：label 不在 agent 对象上 ⇒ 向父会话的 listChildren 问一次。 */
+/** `agent/created` 的异步补装路：label 不在 agent 对象上 ⇒ 向父会话的 listChildren 问一次（认人见 recognizeMember）。 */
 async function ensureMemberGuardById(ctx, state, agent) {
   try {
     const id = agent && agent.id ? String(agent.id) : '';
@@ -1459,11 +1665,16 @@ async function ensureMemberGuardById(ctx, state, agent) {
     const entries = await ctx.subagents.listChildren(parentId, undefined);
     const entry = (Array.isArray(entries) ? entries : []).find((candidate) => candidate && String(candidate.id) === id);
     const label = entry && typeof entry.label === 'string' ? entry.label : '';
-    const parsed = parseRoleLabel(label);
-    if (!parsed || !parsed.roleId) return;
-    const built = guardFilterForMember(state, agentCwd(agent), parsed.roleId);
-    const applied = applyChildGuard(ctx, state, agent, built.filter, label, built.writePaths, agentCwd(agent));
-    writeMarker(`guard(resume): ${id} ${applied.installed ? 'installed' : `skipped ${applied.reason}`} @ ${new Date().toISOString()}`);
+    const cwd = agentCwd(agent);
+    const recognized = recognizeMember(state, id, label, knownCardsFor(state, cwd));
+    if (!recognized.ok) {
+      // 留痕：像是我们的成员却认不出（⚠️ 老成员查不到 = 不补闸 = 可能掉闸，必须可核）
+      if (recognized.plausible) writeMarker(`guard(resume): ${id} 认不出卡片 ⇒ 不补闸：${recognized.reason} @ ${new Date().toISOString()}`);
+      return;
+    }
+    const built = guardFilterForMember(state, cwd, recognized.cardId);
+    const applied = applyChildGuard(ctx, state, agent, built.filter, label, built.writePaths, cwd);
+    writeMarker(`guard(resume): ${id} ${applied.installed ? 'installed' : `skipped ${applied.reason}`} · via=${recognized.via} card=${recognized.cardId} @ ${new Date().toISOString()}`);
   } catch { /* best-effort：补不上不影响主流程（marker 由调用方在主路径留痕） */ }
 }
 
@@ -1573,7 +1784,8 @@ export function apply(ctx) {
       return;
     }
 
-    const state = { home: homeRoot(), nameIndex: new Map(), pendingGuards: new Map(), childGuards: new Map(), childOwnScope: new Map() };
+    // memberCards：childId→cardId 归属索引（进程内缓存；落盘表 append-only，见 memberCardId）
+    const state = { home: homeRoot(), nameIndex: new Map(), pendingGuards: new Map(), childGuards: new Map(), childOwnScope: new Map(), memberCards: new Map(), memberCardsLoaded: false };
     const installed = new Map();
 
     const maybeInstall = (agent) => {

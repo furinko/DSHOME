@@ -5,7 +5,8 @@
 //   ① 工作区覆盖私密 ② 缺 id ③ 坏 frontmatter ④ 未知 role ⑤ 卡里 allow/deny 含不可解析名（响亮失败）
 //   ⑥ 固定级联 deny 按可见性过滤 ⑦ role_* 不进 filter ⑧ `_` 前缀跳过 ⑨ maxDepth 传 1
 // 外加：frontmatter 子集解析（注释/空行/内联列表/嵌套 map/CRLF）、正文为空、无 frontmatter、
-//   persona 组装、`role:<id>:<name>` label、以及**挂载面 + 三把工具真跑**（mock host，临时 DSH_HOME）。
+//   persona 组装、**双格式** label（新 `<卡中文名>:<name>` / 老 `role:<cardId>:<name>` 都能解析）、
+//   以及**挂载面 + 三把工具真跑**（mock host，临时 DSH_HOME）。
 //
 // 为什么不碰真实 mind-private/工作区：脚本把 `DSH_HOME` 指到 mkdtemp 出来的临时根（含 mind/ 占位目录），
 //   于是 apply 的 marker、卡发现、内联落盘、成员索引全部落在临时目录；跑完恢复 env 并删临时目录。
@@ -30,6 +31,7 @@ import {
   describeToolTarget,
   discoverCards,
   isValidMemberName,
+  legacyRoleLabel,
   MEMBER_MAX_DEPTH,
   normalizeModel,
   normalizeTools,
@@ -41,6 +43,7 @@ import {
   PRIVATE_CARD_SEGMENTS,
   renderPolicyText,
   reportHint,
+  roleLabel,
   ROLE_TOOL_NAMES,
   selectCard,
   serializeCard,
@@ -225,6 +228,19 @@ function makeHost() {
       },
     },
   };
+  // 第五个 agent：只用来验「认人顺序 ① 归属表」（childId→cardId）——它的 label 是**自由文本**，
+  // 只有归属表能把它认成我们的成员；预置的那行归属表见 main 里 `apply` 之前。
+  const mapChildAgent = {
+    id: 'child-55',
+    session: { header: { id: 'child-55', delegationDepth: 1, cwd: CWD, parentSession: 'lead-session' } },
+    ctx: {
+      systemPrompt: scope.systemPrompt,
+      tools: {
+        register: () => () => {},
+        guard: (predicate) => { record.childGuards.push(predicate); return () => {}; },
+      },
+    },
+  };
   const ctx = {
     logger: () => ({ info: () => {}, warn: (message) => record.warns.push(String(message)) }),
     on: (ev, handler) => { record.handlers.push({ ev, handler }); return () => {}; },
@@ -240,7 +256,7 @@ function makeHost() {
       register: () => () => {},
       get: () => undefined,
     },
-    agents: { list: () => [topAgent, childAgent, guardChildAgent, resumeChildAgent] },
+    agents: { list: () => [topAgent, childAgent, guardChildAgent, resumeChildAgent, mapChildAgent] },
     subagents: {
       getProvider: () => ({ name: 'spawn' }),
       list: () => ['spawn'],
@@ -374,8 +390,25 @@ async function main() {
     assert(`fixed tail mentions ${marker}`, PERSONA_TAIL.includes(marker), `tail contains ${marker}`, PERSONA_TAIL.slice(0, 80));
   }
 
-  eq('parseRoleLabel splits role and name', parseRoleLabel('role:reviewer:alice'), { roleId: 'reviewer', name: 'alice' });
+  eq('parseRoleLabel（旧格式）→ roleId/name/cardId/format', parseRoleLabel('role:reviewer:alice'), { roleId: 'reviewer', name: 'alice', cardId: 'reviewer', format: 'legacy' });
   eq('parseRoleLabel rejects foreign labels', parseRoleLabel('teammate:alice'), null);
+
+  // ⑤''' label 双格式（2026-09-24 改：显示面全中文 `<卡中文名>:<成员名>`；**旧格式必须永远能解析**）
+  //   为什么必须双格式：label 的卡 id 段是「重启后认出老成员、给它补装执行期闸」的唯一认人依据
+  //   （闸装在 agent scope 上、**不在** descriptor 里 ⇒ 重启拿不回 ⇒ 只能按 label/归属表认人；认不出就不补闸）
+  //   ⇒ 老成员的 label 永远是旧格式，只认新格式 = 老成员掉闸 = 开安全洞。
+  eq('新格式 label：<卡中文名>:<成员名>', roleLabel('沉淀员', '闸复验'), '沉淀员:闸复验');
+  eq('卡名为空 ⇒ 退回卡 id（绝不产 ":name" 半截 label）', roleLabel('', '闸复验', { cardId: 'scribe' }), 'scribe:闸复验');
+  eq('旧格式仍能生成（回滚 / 老会话重放用）', legacyRoleLabel('scribe', '闸复验'), 'role:scribe:闸复验');
+  const labelCards = [{ id: 'scribe', name: '沉淀员' }, { id: 'reviewer', name: '审查官' }];
+  eq('新格式解析：左段唯一命中卡中文名 ⇒ 认，且带 cardId', parseRoleLabel('沉淀员:闸复验', labelCards), { roleId: 'scribe', name: '闸复验', cardId: 'scribe', format: 'name' });
+  eq('旧格式解析：老成员照旧能认（回归）', parseRoleLabel('role:scribe:闸复验', labelCards), { roleId: 'scribe', name: '闸复验', cardId: 'scribe', format: 'legacy' });
+  eq('旧格式解析：不给已知卡也能认（老路不依赖卡发现）', parseRoleLabel('role:scribe:闸复验'), { roleId: 'scribe', name: '闸复验', cardId: 'scribe', format: 'legacy' });
+  eq('自由文本含冒号不得误认（官方 subagent 的 label 是自由文本）', parseRoleLabel('别的什么:随便写', labelCards), null);
+  eq('左段不是已知卡名 ⇒ 不认', parseRoleLabel('沉淀:闸复验', labelCards), null);
+  eq('不给已知卡 ⇒ 新格式一律不认（fail-closed）', parseRoleLabel('沉淀员:闸复验'), null);
+  eq('重名卡 ⇒ 无法唯一确定 ⇒ 不认（fail-closed）', parseRoleLabel('沉淀员:闸复验', [{ id: 'a', name: '沉淀员' }, { id: 'b', name: '沉淀员' }]), null);
+  eq('无冒号的自由文本 ⇒ 不认', parseRoleLabel('沉淀员', labelCards), null);
 
   // ⑤'' 成员名（2026-09-24 加：放开中文 + 默认名取卡中文名 ⇒ 子代理列表标题中文化）
   //   反例必须能红：含 `:`（会破坏 label 分段：parseRoleLabel 只切第一个冒号）、含空格、空串、大写都要被拒。
@@ -394,7 +427,10 @@ async function main() {
   const fakeParent = { id: 'lead-session' };
   const spec = buildStartSpec({ parent: fakeParent, card: picked.ok ? picked.card : { id: 'writer', body: '你是写手。' }, name: 'alice', task: '看这个 diff' });
   eq('start spec provider', spec.provider, 'spawn');
-  eq('start spec label', spec.label, 'role:writer:alice');
+  eq('start spec label（新格式；writer 卡无 name ⇒ 卡名退回卡 id）', spec.label, 'writer:alice');
+  eq('start spec label 用卡的中文 name（子代理列表标题全中文）', buildStartSpec({ parent: fakeParent, card: { id: 'scribe', name: '沉淀员', body: '你是沉淀员。' }, name: '闸复验' }).label, '沉淀员:闸复验');
+  eq('卡 name 为空 ⇒ 退回卡 id', buildStartSpec({ parent: fakeParent, card: { id: 'scribe', name: '', body: 'x' }, name: '闸复验' }).label, 'scribe:闸复验');
+  eq('卡 name 含 ":" ⇒ 退回卡 id（否则 label 分段被破坏、认不回人）', buildStartSpec({ parent: fakeParent, card: { id: 'scribe', name: '沉淀:员', body: 'x' }, name: '闸复验' }).label, 'scribe:闸复验');
   eq('start spec request.maxDepth is 1 (top-level -> absolute cap 1)', spec.request.maxDepth, 1);
   eq('MEMBER_MAX_DEPTH constant', MEMBER_MAX_DEPTH, 1);
   eq('start spec request.parent is exec.agent', spec.request.parent, fakeParent);
@@ -445,6 +481,10 @@ async function main() {
   console.log('[6] apply — 顶层 scope 安装 + 三把工具真跑（mock host）');
   process.env.DSH_HOME = TMP_HOME;
   const host = makeHost();
+  // 归属表**预置**一行（模拟「上个进程写的记录，本进程重启后读回」）：child-55 只在这一行里，label 是自由文本
+  // ⇒ 只有 ① 归属表能认出它（② 卡中文名匹配认不出）。用它把「认人顺序」的两条路分开验（见 ⑥'''''）。
+  put(join(TMP_HOME, 'profiles', 'dshome', '.dsh-market'), 'agent-roles-members.jsonl',
+    `${JSON.stringify({ childId: 'child-55', cardId: 'reviewer', label: '别的什么:自由文本', at: '2026-09-24T00:00:00.000Z' })}\n`);
   apply(host.ctx);
   const defs = new Map(host.record.registered.map((definition) => [definition.name, definition]));
 
@@ -496,7 +536,7 @@ async function main() {
 
   const spawnWriter = await defs.get('role_spawn').execute({ role: 'writer', task: '写一段说明' }, exec);
   assert('role_spawn writer ok', spawnWriter.ok === true, true, spawnWriter.ok);
-  eq('role_spawn label', spawnWriter.label, 'role:writer:writer');
+  eq('role_spawn label（新格式：卡无 name ⇒ 左段退回卡 id）', spawnWriter.label, 'writer:writer');
   eq('role_spawn childId', spawnWriter.childId, 'child-1');
   eq('role_spawn deny (card deny + restrictable cascade; own-scope subagent is NOT maskable here)', spawnWriter.deny, ['edit', 'subagent_fork', 'workflow', 'ralph']);
   assert('fixture models the own-scope leak (subagent not in restrictable surface)', !VISIBLE.includes('subagent') && OWN_SCOPE_ONLY.includes('subagent'), 'VISIBLE excludes subagent, OWN_SCOPE_ONLY lists it', { visibleHasSubagent: VISIBLE.includes('subagent') });
@@ -515,6 +555,7 @@ async function main() {
 
   const spawnReviewer = await defs.get('role_spawn').execute({ role: 'reviewer', name: 'alice', task: '看 diff' }, exec);
   assert('role_spawn reviewer ok', spawnReviewer.ok === true, true, spawnReviewer.ok);
+  eq('role_spawn label 用卡的中文 name（子代理列表标题＝「工作区评审员:alice」）', spawnReviewer.label, '工作区评审员:alice');
   eq('role_spawn allow (card allow only)', spawnReviewer.allow, ['read']);
   const reviewerSpec = host.record.specs[1];
   eq('model routing via request.agentOptions', reviewerSpec.request.agentOptions, { provider: 'deepseek', model: 'deepseek-chat' });
@@ -535,7 +576,7 @@ async function main() {
   if (existsSync(auditPath)) {
     const auditText = readFileSync(auditPath, 'utf8');
     assert('audit file records the allowed write target', auditText.includes('scratch-audit.md') && auditText.includes('"kind":"pass"'), 'pass line with target', auditText.slice(-200));
-    assert('audit file records the member label', auditText.includes('role:writer:'), 'label prefix present', auditText.slice(-200));
+    assert('audit file records the member label', auditText.includes('writer:writer') && !auditText.includes('role:writer:'), 'new-format label "writer:writer", no legacy "role:writer:"', auditText.slice(-200));
   }
   assert('reviewer spawn also reports guardInstalled (idempotent on the same mock child)', spawnReviewer.guardInstalled === true, true, spawnReviewer.guardInstalled);
 
@@ -660,6 +701,78 @@ async function main() {
     assert('late guard enforces the card allow list (write denied)', typeof lateGuard({ name: 'write' }) === 'string', 'string (deny)', lateGuard({ name: 'write' }));
     assert('late guard denies subagent (cascade)', typeof lateGuard({ name: 'subagent' }) === 'string', 'string (deny)', lateGuard({ name: 'subagent' }));
   }
+  host.record.children = null;
+
+  // ⑥''''' 认人顺序（跨进程恢复的核心，**fail-closed**）：① 归属表 childId→cardId → ② label 卡中文名唯一匹配 → ③ 不认 ⇒ 不装闸
+  //   为什么顺序是这样：闸装在 agent scope 上、**不在** descriptor 里 ⇒ 重启后成员拿不回它，只能"认人"补装；
+  //   而**认错人 = 按错的卡装闸**（比不装更坏），所以认不出就不装；label 会改名/重名/自由文本，
+  //   只有 childId→cardId 是确定的 ⇒ 归属表优先。
+  const countBefore = host.record.childGuards.length;
+  const memberMapPath = join(TMP_HOME, 'profiles', 'dshome', '.dsh-market', 'agent-roles-members.jsonl');
+  assert('成员归属表落在临时 DSH_HOME（append-only 的 childId→cardId）', existsSync(memberMapPath), true, existsSync(memberMapPath));
+  if (existsSync(memberMapPath)) {
+    const mapText = readFileSync(memberMapPath, 'utf8');
+    assert('起成员时记下 childId→cardId（诊断 marker 滚掉也不丢）', mapText.includes('"childId":"child-1"') && mapText.includes('"cardId":"writer"'), 'childId=child-1 + cardId=writer', mapText.split('\n').filter(Boolean).slice(-2));
+  }
+  const markerNow = existsSync(markerPath) ? readFileSync(markerPath, 'utf8') : '';
+  const lastSpawnLine = markerNow.split('\n').filter((line) => line.startsWith('spawn:')).slice(-1)[0] || '';
+  assert('spawn marker 显式写 cardId（认人不再只靠 label 解析）', /^spawn: \S+ card=\S+ name=\S+/.test(lastSpawnLine), 'spawn: <childId> card=<id> name=<name>', lastSpawnLine);
+
+  // ③ 反例（必须**不装闸**）：自由文本 label + 卡名不在已知卡里 + 归属表里没有它
+  host.record.children = [{ kind: 'child', id: 'child-88', activity: 'ready', hasChildren: false, mode: 'continuable', label: '别的什么:frank' }];
+  const foreignAgent = {
+    id: 'child-88',
+    session: { header: { id: 'child-88', delegationDepth: 1, cwd: CWD, parentSession: 'lead-session' } },
+    ctx: { tools: { register: () => () => {}, guard: (predicate) => { host.record.childGuards.push(predicate); return () => {}; } } },
+  };
+  if (createdHook) {
+    createdHook.handler({ agent: foreignAgent });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  eq('③ 自由文本 label（含冒号）⇒ 不认 ⇒ 不补闸（官方 subagent 那类）', host.record.childGuards.length, countBefore);
+
+  // ② 正例：新格式 label，左段唯一命中已知卡的中文名 ⇒ 认人 + 按该卡补闸
+  host.record.children = [{ kind: 'child', id: 'child-77', activity: 'ready', hasChildren: false, mode: 'continuable', label: '工作区评审员:zoe' }];
+  const newLabelAgent = {
+    id: 'child-77',
+    session: { header: { id: 'child-77', delegationDepth: 1, cwd: CWD, parentSession: 'lead-session' } },
+    ctx: { tools: { register: () => () => {}, guard: (predicate) => { host.record.childGuards.push(predicate); return () => {}; } } },
+  };
+  if (createdHook) {
+    createdHook.handler({ agent: newLabelAgent });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  eq('② 新格式 label（卡中文名唯一命中）⇒ 认人 + 补闸', host.record.childGuards.length, countBefore + 1);
+  const newLabelGuard = host.record.childGuards[countBefore];
+  assert('② 认回的成员装的是该卡的闸（reviewer allow=[read] ⇒ write 被拒）', !!newLabelGuard && typeof newLabelGuard({ name: 'write' }) === 'string', 'string (deny)', newLabelGuard ? newLabelGuard({ name: 'write' }) : '(没有补闸)');
+  assert('② 认回的成员放行卡内 allow 的工具（read）', !!newLabelGuard && newLabelGuard({ name: 'read' }) === undefined, undefined, newLabelGuard ? newLabelGuard({ name: 'read' }) : '(没有补闸)');
+
+  // ① 正例：**同一代码路径、同一种自由文本 label**，唯一差别＝归属表里有 child-55 ⇒ 只有 ① 能解释它被认出来
+  host.record.children = [{ kind: 'child', id: 'child-55', activity: 'ready', hasChildren: false, mode: 'continuable', label: '别的什么:自由文本' }];
+  const mapOnlyAgent = {
+    id: 'child-55',
+    session: { header: { id: 'child-55', delegationDepth: 1, cwd: CWD, parentSession: 'lead-session' } },
+    ctx: { tools: { register: () => () => {}, guard: (predicate) => { host.record.childGuards.push(predicate); return () => {}; } } },
+  };
+  if (createdHook) {
+    createdHook.handler({ agent: mapOnlyAgent });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  eq('① 归属表认人（label 自由文本也能补闸）', host.record.childGuards.length, countBefore + 2);
+  const mapOnlyGuard = host.record.childGuards[countBefore + 1];
+  assert('① 归属表认回的卡是 reviewer（write 拒 / read 放行）', !!mapOnlyGuard && typeof mapOnlyGuard({ name: 'write' }) === 'string' && mapOnlyGuard({ name: 'read' }) === undefined, 'reviewer 卡的闸', mapOnlyGuard ? { write: mapOnlyGuard({ name: 'write' }), read: mapOnlyGuard({ name: 'read' }) } : '(没有补闸)');
+
+  // 成员寻址（新格式 label）：name / 卡 id / 卡中文名 三条路都要能定位
+  host.record.children = [{ kind: 'child', id: 'child-9', activity: 'ready', hasChildren: false, mode: 'continuable', label: '工作区评审员:bob2' }];
+  const sendNewFmt = await defs.get('role_send').execute({ target: 'bob2', message: '新格式寻址' }, exec);
+  assert('新格式 label 的成员按 name 寻址', sendNewFmt.ok === true && sendNewFmt.childId === 'child-9', 'child-9', sendNewFmt.ok ? sendNewFmt.childId : sendNewFmt.error);
+  const sendByCardName = await defs.get('role_send').execute({ target: '工作区评审员', message: '按卡中文名寻址' }, exec);
+  assert('按卡中文名寻址（新兜底）', sendByCardName.ok === true && sendByCardName.childId === 'child-9', 'child-9', sendByCardName.ok ? sendByCardName.childId : sendByCardName.error);
+  const sendByCardId = await defs.get('role_send').execute({ target: 'reviewer', message: '按卡 id 寻址' }, exec);
+  assert('按卡 id 寻址（旧 roleId 兜底的等价物）', sendByCardId.ok === true && sendByCardId.childId === 'child-9', 'child-9', sendByCardId.ok ? sendByCardId.childId : sendByCardId.error);
+  host.record.children = [{ kind: 'child', id: 'child-9', activity: 'ready', hasChildren: false, mode: 'continuable', label: '同事:张三' }];
+  const sendForeignName = await defs.get('role_send').execute({ target: '张三', message: '不该认出' }, exec);
+  assert('反例：自由文本 label 的成员不进成员寻址', sendForeignName.ok === false, false, sendForeignName.ok ? sendForeignName.childId : sendForeignName.error);
   host.record.children = null;
 
   // ── ⑦ 纯函数：normalize / serialize ────────────────────────────────────────
