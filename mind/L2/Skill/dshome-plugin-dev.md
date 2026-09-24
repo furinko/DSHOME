@@ -1,7 +1,7 @@
 ---
 name: dshome-plugin-dev
 description: DSHOME/DeepSeek Harness 结构与插件开发——运行时 Cordis 动态插件（code.host/code.client 纯 JS）、写码前 cordis_inspect 读真实接口、生命周期/修复/回滚；含自有 host 插件落地四处登记（漏 package.json exports = 宿主启动崩）与安全模式动态化。触发：做/改 DSH 插件、"plugin"、"错误：xxx is not declared"、"host.call 失败"、"slot 注册失败"、"启动崩溃"、"ERR_PACKAGE_PATH_NOT_EXPORTED"。
-version: 1.3.10
+version: 1.4.0
 author: DSHOME
 license: internal
 metadata:
@@ -194,7 +194,28 @@ node scripts\skill-version.mjs --selftest                     # 隔离临时树�
 ```
 校验仍在 `mind-validate --strict`（pre-commit ②；四元不一致即 warn、`--strict` 即拒）——**本工具只是执行器，不另立第二套判据**；`--bump` 不带 `--note` 时只改数字（会续用旧摘要，慎用）。⚠️ `--sync/--bump` 会改 mind 文件（只动版本单元格）⇒ 跑前先 `evolve-log snapshot`。
 
-## 十一、本会话可用性检查
+## 十一、新增一个自建插件（client+host）的最小闭环
+
+> 与 §十 的分工：§十 是**在 `packages/dshome` 里加一个 host 子件**；本节是**新开一个自有包**（client+host 两半）从建包到重启生效的完整闭环。
+> 核心一句：**"新加一行 `cordis.patch.yml`"只是半条链**——宿主还必须能把那行里的**裸包名解析到实体**；缺哪一步都可能"后端启动即崩"（同 2026-09-01 事故形态）。以下按落地顺序，缺一不可。
+
+1. **包体**：`packages/<name>/{package.json, lib/index.cjs, lib/client.js}`。`package.json` 必须有
+   `main` → `lib/index.cjs`、`exports` 含 `"."` 与 `"./client"`、`dsh.client = { platform: "web", inject: [] }`。
+2. **登记**：`packages/dshome/cordis.patch.yml` 追加 `- id: <name>` / `name: <name>`。
+   **裸包名行 = roster 扫 `dsh.client` 的入口**（该文件注释里写明的机制）；顶层必须保持 **YAML 数组**形态（整文件只剩注释 ＝ 启动崩）。
+3. **profile 依赖**：`profiles/dshome/package.json` 的 `dependencies` 加 `"<name>": "workspace:*"`。
+4. **装**：仓库根 `pnpm install` ⇒ 建 `profiles/dshome/node_modules/<name>` junction。
+   **不装 = 后端启动即崩**（cordis 行解析不到裸包名）；反向也危险：只手工建 junction、不写 ③ 的依赖声明 ⇒ 下次 `pnpm install` 会把它 prune 掉，仍是崩。
+5. **重启前**：`node scripts/plugin-change-guard.mjs --preflight`（三查 + 备份三件套；出事 `--recover` 回滚）。
+6. **装后核对**：`pnpm-lock.yaml` 的 `settings.autoInstallPeers` 必须仍为 `true`；diff 应只新增几行（新包条目 + importer 条目），**出现大范围重写即异常**（2026-09-01 事故根因）。
+7. **`packages/dshome/package.json` 非必需**（bundle dependencies + `dsh.client.inject` 名单）：对照 `dshome-mind`、`dsh-imagegen` 都不在名单内却正常加载。
+8. **生效面**：**client 半改完刷新即生效**（client-hmr 轮询 500ms → rebuilt → SSE）；**新增插件行必须重启后端 + 刷新页面**。
+9. **输入框周边可用槽位**（查 slot 总表 `node_modules/@deepseek-ai/dsh-cordis-client-runner/lib/client.js` 的 `CLIENT_SLOT_API` 数组确认 kind/scope/occupants）：
+   `conversation.input.left`（工具行左 · 紧凑控件）/ `conversation.input.right`（提交键前 · 紧凑控件）——**两者 list/session、常驻小按钮首选**；
+   `conversation.input.dock` 是"输入卡片上方整行条目"（queue/todo/goal 已占，会占一整行高度）。
+10. **`ctx.conversation.send(text)` 等动词是 scope-addressed**：root ctx 调用会 fail loud ⇒ 全局槽（如 `sidebar.footer.action`）里要 `ctx.sessions.scope(sessionId)` 拿到 actx 再 `.get("conversation")`。
+
+## 十二、本会话可用性检查
 
 `cordis_*` 工具（`cordis_inspect_list/query/self`、`cordis_define/run/stop/undefine`）与上述 upstream skill
 **未必每个会话都注入**。若当前工具集没有：
@@ -202,4 +223,4 @@ node scripts\skill-version.mjs --selftest                     # 隔离临时树�
 - 组件渲染/纯逻辑可先单测（本地 node + 匹配 react），但**不要**把从外部源码反推的接口当真实契约。
 
 ---
-_版本：1.3.10 | 2026-09-18 | safe.mjs 路径订正（两处）+ 与 crash-recovery 同批（出厂区过时引用清理第二批） | _版本：1.3.9 | 2026-09-18 | related 订正：上游 Cordis 技能文件已迁至 @deepseek-ai/dsh-agent-presets\presets\cordis\skills\cordis-plugin-development\SKILL.md（原 @deepseek-ai\dsh\config\agent-presets\... 已不存在）；由 mind-validate 新增的 metadata.related 缩进块解析**首次真检出**（旧尺子零输入=假绿） | _版本：1.3.8 | 2026-09-12 | §五 增「Client 视图高度/整页被滚走」：composer-overlay 官方钩子（viewArea 锁定高 + 输入框绝对定位）+ flex-basis 压过 height（兜底写 style.flex）+ --dsh-composer-height 让位；判据 = scrollBody 零溢出 + 复刻台改前/改后 | _版本：1.3.6 | 2026-09-12 | §十 增「版本四元 = 机器同步」：新工具 scripts\skill-version.mjs（--check/--sync/--bump --note/--selftest 10 例含 4 条反证），取代四处手工同步（09-12 实测手工改两轮） | _版本：1.3.5 | 2026-09-12 | 安全模式段补「**safe 的覆盖边界**」（实测 `--print-ids`：20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`；判"safe 会不会禁某包"一律跑 `--print-ids`，别推断）| _版本：1.3.4 | 2026-09-12 | 「自检信号」增「**插件/配置变更取证** → `profiles\dshome\.dsh-market\log.ndjson`」（市场自带事件日志：`install` / `install-blocked`（有 agent 在跑即拒绝安装）/ `hot-mount` / `boot`；"谁装了/改了 profile"先看这里）——本节此前只提 `*-marker.txt` | _版本：1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | _版本：1.3.2 | 2026-09-11 | §十 订正：`packages/dshome/scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | _版本：1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`packages/dshome/scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
+_版本：1.4.0 | 2026-09-24 | §十一 新增「新增一个自建插件（client+host）的最小闭环」（10 步：包体 exports/dsh.client → cordis.patch.yml 登记 → profile 依赖 workspace:* → pnpm install 建 junction → plugin-change-guard --preflight → pnpm-lock 核对 → packages/dshome 非必需 → 生效面 → 输入框周边槽位 → scope-addressed 动词）；原 §十一 顺延为 §十二 | 1.3.10 | 2026-09-18 | safe.mjs 路径订正（两处）+ 与 crash-recovery 同批（出厂区过时引用清理第二批） | 1.3.9 | 2026-09-18 | related 订正：上游 Cordis 技能文件已迁至 @deepseek-ai/dsh-agent-presets\presets\cordis\skills\cordis-plugin-development\SKILL.md（原 @deepseek-ai\dsh\config\agent-presets\... 已不存在）；由 mind-validate 新增的 metadata.related 缩进块解析**首次真检出**（旧尺子零输入=假绿） | 1.3.8 | 2026-09-12 | §五 增「Client 视图高度/整页被滚走」：composer-overlay 官方钩子（viewArea 锁定高 + 输入框绝对定位）+ flex-basis 压过 height（兜底写 style.flex）+ --dsh-composer-height 让位；判据 = scrollBody 零溢出 + 复刻台改前/改后 | 1.3.6 | 2026-09-12 | §十 增「版本四元 = 机器同步」：新工具 scripts\skill-version.mjs（--check/--sync/--bump --note/--selftest 10 例含 4 条反证），取代四处手工同步（09-12 实测手工改两轮） | 1.3.5 | 2026-09-12 | 安全模式段补「**safe 的覆盖边界**」（实测 `--print-ids`：20 个 id 全是自有插件 + 官方实验三包，**第三方一个都没禁**，含能改 profile 的市场 `dsh-market`；判"safe 会不会禁某包"一律跑 `--print-ids`，别推断）| 1.3.4 | 2026-09-12 | 「自检信号」增「**插件/配置变更取证** → `profiles\dshome\.dsh-market\log.ndjson`」（市场自带事件日志：`install` / `install-blocked`（有 agent 在跑即拒绝安装）/ `hot-mount` / `boot`；"谁装了/改了 profile"先看这里）——本节此前只提 `*-marker.txt` | 1.3.3 | 2026-09-12 | §十 **三步 → 四处登记**（补 `plugin-store.js` DESC_CN；`exports` 标为**唯一致命**并记盲区：**按文件路径 import 的测试绕过 exports**，漏登记时照样绿）+ 落地判例（compaction-log 漏 exports → 后端 boot 必死 → 连崩 3 次撞外壳熔断 → 外部救援恢复）+ 头注"先读本节"；配套 `verify-host-plugins` 增「包路径解析探针」 | 1.3.2 | 2026-09-11 | §十 订正：`packages/dshome/scripts/safe.mjs` 已从「只 L3」改为与外壳同口径（`safe-overlay.cjs`，L3+L4 并集 19 个 id，加 `--print-ids` 自检）；回归断言 18 → **25**（新增 D 段锁「CLI 清单 == 外壳清单」）并接入 `pre-commit` ⑤ | 1.3.1 | 2026-09-11 | §十 安全模式升级 v3（覆盖层改 L3+L4 并集；补两处实测坑：`--patch` 必须排在 app 参数之前、`packages/dshome/scripts/safe.mjs` 仍只解析 L3 兜不住 L4 崩因；指向回归脚本 `verify-safe-overlay.mjs`）——起因主人报「崩了没报错框 + 安全模式打不开」，实为外壳安全网两处独立硬伤 | 1.3.0 | 2026-09-08 | §九 排查表加"包外脚本 require 实体化失效"一行 + "打包缺 bundle"内补 repoRoot/DSH_HOME 动态定位要点（dshome-mind 实测崩+修复沉淀 | 1.2.0 | 2026-09-07 | §九 排查表补"cannot resolve profile bundle / 安装包后端崩两行 + 打包缺 bundle 排查要点（实测：source smoke PASS ≠ 安装包可用，必须真装一装） | 1.1.0 | 2026-09-05 | 新增 §十 自有 host 插件落地三步 checklist（exports 易漏血泪教训）+ 安全模式动态化说明；触发词补启动崩溃/ERR_PACKAGE_PATH_NOT_EXPORTED_
