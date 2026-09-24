@@ -10,6 +10,8 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+// R1 user-rules 的「重要度排序 + 上限保护」纯函数（2026-09-24 加；反例表：scripts/mind-prime-rules-itest.mjs）
+import { pickUserRules } from './mind-prime-lib.mjs';
 // L3 检索共享库（§十 权威排序单一实现——F3 修复：自动召回不再走纯相似度简化版）
 const require2 = createRequire(import.meta.url);
 const { searchL3, fmValue, listMemoryCandidates, tokenize } = require2('./mind-search-lib.cjs');
@@ -226,10 +228,21 @@ function learn() {
   const picked = [...new Set([...recent, ...related])];
   return picked.map((l) => (l.length > LEARN_CLIP ? l.slice(0, LEARN_CLIP) + '…' : l));
 }
+// ── user-rules（按重要度排序 + 上限保护；2026-09-24 加）────────────────────
+// 原实现：全量 `## [` 行直出、**无上限** —— 而 rules.md 只增不减（2026-09-24 实测 14 条 / 525 字符），
+//   属"随时间的隐性地雷"（同族坑：Learn 曾涨到 88 条、快照被时间窗裁死）；且顺序=文件序，
+//   铁律与普通偏好混排 ⇒ 最重要的不一定最先被读到。改为 **imp 降序**（同 imp 保持原序，无 imp 视为 1）
+//   + `USER_RULES_MAX`（20）封顶；超限时**显式标注**还剩几条、去哪 read —— 不静默丢。
+//   纯函数在 `scripts/mind-prime-lib.mjs`（独立成库才能干净地做反例测试）；
+//   判据：`node scripts/mind-prime-rules-itest.mjs`（9 组，含 3 条反例 + 真数据面）。
 function userRules() {
   const f = join(PRIV, 'L3', 'common', 'user-rules', 'rules.md');
   if (!existsSync(f)) return '';
-  return readFileSync(f, 'utf8').split('\n').filter((l) => /^##\s+\[/.test(l)).join('\n');
+  const { lines, hidden } = pickUserRules(readFileSync(f, 'utf8'));
+  const tail = hidden
+    ? `\n- （另有 ${hidden} 条用户规则未注入——按需 read \`mind-private\\L3\\common\\user-rules\\rules.md\`）`
+    : '';
+  return lines.join('\n') + tail;
 }
 // ── 人设卡（本机私密，演绎唯一权威源）——上工召回自动装配，让鱼鱼开机即带人设 ──
 // Q1（2026-09-06）：优先读约定名「人设卡.md」；不存在则回退扫 L0 下任一含"人设/persona"的 md
