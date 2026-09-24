@@ -26,8 +26,10 @@ import {
   buildToolGuard,
   composePersona,
   CASCADE_DENY,
+  defaultMemberName,
   describeToolTarget,
   discoverCards,
+  isValidMemberName,
   MEMBER_MAX_DEPTH,
   normalizeModel,
   normalizeTools,
@@ -374,6 +376,20 @@ async function main() {
 
   eq('parseRoleLabel splits role and name', parseRoleLabel('role:reviewer:alice'), { roleId: 'reviewer', name: 'alice' });
   eq('parseRoleLabel rejects foreign labels', parseRoleLabel('teammate:alice'), null);
+
+  // ⑤'' 成员名（2026-09-24 加：放开中文 + 默认名取卡中文名 ⇒ 子代理列表标题中文化）
+  //   反例必须能红：含 `:`（会破坏 label 分段：parseRoleLabel 只切第一个冒号）、含空格、空串、大写都要被拒。
+  eq('成员名：中文短名合法', isValidMemberName('多代理审计'), true);
+  eq('成员名：旧英文 kebab 仍合法', isValidMemberName('code-reviewer'), true);
+  eq('成员名：含 ":" 必须拒（label 用 : 分段）', isValidMemberName('role:reviewer'), false);
+  eq('成员名：含空格必须拒', isValidMemberName('多代理 审计'), false);
+  eq('成员名：空串必须拒', isValidMemberName(''), false);
+  eq('成员名：大写必须拒（保持小写口径）', isValidMemberName('Reviewer'), false);
+  eq('默认名：取卡的中文 name', defaultMemberName({ id: 'reviewer', name: '审查官' }), '审查官');
+  eq('默认名：卡无 name 时退回卡 id', defaultMemberName({ id: 'reviewer', name: '' }), 'reviewer');
+  eq('默认名：name 含非法字符时折算并保留汉字', defaultMemberName({ id: 'writer', name: '写 手' }), '写-手');
+  assert('协议含「派活前先定线」口径', /派活前先定线/.test(renderPolicyText()), '含', renderPolicyText().slice(0, 60));
+  assert('协议含「入口优先级」（修指引层真冲突）', /入口优先级/.test(renderPolicyText()), '含', renderPolicyText().slice(0, 60));
 
   const fakeParent = { id: 'lead-session' };
   const spec = buildStartSpec({ parent: fakeParent, card: picked.ok ? picked.card : { id: 'writer', body: '你是写手。' }, name: 'alice', task: '看这个 diff' });

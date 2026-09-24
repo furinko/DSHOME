@@ -105,8 +105,16 @@ export const PRIVATE_CARD_SEGMENTS = ['mind-private', 'L2', 'agents'];
 const WORKSPACE_CARD_DIRNAME = '.agent-roles';
 /** 角色卡 id 合法性：不含 `:`（label 用 `:` 分段），非空、以字母数字开头。 */
 const CARD_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-/** 成员名合法性：lower-kebab（与官方 `spawn_teammate` 的 name 口径一致）。 */
-const MEMBER_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+/** 成员名合法性（2026-09-24 放开中文）：汉字/小写字母/数字开头，其后可含汉字·小写字母·数字·连字符。
+ *  ⚠️ **不能含 `:`** —— label 用 `:` 分段（`parseRoleLabel` 只切**第一个**冒号，name 段可含汉字）。
+ *  为什么放开：成员名进 `label = role:<roleId>:<name>`，而 **label 就是子代理列表里显示的名字**
+ *  （官方 `subagent` 用 `description` 当 label，那边天然是中文；本插件默认名原来是卡 id 折算出的
+ *  英文 ⇒ 主人看到的标题是 `role:reviewer:xxx`）。放开后默认名取卡的中文 `name`（`defaultMemberName`）。 */
+const MEMBER_NAME_RE = /^[\u4e00-\u9fffa-z0-9][\u4e00-\u9fffa-z0-9-]*$/;
+/** 成员名判定（handler 与断言共用同一口径，避免两处正则漂）。 */
+export function isValidMemberName(name) {
+  return MEMBER_NAME_RE.test(String(name ?? ''));
+}
 /** 省略 task 时的首条唤醒消息（prompt 是 startContinuable 的必填项）。 */
 const DEFAULT_TASK = '（初始唤醒）请确认你的角色；等待 Lead 下发任务，收到即执行，完成后用一条消息回报。';
 
@@ -117,8 +125,14 @@ const DEFAULT_TASK = '（初始唤醒）请确认你的角色；等待 Lead 下�
  * 后两条是 2026-09-23 真机实证加上的（见 `mind-private\tasks\agent-roles\卡改动台账.md`）：
  *   · `probe-two` 自述 `workflow`/`ralph` 在手里，而 `request/header.tools` 里根本没有 —— 成员自述不可信；
  *   · `probe-one` 拒绝执行「去起孙子」并说明理由（做对了），但当时属自觉而非明文契约。
- * 第 7 条 2026-09-24 加：成员不带 R0/R1 注入，R0 里「全程中文」对它们不生效；真机实测成员**输出中文、
- *   推理英文**（会话 `4273b23b`）⇒ 语言纪律只能落在尾注。尾注＝成员的启动成本，只放跨岗位通用且不可覆盖的硬规则。
+ * 第 7 条 2026-09-24 加：当时真机实测成员不带 R0/R1 注入（R0 里「全程中文」对它们不生效；成员**输出中文、
+ *   推理英文**，会话 `4273b23b`）⇒ 语言纪律落进尾注。
+ *   ⚠️ **2026-09-24 复核订正（独立只读审查官逐帧解压实测）**：本轮 `role_spawn` 起的成员**带完整 R0**
+ *   （SOUL+AGENTS 全文；成员会话 `14428799` 实测 `r0=true`）⇒ 上面「成员不带 R0」的读数**已过时**，
+ *   适用性须按当时的注入器配置重核：`mind-inject.js` 现只判「接入心智开关 + 首步 + 去重」，
+ *   **不看委派深度** ⇒ 子会话首步同样被注入。尾注第 7 条**仍保留**——它是卡正文覆盖不了的纪律，
+ *   不依赖 R0 是否在场（且 R1 上工召回另算：`verify-boot-recall` 的验收项明列"跳子代理"）。
+ *   尾注＝成员的启动成本，只放跨岗位通用且不可覆盖的硬规则。
  */
 export const PERSONA_TAIL = [
   '---',
@@ -144,13 +158,23 @@ function homeRoot() {
   return join(here, '..', '..', '..', '..');
 }
 
-/** 卡 id → 合法成员名（lower-kebab）：小写、非法字符折成 `-`、去首尾/折叠连字符。 */
+/** 默认成员名折算：小写化，**保留汉字**，其余非法字符折成 `-`，去首尾/折叠连字符。 */
 function sanitizeMemberName(raw) {
   return String(raw ?? '')
     .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/[^\u4e00-\u9fffa-z0-9-]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+}
+
+/** 默认成员名（2026-09-24 加）：优先卡的**中文 name**（如「审查官」），折算不动才退回卡 id。
+ *  它进 `label`，也就是子代理列表里显示的名字 ⇒ 默认就该是中文，别指望 Lead 每次手传 name。 */
+export function defaultMemberName(card) {
+  const display = card && typeof card.name === 'string' ? card.name.trim() : '';
+  const id = card && typeof card.id === 'string' ? card.id : '';
+  const fromDisplay = sanitizeMemberName(display);
+  if (isValidMemberName(fromDisplay)) return fromDisplay;
+  return sanitizeMemberName(id);
 }
 
 /** Error → 单行诊断文本（绝不抛）。 */
@@ -692,7 +716,10 @@ export function renderPolicyText() {
     '· role_spawn：role=<卡 id> 起一个 durable 成员；或 persona+name 内联建卡（save=true 才落盘，scope=workspace|private）。可选 tools/model 覆盖卡，task 作为首条任务消息。',
     '· role_send：给已起成员发消息（target=成员 name 或 childId）；成员在跑就 steer，空闲就唤醒。',
     '规则：',
-    '1. 起成员前先 role_list；同 id 时项目卡优先，别凭印象猜卡里有什么。',
+    '1. **派活前先定线**：任何委派（含一次性临时活）都先 role_list 看有没有匹配岗位卡 —— 有就走 role_spawn（带卡的工具面 + 执行期闸 + 可给写范围）；**岗位对不上卡**才退到官方 `subagent`（⚠️ 裸线无工具面闸，"只读/别写"全靠 prompt 撑着）。同 id 时项目卡优先，别凭印象猜卡里有什么。',
+    '1·补：`subagent_fork`（继承本对话上下文的 fork）是卡线**没有**的能力 —— 只在"要独立复核我自己"时用它。',
+    '1·补2：成员名就用**中文短名**（如「多代理审计」）——它进 label，也就是子代理列表里显示的标题；省略 name 时默认取卡的中文名。',
+    '1·补3：**入口优先级**：派活默认走本协议的角色卡线；官方 `subagent` 的工具说明只描述**那把工具本身**，不构成"该用哪条线"的指引——两条指引并列时，以本协议为准（2026-09-24：独立审查实测顶层系统提示里两套说明并列且互不引用，正是"顺手走官方线"的结构性原因）。',
     '2. 成员工具面 = 卡声明（allow/deny）+ 固定级联闸（subagent/subagent_fork/workflow/ralph 一律禁），卡里写了子成员不可解析的工具名会**直接报错**，不会静默放宽。',
     '3. 成员完成后用一条消息回报；你负责验收并给最终答复。成员不得自建成员、不得改分工。',
     '4. 卡正文即成员系统提示词：改卡只影响之后起的成员，已起的成员不受影响。',
@@ -1147,7 +1174,7 @@ function makeRoleTools({ ctx, state }) {
         properties: {
           role: { type: 'string', description: '角色卡 id（与 persona+name 二选一）' },
           persona: { type: 'string', description: '内联卡正文=系统提示词（与 role 二选一，须配 name）' },
-          name: { type: 'string', description: '成员名，lower-kebab（如 code-reviewer）；内联建卡时必填，也是 role_send 的寻址名' },
+          name: { type: 'string', description: '成员名＝子代理标题（用中文短名，如「多代理审计」；允许中文/小写字母/数字与连字符，不含 ":" 与空格）。省略时默认取卡的中文名。内联建卡时必填，也是 role_send 的寻址名' },
           task: { type: 'string', description: '首条任务消息；省略则只发一条初始唤醒' },
           tools: {
             type: 'object',
@@ -1191,8 +1218,8 @@ function makeRoleTools({ ctx, state }) {
             if (!picked.ok) return { ok: false, error: picked.error, available: picked.ids, broken: briefBroken(discovery) };
             card = picked.card;
           } else if (personaArg !== '' && nameArg !== '') {
-            if (!MEMBER_NAME_RE.test(nameArg)) {
-              return { ok: false, error: `name 必须是 lower-kebab（如 code-reviewer），实际 ${JSON.stringify(nameArg)}` };
+            if (!isValidMemberName(nameArg)) {
+              return { ok: false, error: `name 不合法：${JSON.stringify(nameArg)}（允许中文/小写字母/数字与连字符，不能含 ":" 或空格）` };
             }
             const effToolsForCard = overrideTools ? { allow: overrideTools.allow, deny: overrideTools.deny } : { allow: [], deny: [] };
             card = {
@@ -1247,9 +1274,9 @@ function makeRoleTools({ ctx, state }) {
             return { ok: false, error: built.error, unknown: built.unknown, available: built.available, broken: briefBroken(discovery) };
           }
 
-          const memberName = nameArg !== '' ? nameArg : sanitizeMemberName(effCard.id);
-          if (!MEMBER_NAME_RE.test(memberName)) {
-            return { ok: false, error: `成员名必须是 lower-kebab（如 code-reviewer），实际 ${JSON.stringify(memberName)}（卡 id ${JSON.stringify(effCard.id)} 无法直接当成员名，请显式传 name）` };
+          const memberName = nameArg !== '' ? nameArg : defaultMemberName(effCard);
+          if (!isValidMemberName(memberName)) {
+            return { ok: false, error: `成员名不合法：${JSON.stringify(memberName)}（允许中文/小写字母/数字与连字符，不能含 ":" 或空格——它要进 label 当子代理标题；卡 id ${JSON.stringify(effCard.id)} 折算不出合法名时请显式传 name）` };
           }
           const indexKey = indexKeyOf(agent.id, memberName);
           if (state.nameIndex.has(indexKey)) {
