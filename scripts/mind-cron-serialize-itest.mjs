@@ -13,7 +13,7 @@
 //
 // 隔离：`DSH_HOME` 指向临时目录（不碰真仓库的任何文件），跑完删除。
 // 用法：node scripts/mind-cron-serialize-itest.mjs
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -31,10 +31,13 @@ function makeHome() {
   const home = mkdtempSync(join(tmpdir(), 'dshome-cron-itest-'));
   mkdirSync(join(home, 'mind'), { recursive: true });
   mkdirSync(join(home, 'mind-private', 'tasks'), { recursive: true });
-  // 桩：executeTask 会 execFileSync(repoRoot()/scripts/mind-prime.mjs)。给个空桩，
-  // 既保证隔离，也避免"找不到文件"的报错栈把测试输出刷成噪声。
+  //   ⚠️ 夹具给个空桩，既保证隔离，也避免"找不到文件"的报错栈把测试输出刷成噪声。
   mkdirSync(join(home, 'scripts'), { recursive: true });
-  writeFileSync(join(home, 'scripts', 'mind-prime.mjs'), "console.log('# stub prime（itest 用）');\n");
+  // 桩同时**记录收到的 argv**（2026-09-24 加）：用来断言"上工召回按任务运行目录取"（E1c）。
+  writeFileSync(join(home, 'scripts', 'mind-prime.mjs'),
+    "import { writeFileSync } from 'node:fs';\n"
+    + "writeFileSync(new URL('./prime-argv.json', import.meta.url), JSON.stringify(process.argv.slice(2)));\n"
+    + "console.log('# stub prime（itest 用）');\n");
   // 每日 00:00 的 cron + 上次跑在 2 天前 ⇒ catchUpMissed 必判「错过」，且测试期间不会真到点 tick
   const past = new Date(Date.now() - 2 * 86400000).toISOString();
   writeFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), JSON.stringify({
@@ -176,6 +179,133 @@ const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
   check('D1 补跑只跑一次（主动叫醒后，轮询不许再补一遍）', calls === 1, `catchUpMissed calls=${calls}`);
   check('D2 且只建 1 个会话（第二条在队列里等放闸）', st.created.length === 1, `created=${st.created.length}`);
   cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── E 工作区自选（2026-09-24 加 · 主人「自治任务不一定为 DSHOME 服务」）──────────
+//   语义（**上游硬约束**：`attachSession` 要求会话 header 的 cwd 规范化后逐字等于工作区 path ⇒
+//   「归到谁」与「在哪个目录跑」必然同一路径）：`workspace` = 路径 ⇒ cwd 用它 + attach 到它；
+//   `'@none'` ⇒ 明确不登记；缺省 ⇒ 旧行为（cwd + 按 cwd 反查）。
+//   夹具忠实性：mock 的 workspace 实体**照运行期形状**给（`{record:{path}, attachSession}`——
+//   `dsh-workspace` 的 entity.js 里 `record` 是**公开类字段**，TS 的 private 只是编译期）。
+//   ⚠️ 本 itest 只证"我们这侧的接线与判据"；**真实 attach 成功与否必须在活进程上验**
+//   （09-24 教训：代码在盘上 ≠ 生效，见 `cron.cjs` 那段 ⚠️ 注释）。
+//   反例（写不出反例＝没验过）：① 把 `meta.cwd` 改回 `task.cwd ?? process.cwd()` ⇒ E1 必红；
+//                              ② 把「目录不存在 ⇒ failed」删掉 ⇒ E3 必红；③ 让 `@none` 照常 attach ⇒ E2 必红。
+{
+  const { realpathNormalize } = require('@deepseek-ai/dsh-workspace');
+  const { executeTask, WS_NONE, setWorkspaceRegistry } = require('../packages/dshome-mind/lib/cron.cjs');
+  const home = makeHome();
+  process.env.DSH_HOME = home;
+  const canonHome = await realpathNormalize(home);
+  const missing = join(home, 'nope-does-not-exist');
+
+  function makeWsHost(registered) {
+    const seen = { created: [], attached: [] };
+    // 实体的形状照官方 controller 的 `workspaceView`：**getter path/title/id**，不暴露 `.record`。
+    const entities = registered.map((p, i) => ({
+      id: 'ws-' + i, title: 'T' + i, path: p,
+      attachSession: async (id) => { seen.attached.push({ path: p, id }); },
+    }));
+    const registry = {
+      list: () => entities,
+      resolveByPath: async (target) => {
+        let want = null;
+        try { want = await realpathNormalize(target); } catch { return undefined; }
+        for (const e of entities) {
+          let c = null;
+          try { c = await realpathNormalize(e.path); } catch { c = null; }
+          if (c !== null && c === want) return e;
+        }
+        return undefined;
+      },
+    };
+    const hostCtx = {
+      get(name) {
+        if (name === 'agents') {
+          return { create: async ({ sessionId, meta }) => { seen.created.push({ sessionId, cwd: meta && meta.cwd }); return { agent: { id: sessionId, followup() {} } }; } };
+        }
+        // ⚠️ 真宿主对**未 inject 的服务**是**抛**（2026-09-24 真机 500 原文：
+        //   `cannot get property "workspaceRegistry" without inject`）⇒ mock 同形。
+        //   于是"从 hostCtx 取服务"这条路在测试里**必红**，只有走 inject 存下的引用才对——
+        //   这正是本轮第三个真缺陷（名字对了、取法错了）的守。
+        if (name === 'workspaceRegistry') throw new Error('cannot get property "workspaceRegistry" without inject');
+        return undefined;
+      },
+      logger: { info() {}, warn() {}, error() {} },
+    };
+    // 真宿主里服务由**声明了该 inject 的 ctx**交给插件（`ctx.inject(['workspaceRegistry'], …)`）
+    // ⇒ 测试用**同一入口**注入引用（与 index.cjs 的接线一致）。
+    setWorkspaceRegistry(registry);
+    return { hostCtx, seen };
+  }
+
+  // E1 正例：workspace = 已注册路径 ⇒ cwd 切到它 + attach 到它
+  {
+    const { hostCtx, seen } = makeWsHost([canonHome]);
+    const out = await executeTask(hostCtx, { id: 'E1', prompt: 'x', cron: '0 0 * * *', workspace: canonHome });
+    check('E1a 选了工作区 ⇒ 会话 cwd 就是它', out.status === 'created' && seen.created[0] && seen.created[0].cwd === canonHome, `status=${out.status} cwd=${seen.created[0] && seen.created[0].cwd}`);
+    check('E1b 且登记到它（attach 被调、id 一致）', out.workspace && out.workspace.attached === true && seen.attached.length === 1 && seen.attached[0].id === out.sessionId, `attached=${JSON.stringify(out.workspace)}`);
+    // E1c：上工召回必须按**本任务运行目录**取（否则"给别的项目干活"会召回 DSHOME 的项目记忆）
+    const argvFile = join(home, 'scripts', 'prime-argv.json');
+    const argv = existsSync(argvFile) ? JSON.parse(readFileSync(argvFile, 'utf8')) : null;
+    check('E1c 上工召回也按所选工作区取（--cwd = 它）', !!argv && argv.includes('--cwd') && argv[argv.indexOf('--cwd') + 1] === canonHome, `argv=${JSON.stringify(argv)}`);
+  }
+
+  // E2 正例：'@none' ⇒ 明示不登记（**静默**，不是故障）
+  {
+    const { hostCtx, seen } = makeWsHost([canonHome]);
+    const out = await executeTask(hostCtx, { id: 'E2', prompt: 'x', cron: '0 0 * * *', cwd: canonHome, workspace: WS_NONE });
+    check('E2 明确「不登记」⇒ 不 attach、也不报错', out.status === 'created' && seen.attached.length === 0 && out.workspace && out.workspace.reason === 'declared-none', `reason=${out.workspace && out.workspace.reason} attached=${seen.attached.length}`);
+  }
+
+  // E3 反例：选了不存在的目录 ⇒ **任务 failed**（绝不静默落未分组）
+  {
+    const { hostCtx, seen } = makeWsHost([canonHome]);
+    const out = await executeTask(hostCtx, { id: 'E3', prompt: 'x', cron: '0 0 * * *', workspace: missing });
+    check('E3 目录不存在 ⇒ failed 且不建会话（不静默落未分组）', out.status === 'failed' && seen.created.length === 0 && /不存在|不可达/.test(String(out.error)), `status=${out.status} created=${seen.created.length}`);
+  }
+
+  // E4 反例：相对路径 ⇒ 拒绝（归属会随进程 cwd 漂移）
+  {
+    const { hostCtx, seen } = makeWsHost([canonHome]);
+    const out = await executeTask(hostCtx, { id: 'E4', prompt: 'x', cron: '0 0 * * *', workspace: 'relative/dir' });
+    check('E4 相对路径 ⇒ failed（拒绝随进程 cwd 漂移的归属）', out.status === 'failed' && seen.created.length === 0, `status=${out.status} error=${out.error}`);
+  }
+
+  // E5 旧行为不回退：无 workspace 字段 ⇒ 仍按 cwd 反查登记
+  {
+    const { hostCtx, seen } = makeWsHost([canonHome]);
+    const out = await executeTask(hostCtx, { id: 'E5', prompt: 'x', cron: '0 0 * * *', cwd: canonHome });
+    check('E5 老任务（无 workspace）⇒ 保持旧行为：按 cwd 自动匹配', out.status === 'created' && seen.attached.length === 1 && out.workspace.attached === true, `attached=${JSON.stringify(out.workspace)}`);
+  }
+
+  // E6 正例（2026-09-24 加 · 针对**真机上还没验过的那一格**）：attach 首次抛（模拟"刚建的会话
+  //   header 还没落到持久化"）⇒ **有界重试**要能兜住，并如实把"第几次才成"记进返回值。
+  //   反例：把重试那圈删掉 ⇒ E6 必红（attached=false, reason=attach-threw）。
+  {
+    const seen = { calls: 0 };
+    const entity = {
+      id: 'ws-r', title: 'R', path: canonHome,
+      attachSession: async () => {
+        seen.calls++;
+        if (seen.calls === 1) throw new Error('cannot validate session: session persistence holds no such session');
+      },
+    };
+    const hostCtx = {
+      get(n) {
+        if (n === 'agents') return { create: async ({ sessionId }) => ({ agent: { id: sessionId, followup() {} } }) };
+        if (n === 'workspaceRegistry') throw new Error('cannot get property "workspaceRegistry" without inject');
+        return undefined;
+      },
+      logger: { info() {}, warn() {}, error() {} },
+    };
+    setWorkspaceRegistry({ list: () => [entity], resolveByPath: async () => entity });
+    const out = await executeTask(hostCtx, { id: 'E6', prompt: 'x', cron: '0 0 * * *', workspace: canonHome });
+    check('E6 attach 首次抛 ⇒ 有界重试兜住（attempts=2）', out.status === 'created' && out.workspace && out.workspace.attached === true && out.workspace.attempts === 2, `ws=${JSON.stringify(out.workspace)} calls=${seen.calls}`);
+  }
+
+  setWorkspaceRegistry(null); // 收尾：别把引用漏给后面的用例（与真宿主 effect 清理同义）
   rmSync(home, { recursive: true, force: true });
 }
 

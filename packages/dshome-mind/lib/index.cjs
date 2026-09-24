@@ -6,7 +6,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { DshCron, setCronInstance, getCronInstance, executeTask } = require('./cron.cjs');
+const { DshCron, setCronInstance, getCronInstance, executeTask, setWorkspaceRegistry, getWorkspaceRegistry } = require('./cron.cjs');
 // 出厂自治「处方」（2026-09-14）：机制/处方出厂、实例私有、默认关——见文件头注释。
 const { resolveRecipes, projectKeyOf } = require('./cron-recipes.cjs');
 // L3 检索共享库（§十 权威排序单一实现——F3：index.cjs 与 mind-prime 共用 tokenize/jaccard/fmValue/confidenceRank）
@@ -954,6 +954,29 @@ function makeMindRoutes() {
       },
     },
     {
+      // 工作区清单（只读 · 2026-09-24 加）：给「定时任务 → 工作区」下拉供数。
+      // 数据源＝官方 workspace 服务的 `list()`（与 `attachSession` 用的**同一份真源**，不另建名册，
+      // 避免"两份真相"）；`record.path` 是它的唯一 canon（`realpath` 规范化）。
+      kind: 'exact',
+      path: `${API_PREFIX}/workspaces`,
+      handler: async (req, res) => {
+        if (req.method !== 'GET') return json(res, 405, { ok: false, error: 'method-not-allowed' });
+        if (!guard(req, res)) return;
+        try {
+          // 走旁路 inject 存下的引用（未 inject 时对 ctx 做属性/get 访问都会抛，见 apply 里的注释）
+          const registry = getWorkspaceRegistry();
+          if (!registry || typeof registry.list !== 'function') {
+            // diag：把"引用到底到没到"直接报出来——上一轮就是靠这类读数把"名字错/取法错"逐个钉死的
+            return json(res, 200, { ok: true, workspaces: [], note: 'workspaceRegistry 服务不可用（旁路 inject 未就绪或本 profile 无工作区）', diag: { cronInstance: !!getCronInstance(), registryRef: !!registry } });
+          }
+          const workspaces = registry.list()
+            .map((w) => ({ id: w?.id ?? null, title: w?.title ?? null, path: w?.path ?? null })) // 官方 getter（controller 的 workspaceView 同款）
+            .filter((w) => typeof w.path === 'string' && w.path);
+          json(res, 200, { ok: true, workspaces, diag: { registryRef: true, count: workspaces.length } });
+        } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
+      },
+    },
+    {
       kind: 'exact',
       path: `${API_PREFIX}/cron`,
       handler: async (req, res) => {
@@ -975,7 +998,7 @@ function makeMindRoutes() {
           const b = await readJsonBody(req);
           const cron = getCronInstance();
           if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
-          const out = cron.add({ id: b?.id, cron: b?.cron, prompt: b?.prompt, cwd: b?.cwd, once: !!b?.once, catchUp: !!b?.catchUp, timezone: b?.timezone, preset: b?.preset, ...(b && b.model !== undefined && b.model !== null && b.model !== '' ? { model: b.model } : {}) });
+          const out = cron.add({ id: b?.id, cron: b?.cron, prompt: b?.prompt, cwd: b?.cwd, once: !!b?.once, catchUp: !!b?.catchUp, timezone: b?.timezone, preset: b?.preset, ...(b && typeof b.workspace === 'string' && b.workspace ? { workspace: b.workspace } : {}), ...(b && b.model !== undefined && b.model !== null && b.model !== '' ? { model: b.model } : {}) });
           json(res, out.ok ? 200 : 400, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
@@ -1047,6 +1070,8 @@ function makeMindRoutes() {
           // 模型：面板显式带 'model' 才进 patch（null/'' = 清空 → 跟随默认）
           const patch = { cron: b?.cron, prompt: b?.prompt, preset: b?.preset, once: b?.once };
           if (b && Object.prototype.hasOwnProperty.call(b, 'model')) patch.model = b.model;
+          // 工作区（2026-09-24 加）：显式带字段才进 patch（'' = 清空 → 回到「按目录自动」；'@none' = 明确不登记）
+          if (b && Object.prototype.hasOwnProperty.call(b, 'workspace')) patch.workspace = b.workspace;
           const out = cron.update(b?.id, patch);
           json(res, out.ok ? 200 : 404, out);
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
@@ -1169,6 +1194,20 @@ module.exports = {
       },
     };
     try { ctx.plugin?.(routesPlugin); } catch (e) { ctx.logger?.('dshome').warn(`dshome-mind disabled: ${e?.message ?? e}`); }
+
+    // ── 工作区服务：**旁路可选 inject**（2026-09-24）─────────────────────────────
+    // 宿主对"未 inject 的服务"直接抛 `cannot get property "workspaceRegistry" without inject`（真机 500 原文）
+    // ⇒ 想用它就必须有 ctx 声明该 inject；但把它并进上面的主 `inject:['webServer']` 会让**没有工作区服务的
+    //   profile** 连 cron 与 API 路由都起不来（inject 要等依赖到齐）。故单开一路、只拿引用：
+    //   拿到 ⇒ 自治任务的「工作区」可选；拿不到 ⇒ 该能力降级（`workspace-registry-unavailable`），其余照常。
+    try {
+      ctx.inject(['workspaceRegistry'], (wctx) => {
+        setWorkspaceRegistry(wctx.workspaceRegistry);
+        wctx.effect?.(() => () => setWorkspaceRegistry(null));
+      });
+    } catch (e) {
+      ctx.logger?.('dshome')?.warn?.(`workspaceRegistry 不可用（「工作区」选择降级为不登记）: ${e?.message ?? e}`);
+    }
 
     // ── cron 自治：定时拉起 agent 会话执行任务（照 dsh-scheduler 蓝图）─────
     try {

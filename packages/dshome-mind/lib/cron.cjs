@@ -88,6 +88,98 @@ function normalizeModel(raw, fallback) {
   return fb;
 }
 
+// ── 运行目录 / 工作区归属（2026-09-24 加：自治任务**可自选工作区**）────────────
+// 为什么必须绑在一起（**上游硬约束**）：`attachSession` 会读会话 header 的 cwd，要求它
+//   `realpath` 规范化后**逐字等于**工作区 path，否则抛 `its cwd resolves to '<cwd>'`
+//   （`dsh-workspace/lib/types/entity.js:80`）⇒「**归到哪个工作区**」与「**在哪个目录里跑**」
+//   必然**同一个路径**，不可能各自独立。
+// 语义（`cron.json` 的任务字段 `workspace`）：
+//   · 绝对路径（已注册工作区） ⇒ 会话 cwd = 它 ⇒ 跑在它里面 **且** 归到它（选谁归谁）
+//   · `'@none'`                 ⇒ 明确**不登记**（落「未分组」是使用者的选择，**不是故障**，不告警）
+//   · 缺省 / 空                 ⇒ 保持旧行为：cwd = `task.cwd ?? process.cwd()`，再按 cwd 反查匹配
+//   🔴 选了工作区但目录不存在 / 不是绝对路径 ⇒ **任务 failed**（**绝不**静默落「未分组」——
+//      2026-09-24 主人报的病灶形态就是"没归上还看不出为什么"）。
+const WS_NONE = '@none';
+
+// 工作区服务 = **可选依赖**（2026-09-24 真机实测订正）：
+//   宿主对"未 inject 的服务"**直接抛**——实测原文 `cannot get property "workspaceRegistry" without inject`
+//   （走 `hostCtx.get()` 也一样）。但把它并进 cron 的主 `inject` 列表又会让**没有工作区服务的 profile**
+//   连自治本体都起不来（`inject` 要等依赖到齐才回调）⇒ 用**旁路 inject**：单独开一路只依赖它，
+//   拿到引用就存模块级 ref；拿不到就降级（`workspace-registry-unavailable`），自治职责不受影响。
+//   ⚠️ 因此**绝不允许**对未 inject 的 ctx 做属性访问 / `get()`（那正是本轮 500 的成因）。
+let __workspaceRegistry = null;
+function setWorkspaceRegistry(r) { __workspaceRegistry = r; }
+function getWorkspaceRegistry() { return __workspaceRegistry; }
+/** 只在**已拿到引用**时返回；没有就 null（不抛）。 */
+function workspaceRegistryOf(hostCtx) {
+  if (__workspaceRegistry) return __workspaceRegistry;
+  if (hostCtx && typeof hostCtx.get === 'function') {
+    try { return hostCtx.get('workspaceRegistry') || null; } catch { return null; } // 未 inject ⇒ 抛，吞掉
+  }
+  return null;
+}
+
+/** 解析"这次会话该在哪个目录跑 / 归到哪个工作区"。返回 `{cwd, workspacePath, skipAttach, declared}` 或 `{error}`。 */
+async function resolveRunTarget(hostCtx, task) {
+  const raw = (task && typeof task.workspace === 'string') ? task.workspace.trim() : '';
+  const legacyCwd = (task && task.cwd) ? task.cwd : process.cwd();
+  if (raw === WS_NONE) return { cwd: legacyCwd, workspacePath: null, skipAttach: true, declared: true };
+  if (!raw) return { cwd: legacyCwd, workspacePath: null, skipAttach: false, declared: false };
+  if (!path.isAbsolute(raw)) {
+    return { error: `workspace 必须是绝对路径（收到 ${JSON.stringify(raw)}）——相对路径的归属会随进程 cwd 漂移` };
+  }
+  let canon = null;
+  try { canon = await (require('@deepseek-ai/dsh-workspace').realpathNormalize)(raw); } catch { canon = null; }
+  if (canon === null) return { error: `workspace 目录不存在或不可达：${raw}（先建目录，或在侧边栏「添加目录」把它注册成工作区）` };
+  try {
+    if (!fs.statSync(canon).isDirectory()) return { error: `workspace 不是目录：${canon}` };
+  } catch { return { error: `workspace 目录不可访问：${raw}` }; }
+  return { cwd: canon, workspacePath: canon, skipAttach: false, declared: true };
+}
+
+/** 把自治会话登记进工作区。**登记失败不影响任务执行**（归属是侧边栏的事），但必须**留下可查读数**。
+ *
+ *  ⚠️ 2026-09-24 两处"看着对、其实恒失败"的教训（都是真机探针抓出来的，不是读代码看出来的）：
+ *   ① **服务名错**：原写 `ctx.get('workspace')` ⇒ 恒 `undefined`。官方 registry 的服务名是
+ *      **`workspaceRegistry`**——证据＝`dsh-workspace` 的 `class WorkspaceRegistry extends Service { super(ctx, 'workspaceRegistry') }`
+ *      与官方 controller 的 `static inject = ['typert', 'workspaceRegistry']`。
+ *   ② **该用正规方法**：别再自己遍历 `entity.record.path` 比字符串——registry 有
+ *      `resolveByPath(path)`（**不建不写**，路径由它内部 `realpath` 规范化；未注册目录返回 `undefined`），
+ *      实体字段走**官方 getter**（`workspace.path` / `.id` / `.title`，见 controller 的 `workspaceView`）。
+ *   ③ **未 inject 的服务取不到**：宿主直接抛 `cannot get property "workspaceRegistry" without inject`
+ *      （2026-09-24 真机 500 原文）⇒ 服务只能由**声明了该 inject 的 ctx** 给；本模块走**旁路 inject**
+ *      存模块级 ref（见文件上方那段注释），主 inject 列表**保持最小**，免得没工作区服务的 profile 停摆。
+ *  ⇒ 教训：**mock 照自己读的 API 写，只会替错误假设背书**；服务名 / 方法名 / 取法这类事实必须回源码**取真源**，
+ *     且判据只能落在**活进程**上（①②③ 全是真机探针照出来的，读代码一个也看不出来）。 */
+async function attachToWorkspace(hostCtx, { taskId, sessionId, runTarget }) {
+  if (!runTarget || runTarget.skipAttach) return { attached: false, reason: runTarget ? 'declared-none' : 'no-target' };
+  try {
+    // 取服务：**只走旁路 inject 存下的 ref**（未 inject 时属性访问/`get` 都会抛，见上方注释）
+    const registry = workspaceRegistryOf(hostCtx);
+    if (!registry || typeof registry.resolveByPath !== 'function') return { attached: false, reason: 'workspace-registry-unavailable' };
+    const target = runTarget.workspacePath || runTarget.cwd;
+    let ws;
+    try { ws = await registry.resolveByPath(target); }
+    catch (e) { return { attached: false, reason: 'resolve-threw', error: e && e.message, path: target }; }
+    if (!ws) return { attached: false, reason: runTarget.declared ? 'workspace-not-registered' : 'no-matching-workspace', path: target };
+    if (typeof ws.attachSession !== 'function') return { attached: false, reason: 'entity-has-no-attachSession', path: ws.path };
+    // 有界重试（2026-09-24 加，**保险不是猜测**）：`attachSession` 要读会话 header 校验 cwd，而刚
+    //   `agents.create` 完的会话可能还没落到持久化（registry 先问 live `sessions`、拿不到就退到 stored headers，
+    //   两者都没有即抛 "session persistence holds no such session"）。3 次 × 400ms 足够跨过落盘窗口，
+    //   且**失败仍响亮**（reason/error 原样带回，attempts 记"第几次才成"⇒ 真机探针能看出竞态是否存在）。
+    let lastErr = null;
+    for (let i = 0; i < 3; i++) {
+      try {
+        await ws.attachSession(sessionId);
+        return { attached: true, path: ws.path, workspaceId: ws.id ?? null, attempts: i + 1 };
+      } catch (e) { lastErr = e; if (i < 2) await new Promise((r) => setTimeout(r, 400)); }
+    }
+    return { attached: false, reason: 'attach-threw', error: lastErr && lastErr.message, path: ws.path, attempts: 3 };
+  } catch (e) {
+    return { attached: false, reason: 'attach-threw', error: e && e.message };
+  }
+}
+
 // ── 到点执行：新建 agent 会话 + 注入 prompt + followup 驱动 ────────────────
 async function executeTask(hostCtx, task) {
   try {
@@ -97,13 +189,16 @@ async function executeTask(hostCtx, task) {
     }
     const sessionId = randomUUID();
     const defaultModel = hostCtx.get('agentDefaultModel')?.currentSelection?.();
+    // 运行目录 / 工作区归属（2026-09-24 加）：`workspace` 优先于 `cwd`；解析失败 ⇒ 任务直接 failed（响亮）
+    const runTarget = await resolveRunTarget(hostCtx, task);
+    if (runTarget.error) return { status: 'failed', error: runTarget.error };
     const modelChoice = normalizeModel(task && task.model, defaultModel); // 任务级模型优先，统一归一成 {provider, model}
     if (task && task.model && !modelChoice) {
       console.warn('[dshome-cron]', task.id, '：model 缺 provider 无法归一，本次按无模型选择运行');
     }
     const { agent } = await agents.create({
       sessionId,
-      meta: { cwd: task.cwd ?? process.cwd() },
+      meta: { cwd: runTarget.cwd },
       setup: async (agentCtx) => {
         // 低层 agents.create 不会自动把 agent 加入任何 agent preset。若不 mount，该会话的
         // 工具/提示词/skills 会解析到空的 global 层，只剩宿主平面插件（如 AgentTeams）注册的
@@ -127,49 +222,31 @@ async function executeTask(hostCtx, task) {
         }
       },
     });
-    // ── 登记进工作区（2026-09-23 加）─────────────────────────────────────────────
-    // 病灶（2026-09-23 实测）：`executeTask` 走的是**低层 `agents.create`**，不经 GUI
-    //   「新建会话」那条登记路径 ⇒ 这些自治会话**从不进入 workspace 名册**（`sessionIds`），
-    //   于是侧边栏按 `dsh-client-ui-workspace` 的 `sessionVisible()` 判据把它们归进
-    //   **「未分组」（Ungrouped）**——实测本机 4 条全是 cron 会话（self-clean ×2 / self-feed ×1 /
-    //   另一条），且**每跑一次就多一条、只增不减**。
-    // 修法：建完会话补一次 `entity.attachSession(sessionId)`（官方登记动作），与普通会话同待遇。
-    //   路径口径与 host 一致：用包导出的 `realpathNormalize`（该包唯一的 uniqueness canon）。
-    //   失败只告警、**不影响任务执行**（登记是侧边栏归属，不是任务前置条件）。
-    try {
-      const workspace = hostCtx.get('workspace');
-      if (workspace && typeof workspace.list === 'function') {
-        const { realpathNormalize } = require('@deepseek-ai/dsh-workspace');
-        const cwd = task.cwd ?? process.cwd();
-        let cwdCanon = null;
-        try { cwdCanon = await realpathNormalize(cwd); } catch { cwdCanon = null; }
-        if (cwdCanon === null) {
-          console.warn('[dshome-cron]', task.id, '：cwd 非完整限定路径或不存在的目录，会话不登记工作区（将落「未分组」）:', String(cwd));
-        } else {
-          let attached = false;
-          for (const entity of workspace.list()) {
-            const p = entity && entity.record && entity.record.path;
-            if (typeof p !== 'string' || typeof entity.attachSession !== 'function') continue;
-            let pCanon = null;
-            try { pCanon = await realpathNormalize(p); } catch { pCanon = null; }
-            if (pCanon !== null && pCanon === cwdCanon) { await entity.attachSession(sessionId); attached = true; break; }
-          }
-          if (!attached) {
-            console.warn('[dshome-cron]', task.id, '：无匹配的工作区注册，本会话将落「未分组」（可在侧边栏「添加目录」后重跑）:', cwdCanon);
-          }
-        }
+    // ── 登记进工作区（2026-09-23 加；2026-09-24 扩「工作区自选」）───────────────
+    // 病根（2026-09-23 实测）：`executeTask` 走**低层 `agents.create`**，不经 GUI「新建会话」的登记路径
+    //   ⇒ 自治会话**从不进入 workspace 名册**（`sessionIds`），侧边栏按 `sessionVisible()` 把它们归进
+    //   「未分组」，且**每跑一次多一条**。
+    // ⚠️ 2026-09-24 补一课：这段代码写了≠生效——它 09-24 08:53:28 才随 `pull` 落盘，而当天 08:50:56 的
+    //   自治会话由**旧代码**创建 ⇒ 名册里 6 条自治会话**一条都没归上**（主人报「面板上显示未分组」的真因）。
+    //   ⇒ 判据必须落在**活进程**上（重启后真触发一次 + 查名册），不能拿"代码在盘上"当生效。
+    const wsOut = await attachToWorkspace(hostCtx, { taskId: task.id, sessionId, runTarget });
+    if (!wsOut.attached && !runTarget.skipAttach) {
+      const why = `${wsOut.reason}${wsOut.error ? ': ' + wsOut.error : ''}`;
+      if (runTarget.declared) {
+        console.warn('[dshome-cron]', task.id, `：**已指定工作区但登记未成功**（${why}）——本会话会落「未分组」；目标: ${runTarget.workspacePath}`);
       } else {
-        console.warn('[dshome-cron]', task.id, '：workspace 服务不可用，本会话将落「未分组」');
+        console.warn('[dshome-cron]', task.id, `：未登记工作区（${why}）——本会话会落「未分组」；会话 cwd: ${runTarget.cwd}（要指定归属请在任务里选「工作区」）`);
       }
-    } catch (e) {
-      console.warn('[dshome-cron]', task.id, '：工作区登记失败（不影响任务执行）:', e && e.message);
     }
     const { createMessage } = require('@deepseek-ai/dsh-llm');
     // 上工自动召回：把 mind-prime 的输出预置进任务 prompt（定时任务开机即带上下文，不靠 agent 记得）。
     let primeContext = '';
     try {
       const { execFileSync } = require('child_process');
-      primeContext = execFileSync(process.execPath, [path.join(repoRoot(), 'scripts', 'mind-prime.mjs')], { cwd: repoRoot(), encoding: 'utf8', timeout: 15000 }).toString().trim();
+      // 2026-09-24 加 `--cwd`：上工召回必须按**本任务的运行目录**取项目层记忆——原来恒用仓库根，
+      //   于是"给别的项目干活"的自治任务会召回 **DSHOME 的**进度/待办与项目知识（跨项目串味）。
+      //   `mind-prime` 的项目 key 由 `--cwd` 的祖先链 + `project-cwd-map.json` 决定（scripts/mind-prime.mjs:22-71）。
+      primeContext = execFileSync(process.execPath, [path.join(repoRoot(), 'scripts', 'mind-prime.mjs'), '--cwd', runTarget.cwd], { cwd: repoRoot(), encoding: 'utf8', timeout: 15000 }).toString().trim();
     } catch (e) { primeContext = ''; console.warn('[dshome-cron] mind-prime failed:', e.message); }
     const prompt = primeContext ? `${primeContext}\n\n===== 任务 =====\n\n${task.prompt}` : task.prompt;
     const message = createMessage({
@@ -178,7 +255,7 @@ async function executeTask(hostCtx, task) {
       source: { kind: 'plugin', plugin: 'dshome-mind' },
     });
     agent.followup(message);
-    return { status: 'created', sessionId: String(agent.id) };
+    return { status: 'created', sessionId: String(agent.id), cwd: runTarget.cwd, workspace: wsOut };
   } catch (error) {
     return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
   }
@@ -557,6 +634,12 @@ class DshCron {
       if (m === null || m === undefined || m === '') delete t.model;
       else t.model = m;
     }
+    // 工作区（2026-09-24 加）：显式带字段才改；'' = 清空（回到「按目录自动」）；'@none' = 明确不登记
+    if (patch && Object.prototype.hasOwnProperty.call(patch, 'workspace')) {
+      const w = patch.workspace;
+      if (w === null || w === undefined || w === '') delete t.workspace;
+      else t.workspace = String(w);
+    }
     this.schedule(t);
     saveCron(this.tasks);
     return { ok: true, id };
@@ -568,4 +651,4 @@ let __instance = null;
 function setCronInstance(i) { __instance = i; }
 function getCronInstance() { return __instance; }
 
-module.exports = { DshCron, loadCron, saveCron, executeTask, normalizeModel, CRON_FILE, CRON_RUNS_FILE, outcomeOfTurnEnd, appendCronRun, setCronInstance, getCronInstance };
+module.exports = { DshCron, loadCron, saveCron, executeTask, normalizeModel, CRON_FILE, CRON_RUNS_FILE, outcomeOfTurnEnd, appendCronRun, setCronInstance, getCronInstance, resolveRunTarget, attachToWorkspace, WS_NONE, setWorkspaceRegistry, getWorkspaceRegistry };

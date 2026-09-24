@@ -477,8 +477,11 @@ window.__ModuleLoader__.load({
       Promise.all([
         fetch("/api/mind/cron").then(function (r) { return r.json(); }),
         loadModelInfo(), // 模型清单与任务列表并行取，卡片上就能标出「已不在清单」
+        // 工作区清单（2026-09-24 加）：给「🗂 工作区」下拉供数；取不到就退化成只有「未指定 / 不登记」两项
+        fetch("/api/mind/workspaces").then(function (r) { return r.json(); }).catch(function () { return { ok: false, workspaces: [] }; }),
       ]).then(function (rr) {
         var d = rr[0], modelInfo = rr[1];
+        var wsList = (rr[2] && rr[2].workspaces) || [];
         if (!d.ok) throw new Error(d.error);
         if (!d.tasks || !d.tasks.length) {
           govEl.appendChild(el("div", "dshome-mind-empty", "暂无定时任务"));
@@ -487,6 +490,7 @@ window.__ModuleLoader__.load({
           var card = el("div", "dshome-mind-gov-card");
           card.appendChild(el("div", "dshome-mind-gov-name", "⏱ " + t.id + " · " + t.cron + " · " + (t.preset || "standard") + (t.once ? " · 单次" : "") + (t.enabled ? "" : "（已停用）") + " · 🤖 " + modelLabel(t.model, modelInfo)));
           card.appendChild(el("div", "dshome-mind-gov-reason", (t.prompt || "").slice(0, 140)));
+          card.appendChild(el("div", "dshome-mind-gov-reason", "🗂 " + wsLabel(t.workspace, wsList)));
           card.appendChild(el("div", "dshome-mind-gov-reason", t.nextRun ? "下次: " + t.nextRun.replace("T", " ").slice(0, 16) : "（无下次）"));
           var row = el("div", "dshome-mind-gov-actions");
           var run = el("button", "dshome-mind-gov-ok", "▶ 立即运行");
@@ -499,7 +503,8 @@ window.__ModuleLoader__.load({
           govEl.appendChild(card);
           run.addEventListener("click", function () {
             postJSON("/api/mind/cron/run", { id: t.id }).then(function (r) {
-              window.alert(r && r.ok ? ("✅ 已触发执行，session=" + (r.sessionId || "?")) : ("⚠️ 触发失败：" + ((r && r.error) || "未知")));
+              var ws = (r && r.workspace) ? (" · 归属: " + (r.workspace.attached ? ("✅ " + r.workspace.path) : ("⚠️ 未登记（" + r.workspace.reason + "）"))) : "";
+              window.alert(r && r.ok ? ("✅ 已触发执行，session=" + (r.sessionId || "?") + ws) : ("⚠️ 触发失败：" + ((r && r.error) || "未知")));
             });
           });
           tg.addEventListener("click", function () { postJSON("/api/mind/cron/toggle", { id: t.id }).then(function () { reload(); }); });
@@ -511,8 +516,9 @@ window.__ModuleLoader__.load({
             cronForm(ec, {
               title: "编辑任务 · " + t.id, submitLabel: "💾 保存", reload: reload,
               modelInfo: infoForEdit,
-              initial: { cron: t.cron, prompt: t.prompt, preset: t.preset, once: !!t.once, model: t.model },
-              onSubmit: function (data) { postJSON("/api/mind/cron/update", { id: t.id, cron: data.cron, prompt: data.prompt, preset: data.preset, once: data.once, model: data.model }).then(function () { reload(); }); }
+              workspaces: wsList,
+              initial: { cron: t.cron, prompt: t.prompt, preset: t.preset, once: !!t.once, model: t.model, workspace: t.workspace },
+              onSubmit: function (data) { postJSON("/api/mind/cron/update", { id: t.id, cron: data.cron, prompt: data.prompt, preset: data.preset, once: data.once, model: data.model, workspace: data.workspace }).then(function () { reload(); }); }
             });
             var cancel = el("button", "dshome-mind-gov-no", "✖ 取消编辑");
             cancel.style.marginTop = "6px";
@@ -527,6 +533,7 @@ window.__ModuleLoader__.load({
         cronForm(add, {
           title: "添加定时任务", submitLabel: "➕ 添加", reload: reload,
           modelInfo: Promise.resolve(modelInfo),
+          workspaces: wsList,
           onSubmit: function (data) { postJSON("/api/mind/cron/add", data).then(function () { reload(); }); }
         });
         govEl.appendChild(add);
@@ -570,6 +577,15 @@ window.__ModuleLoader__.load({
       return null;
     }
     // ── 添加/编辑定时任务共用的表单（opts: title/submitLabel/reload/initial/onSubmit）─
+    // ── 工作区归属显示（2026-09-24 加）：把"这条任务会归到哪"从**隐式**变**显式** ────────────
+    // 背景：归属原来只由 cwd 隐式决定，主人 09-24 看到"未分组"时无法判断原因。
+    function wsLabel(v, list) {
+      if (v === "@none") return "不登记（落「未分组」）";
+      if (!v) return "未指定 → 按运行目录自动匹配";
+      for (var i = 0; i < (list || []).length; i++) if (list[i].path === v) return (list[i].title || v) + "  ·  " + v;
+      return "⚠️ " + v + "（不在已注册清单里）";
+    }
+
     function cronForm(add, opts) {
       opts = opts || {};
       var reload = opts.reload || function () {};
@@ -615,6 +631,27 @@ window.__ModuleLoader__.load({
       ctrl3.appendChild(inpPreset);
       row3.appendChild(ctrl3);
       add.appendChild(row3);
+
+      // 工作区行（2026-09-24 加）：选谁 ⇒ 会话就在谁里面跑 **且** 归到谁
+      //   （上游 `attachSession` 硬校验会话 cwd 必须逐字等于工作区路径 ⇒ 两者必然同一路径）
+      var rowWs = el("div", "dshome-mind-cron-row");
+      rowWs.appendChild(el("div", "dshome-mind-cron-label", "🗂 工作区"));
+      var ctrlWs = el("div", "dshome-mind-cron-ctrl");
+      var inpWs = document.createElement("select");
+      var wsOpts = [["", "(未指定 · 按运行目录自动匹配)"]];
+      (opts.workspaces || []).forEach(function (w) { wsOpts.push([w.path, (w.title || w.path) + "  —  " + w.path]); });
+      wsOpts.push(["@none", "不登记（落「未分组」）"]);
+      wsOpts.forEach(function (p) { var o = document.createElement("option"); o.value = p[0]; o.textContent = p[1]; inpWs.appendChild(o); });
+      var wantWs = (initial && typeof initial.workspace === "string") ? initial.workspace : "";
+      // 老任务若指向一个已不在清单里的路径，也要能原样显示（否则一保存就把使用者的设置吃掉）
+      if (wantWs && !wsOpts.some(function (p) { return p[0] === wantWs; })) {
+        var oWs = document.createElement("option"); oWs.value = wantWs; oWs.textContent = "⚠️ " + wantWs + "（不在已注册清单里）"; inpWs.appendChild(oWs);
+      }
+      inpWs.value = wantWs;
+      ctrlWs.appendChild(inpWs);
+      ctrlWs.appendChild(el("span", "dshome-mind-cron-hint", "选中 ⇒ 该自治会话在它里面跑、并归到它（两者同一路径）"));
+      rowWs.appendChild(ctrlWs);
+      add.appendChild(rowWs);
 
       // 模型行（清单实时来自 llm.models；「跟随默认」= 不写 model 字段，跟 agent-default-model 走）
       var rowModel = el("div", "dshome-mind-cron-row");
@@ -730,7 +767,7 @@ window.__ModuleLoader__.load({
         var mv = inpModel.value || "";
         var modelOut = null;
         if (mv) { try { modelOut = JSON.parse(mv); } catch (e) { modelOut = mv; } } // 孤儿项存的是字符串，原样保留
-        opts.onSubmit({ cron: cron, prompt: inpPrompt.value.trim(), preset: inpPreset.value, once: freq.value === "once" || onceChk.checked, model: modelOut });
+        opts.onSubmit({ cron: cron, prompt: inpPrompt.value.trim(), preset: inpPreset.value, once: freq.value === "once" || onceChk.checked, model: modelOut, workspace: inpWs.value });
       });
     }
 
