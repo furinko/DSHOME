@@ -624,10 +624,22 @@ window.__ModuleLoader__.load({
       row3.appendChild(el("div", "dshome-mind-cron-label", "🧩 类型"));
       var ctrl3 = el("div", "dshome-mind-cron-ctrl");
       var inpPreset = document.createElement("select");
-      [["standard", "标准模式（全量工具 · 推荐）"], ["router-standard", "Router Standard · 阶段化 + 门禁"], ["code", "PTC 模式"], ["minimal", "极简模式"], ["cordis", "创造模式"]].forEach(function (p) {
+      // 2026-09-24 订正三处：① id 校正——`code` 不是合法 preset id（合法的是 `ptc`），
+      //   选它会让 cron 任务在 mount 时抛错（cron.cjs:211「挂载失败即 failed」）；
+      //   ② 补本机自建预设 `lean`（精简模式）；③ 文案对齐预设自述（router-standard = 渐进模式）。
+      [["standard", "标准模式（全量工具）"], ["lean", "精简模式（裁 workflow/ralph/goal）"], ["ptc", "PTC 模式"], ["minimal", "极简模式"], ["router-standard", "渐进模式 · 阶段解锁 + 交付门禁"], ["cordis", "创造模式"]].forEach(function (p) {
         var o = document.createElement("option"); o.value = p[0]; o.textContent = p[1]; inpPreset.appendChild(o);
       });
       if (initial && initial.preset) inpPreset.value = initial.preset;
+      // 2026-09-24 加：老任务若指向一个已不在清单里的 preset（历史 id `code`），也要能原样显示
+      //   （口径同下方 workspace 行：否则一保存就把使用者的设置静默吃掉）
+      if (initial && initial.preset && inpPreset.value !== initial.preset) {
+        var oOldPreset = document.createElement("option");
+        oOldPreset.value = initial.preset;
+        oOldPreset.textContent = "⚠️ " + initial.preset + "（不在清单里 · 挂载会失败）";
+        inpPreset.appendChild(oOldPreset);
+        inpPreset.value = initial.preset;
+      }
       ctrl3.appendChild(inpPreset);
       row3.appendChild(ctrl3);
       add.appendChild(row3);
