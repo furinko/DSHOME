@@ -151,33 +151,90 @@ async function resolveRunTarget(hostCtx, task) {
  *      存模块级 ref（见文件上方那段注释），主 inject 列表**保持最小**，免得没工作区服务的 profile 停摆。
  *  ⇒ 教训：**mock 照自己读的 API 写，只会替错误假设背书**；服务名 / 方法名 / 取法这类事实必须回源码**取真源**，
  *     且判据只能落在**活进程**上（①②③ 全是真机探针照出来的，读代码一个也看不出来）。 */
-async function attachToWorkspace(hostCtx, { taskId, sessionId, runTarget }) {
-  if (!runTarget || runTarget.skipAttach) return { attached: false, reason: runTarget ? 'declared-none' : 'no-target' };
+async function attachToWorkspace(hostCtx, { taskId, sessionId, runTarget, registryWaitMs = ATTACH_REGISTRY_WAIT_MS } = {}) {
+  if (!runTarget || runTarget.skipAttach) return { attached: false, reason: runTarget ? 'declared-none' : 'no-target', registryWaitedMs: 0 };
+  const t0 = Date.now();
   try {
-    // 取服务：**只走旁路 inject 存下的 ref**（未 inject 时属性访问/`get` 都会抛，见上方注释）
-    const registry = workspaceRegistryOf(hostCtx);
-    if (!registry || typeof registry.resolveByPath !== 'function') return { attached: false, reason: 'workspace-registry-unavailable' };
+    // ① **先等"服务引用"**（2026-09-24 加）：冷启动补跑会跑在旁路 inject 之前，原实现此时**立刻放弃**
+    //    ⇒ 重启后第一次补跑**必然**落「未分组」（见 ATTACH_REGISTRY_WAIT_MS 注释）。有界轮询、不无限等。
+    let registry = workspaceRegistryOf(hostCtx);
+    while ((!registry || typeof registry.resolveByPath !== 'function')
+      && Date.now() - t0 < Math.max(0, registryWaitMs)) {
+      await new Promise((r) => setTimeout(r, ATTACH_POLL_MS));
+      registry = workspaceRegistryOf(hostCtx);
+    }
+    const registryWaitedMs = Date.now() - t0;
+    if (!registry || typeof registry.resolveByPath !== 'function') {
+      return { attached: false, reason: 'workspace-registry-unavailable', registryWaitedMs };
+    }
     const target = runTarget.workspacePath || runTarget.cwd;
     let ws;
     try { ws = await registry.resolveByPath(target); }
-    catch (e) { return { attached: false, reason: 'resolve-threw', error: e && e.message, path: target }; }
-    if (!ws) return { attached: false, reason: runTarget.declared ? 'workspace-not-registered' : 'no-matching-workspace', path: target };
-    if (typeof ws.attachSession !== 'function') return { attached: false, reason: 'entity-has-no-attachSession', path: ws.path };
-    // 有界重试（2026-09-24 加，**保险不是猜测**）：`attachSession` 要读会话 header 校验 cwd，而刚
-    //   `agents.create` 完的会话可能还没落到持久化（registry 先问 live `sessions`、拿不到就退到 stored headers，
-    //   两者都没有即抛 "session persistence holds no such session"）。3 次 × 400ms 足够跨过落盘窗口，
-    //   且**失败仍响亮**（reason/error 原样带回，attempts 记"第几次才成"⇒ 真机探针能看出竞态是否存在）。
+    catch (e) { return { attached: false, reason: 'resolve-threw', error: e && e.message, path: target, registryWaitedMs }; }
+    if (!ws) return { attached: false, reason: runTarget.declared ? 'workspace-not-registered' : 'no-matching-workspace', path: target, registryWaitedMs };
+    if (typeof ws.attachSession !== 'function') return { attached: false, reason: 'entity-has-no-attachSession', path: ws.path, registryWaitedMs };
+    // ② **再等"会话落盘"**（有界重试，2026-09-24 加，**保险不是猜测**）：`attachSession` 要读会话 header
+    //   校验 cwd，而刚 `agents.create` 完的会话可能还没落到持久化（registry 先问 live `sessions`、拿不到就退到
+    //   stored headers，两者都没有即抛 "session persistence holds no such session"）。3 次 × 400ms 足够跨过
+    //   落盘窗口，且**失败仍响亮**（reason/error 原样带回，attempts 记"第几次才成"）。
+    //   ⚠️ 诚实边界：本窗口**未**随 ① 一起加长——先把"失败可诊断"做出来（`lastAttach` 记 attempts），
+    //   下次真机再看到 `reason:'attach-threw'` 时，才有依据决定要不要加长（不凭猜测调参）。
     let lastErr = null;
     for (let i = 0; i < 3; i++) {
       try {
         await ws.attachSession(sessionId);
-        return { attached: true, path: ws.path, workspaceId: ws.id ?? null, attempts: i + 1 };
+        return { attached: true, path: ws.path, workspaceId: ws.id ?? null, attempts: i + 1, registryWaitedMs };
       } catch (e) { lastErr = e; if (i < 2) await new Promise((r) => setTimeout(r, 400)); }
     }
-    return { attached: false, reason: 'attach-threw', error: lastErr && lastErr.message, path: ws.path, attempts: 3 };
+    return { attached: false, reason: 'attach-threw', error: lastErr && lastErr.message, path: ws.path, attempts: 3, registryWaitedMs };
   } catch (e) {
-    return { attached: false, reason: 'attach-threw', error: e && e.message };
+    return { attached: false, reason: 'attach-threw', error: e && e.message, registryWaitedMs: Date.now() - t0 };
   }
+}
+
+/** 把一次 attach 的结果**记在任务上**（2026-09-24 加）——归因盲区的补丁。
+ *  为什么必须落账：2026-09-24 那次"未分组"事后**判不了**是"registry 没就绪"还是"attachSession 重试窗口不够"，
+ *  根因就是 `wsOut` 只进了 console.warn（stdout 被壳消费后不留存）⇒ **没有任何持久证据**（同 `limits` L3
+ *  「没有触发点的面＝没有灯的面」）。现在写进任务的 `lastAttach`：字段少而全（attached/reason/attempts/
+ *  registryWaitedMs/workspaceId/cwd/declared/deferred），够回答"这次为什么没归上"，且**面板的编辑不会清掉它**
+ *  （`update()` 只碰已知字段）。记账本身**不许影响自治**（写盘失败只吞掉，不阻断会话）。 */
+function recordAttach(task, sessionId, wsOut, runTarget, extra = {}) {
+  if (!task || typeof task !== 'object') return;
+  task.lastAttach = {
+    at: new Date().toISOString(),
+    sessionId: String(sessionId),
+    attached: !!(wsOut && wsOut.attached),
+    reason: (wsOut && wsOut.reason) || null,
+    attempts: (wsOut && wsOut.attempts) ?? null,
+    registryWaitedMs: (wsOut && wsOut.registryWaitedMs) ?? 0,
+    workspaceId: (wsOut && wsOut.workspaceId) || null,
+    cwd: (runTarget && runTarget.cwd) || null,
+    declared: !!(runTarget && runTarget.declared),
+    ...(extra.deferred ? { deferred: true } : {}),
+  };
+  try {
+    const inst = getCronInstance();
+    // 🔴 只写**自己所属**的那个实例：`getCronInstance()` 是模块单例，`new DshCron` 多于一次的场景
+    //   （itests / 未来多实例）里它可能指向**另一个实例**，其 tasks 属于别的 DSH_HOME ⇒
+    //   拿它的 tasks 写当前 `CRON_FILE()` 就是**跨实例互相踩**（会把别人的任务表写进本机文件）。
+    if (inst && Array.isArray(inst.tasks) && inst.tasks.includes(task)) saveCron(inst.tasks);
+  } catch { /* 记账失败不阻断自治（会话已建出来，归属结果下次还会再记） */ }
+}
+
+/** 服务**晚到**时的后台补登记（2026-09-24 加）：不阻塞 `executeTask` 的返回路径（闸交棒靠它），
+ *  用默认预算在后台有界重试，**成败都落账 + 失败响亮**。冷启动补跑（宿主启动 14s 就跑）走的就是这条路。 */
+function deferAttachInBackground(hostCtx, task, sessionId, runTarget) {
+  attachToWorkspace(hostCtx, { taskId: task.id, sessionId, runTarget })
+    .then((out) => {
+      recordAttach(task, sessionId, out, runTarget, { deferred: true });
+      if (out.attached) {
+        console.log('[dshome-cron]', task.id, `：工作区服务晚到，**后台补登记成功**（等了 ${out.registryWaitedMs}ms · attempts=${out.attempts}）`);
+        return;
+      }
+      console.warn('[dshome-cron]', task.id, `：**后台补登记仍未成功**（${out.reason}${out.error ? ': ' + out.error : ''}；`
+        + `等了 ${out.registryWaitedMs}ms）——本会话会落「未分组」；结果已记进任务 lastAttach`);
+    })
+    .catch((e) => { console.warn('[dshome-cron]', task.id, '：后台补登记异常（不影响自治）', e?.message ?? e); });
 }
 
 // ── 到点执行：新建 agent 会话 + 注入 prompt + followup 驱动 ────────────────
@@ -229,13 +286,27 @@ async function executeTask(hostCtx, task) {
     // ⚠️ 2026-09-24 补一课：这段代码写了≠生效——它 09-24 08:53:28 才随 `pull` 落盘，而当天 08:50:56 的
     //   自治会话由**旧代码**创建 ⇒ 名册里 6 条自治会话**一条都没归上**（主人报「面板上显示未分组」的真因）。
     //   ⇒ 判据必须落在**活进程**上（重启后真触发一次 + 查名册），不能拿"代码在盘上"当生效。
-    const wsOut = await attachToWorkspace(hostCtx, { taskId: task.id, sessionId, runTarget });
-    if (!wsOut.attached && !runTarget.skipAttach) {
-      const why = `${wsOut.reason}${wsOut.error ? ': ' + wsOut.error : ''}`;
-      if (runTarget.declared) {
-        console.warn('[dshome-cron]', task.id, `：**已指定工作区但登记未成功**（${why}）——本会话会落「未分组」；目标: ${runTarget.workspacePath}`);
-      } else {
-        console.warn('[dshome-cron]', task.id, `：未登记工作区（${why}）——本会话会落「未分组」；会话 cwd: ${runTarget.cwd}（要指定归属请在任务里选「工作区」）`);
+    // 归属登记（2026-09-24 改造：**首查不等待 · 晚到转后台**）─────────────────────────────
+    //   🔴 为什么**不能**在这里等 registry：`run()` 的时序是「先占 pending 闸 → `await executeTask`
+    //   → 回来才交棒真实 `sessionId`」，而 `attachSession` 要读会话 header 校验 cwd ⇒ 在这里阻塞等，
+    //   就会出现「会话已经 turn/end 了、闸里还没有真实 id」⇒ `release()` 找不到人 ⇒ **闸卡到
+    //   `BUSY_MAX_MS`(45min)**（本改动第一版就是阻塞式，`mind-cron-serialize-itest` 的
+    //   A5/A6/A8/B3 当场变红——那四条正是"闸"的回归面）。
+    //   ⇒ 首查 `registryWaitMs: 0`（与旧行为逐字等价）；**只有"服务未就绪"这一种**才转后台有界重试，
+    //   记账与告警都在后台完成（不占 executeTask 的返回路径）。
+    const wsOut = await attachToWorkspace(hostCtx, { taskId: task.id, sessionId, runTarget, registryWaitMs: 0 });
+    const lateRegistry = !wsOut.attached && !runTarget.skipAttach && wsOut.reason === 'workspace-registry-unavailable';
+    if (lateRegistry) {
+      deferAttachInBackground(hostCtx, task, sessionId, runTarget);
+    } else {
+      recordAttach(task, sessionId, wsOut, runTarget); // 归属结果**落账**（否则失败只进 stdout、事后无法归因）
+      if (!wsOut.attached && !runTarget.skipAttach) {
+        const why = `${wsOut.reason}${wsOut.error ? ': ' + wsOut.error : ''}`;
+        if (runTarget.declared) {
+          console.warn('[dshome-cron]', task.id, `：**已指定工作区但登记未成功**（${why}）——本会话会落「未分组」；目标: ${runTarget.workspacePath}`);
+        } else {
+          console.warn('[dshome-cron]', task.id, `：未登记工作区（${why}）——本会话会落「未分组」；会话 cwd: ${runTarget.cwd}（要指定归属请在任务里选「工作区」）`);
+        }
       }
     }
     const { createMessage } = require('@deepseek-ai/dsh-llm');
@@ -255,7 +326,11 @@ async function executeTask(hostCtx, task) {
       source: { kind: 'plugin', plugin: 'dshome-mind' },
     });
     agent.followup(message);
-    return { status: 'created', sessionId: String(agent.id), cwd: runTarget.cwd, workspace: wsOut };
+    return {
+      status: 'created', sessionId: String(agent.id), cwd: runTarget.cwd,
+      // `deferred` = 服务未就绪、补登记在后台跑（调用方别把这次当最终结论；最终结果看任务上的 `lastAttach`）
+      workspace: lateRegistry ? { ...wsOut, deferred: true } : wsOut,
+    };
   } catch (error) {
     return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
   }
@@ -282,6 +357,19 @@ const BUSY_MAX_MS = 45 * 60 * 1000; // 单会话占闸上限（防 turn/end 事�
 const GATE_WAIT_MS = Number(process.env.DSHOME_CRON_GATE_WAIT_MS) > 0
   ? Number(process.env.DSHOME_CRON_GATE_WAIT_MS) : 30 * 1000;
 const GATE_POLL_MS = 500; // 等闸轮询间隔（仅兜底；闸一接上会**主动**叫醒，见 watchSessions）
+// 归属登记前的**等 registry** 上限（2026-09-24 加 · 冷启动抢跑实测定位）：
+//   病灶：宿主 22:22:55 启动、catch-up **22:23:09（只隔 14 秒）**就拉起会话，此刻
+//     `workspaceRegistry` 的**旁路 inject 还没到** ⇒ `attachToWorkspace` 原来"拿不到引用就立刻返回"
+//     ⇒ `workspace-registry-unavailable`，而 `declared=false` 时**只打一行 warn** ⇒
+//     会话**静默落「未分组」**（每重启一次多一条）。
+//   实证（同日 A/B 探针）：同一活进程里带/不带 `workspace` 的两次登记都 `attached:true·attempts:1`，
+//     而同 cwd 的 22:23 那条没归上 ⇒ **与"任务缺 workspace 字段"无关**，就是"服务比补跑晚到"。
+//   与 `GATE_WAIT_MS` **同族同款口径**（都是"服务晚到"）：**有界等待 + 界内失败留痕**，
+//     不无限等、也不静默降级（等不到照样建会话、只是归属失败，且这次会记进 `lastAttach`）。
+//   env 覆盖只给测试用（itest 要把 45s 压到几百毫秒才验得了"有界"）；口径同 `DSHOME_CRON_GATE_WAIT_MS`。
+const ATTACH_REGISTRY_WAIT_MS = Number(process.env.DSHOME_CRON_ATTACH_WAIT_MS) > 0
+  ? Number(process.env.DSHOME_CRON_ATTACH_WAIT_MS) : 45 * 1000;
+const ATTACH_POLL_MS = 500; // 等 registry 的轮询间隔
 
 // ── 任务存储 ────────────────────────────────────────────────────────────────
 function loadCron() {

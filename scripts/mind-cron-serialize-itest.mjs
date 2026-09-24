@@ -23,6 +23,10 @@ const require = createRequire(import.meta.url);
 // 把"等闸上限"压到 400ms（**必须在 require cron.cjs 之前**：常量在模块顶层求值）。
 // 不压的话"等满上限则放行"这条失败面要跑 30s，且 B/C 用例会超时。
 process.env.DSHOME_CRON_GATE_WAIT_MS = '400';
+// 同理压"等工作区 registry"上限（2026-09-24 加 · 必须同样在 require 之前）：服务未就绪时
+//   `executeTask` 会**转后台**有界重试；不压的话一个用例留下的 45s 后台重试会**飘进后面的用例**
+//   （实测：E6 的 attach 计数器被前一个用例的后台重试用掉一次 ⇒ `attempts` 从 2 变 1、假红）。
+process.env.DSHOME_CRON_ATTACH_WAIT_MS = '400';
 const results = [];
 const check = (name, ok, extra) => results.push([name, ok ? 'PASS' : 'FAIL', extra]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

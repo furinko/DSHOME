@@ -74,6 +74,11 @@ const SAFE = new Set([
   'scripts/mind-cron-serialize-itest.mjs',
   'scripts/mind-cron-runs-itest.mjs',
   'scripts/mind-cron-recipes-itest.mjs',
+  // 2026-09-24 加：cron 自治「工作区归属登记」——registry 晚到时有界等待 + 每次 run 落 `lastAttach`。
+  // 病灶＝冷启动补跑抢跑（宿主 22:22:55 启动、catch-up 22:23:09 就拉起会话）⇒ 归属静默失败、**无人能归因**。
+  // 无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· 14 项含 3 反例 · PASS 0 / FAIL 1；env 覆盖（
+  // `DSHOME_CRON_ATTACH_WAIT_MS`）把 45s 预算压到 2s ⇒ 全程 ~3.5s（同 `DSHOME_CRON_GATE_WAIT_MS` 口径）。
+  'scripts/mind-cron-attach-itest.mjs',
   // 2026-09-23 加：写入归属台账（`git-writer-probe` 归属维度的**数据源**——台账错则探针把归属
   // 指错人，比"没有归属"更坏）。无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· PASS 0 / FAIL 1。
   'scripts/mind-write-log-itest.mjs',
