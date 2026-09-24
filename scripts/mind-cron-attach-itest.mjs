@@ -47,6 +47,7 @@ function makeHome() {
       { id: 'itest-attach', cron: '0 0 * * *', prompt: 'attach', cwd: home, catchUp: false, enabled: true },
       // G 用**独立任务**：`lastAttach` 挂在任务对象上，共用一条会被上一个用例的旧账污染（本用例第一版就中招）
       { id: 'itest-attach-g', cron: '0 0 * * *', prompt: 'attach-g', cwd: home, catchUp: false, enabled: true },
+      { id: 'itest-attach-h', cron: '0 0 * * *', prompt: 'attach-h', cwd: home, catchUp: false, enabled: true },
     ],
   }, null, 2));
   return home;
@@ -104,7 +105,9 @@ const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance } = re
   const bMs = Date.now() - tB;
   check('B1 反例·registry 永不到 → attached=false 且 reason=workspace-registry-unavailable',
     b.attached === false && b.reason === 'workspace-registry-unavailable', JSON.stringify(b));
-  check('B2 → **有界**（预算 800ms，总耗时 < 3000ms）', bMs < 3000, `total=${bMs}ms`);
+  check('B2 → **有界**且**预算被遵守**：`registryWaitedMs ∈ [800,1600]`（把参数接线删掉会退回 env 默认 2000 ⇒ 必红）',
+    b.registryWaitedMs >= 800 && b.registryWaitedMs <= 1600 && bMs < 3000,
+    `registryWaitedMs=${b.registryWaitedMs} total=${bMs}ms`);
 
   // C 回归：@none（skipAttach）不许白等
   setWorkspaceRegistry(null);
@@ -178,6 +181,25 @@ const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance } = re
   await sleep(1100);
   check('G3 → 后台补登记把归属补上（deferred=true 且 attached=true）',
     taskG.lastAttach?.attached === true && taskG.lastAttach?.deferred === true, JSON.stringify(taskG.lastAttach));
+
+  // H 反例（**独立复核发现 · 2026-09-24**）：`reload()`（每 60s 一次）会用 `loadCron()` **整表换新对象**，
+  //   而后台补登记持有的是 `executeTask` 当时捕获的**旧对象** ⇒ 若补登记在 reload 之后完成，
+  //   `inst.tasks.includes(task)` 为 false ⇒ 落账被 `catch{}` **静默吞掉**。
+  //   复现读数（修复前）：旧对象上有 lastAttach（deferred=true·attached=true），**盘上 cron.json 是 null**，且无任何告警。
+  //   判据＝**reload 之后，盘上仍必须读得到 lastAttach**（换句话说：这条证据链不许被一次周期任务无声截断）。
+  cron.active.clear();
+  setWorkspaceRegistry(null);
+  const taskH = cron.tasks.find((t) => t.id === 'itest-attach-h');
+  taskH.cwd = home;
+  setTimeout(() => setWorkspaceRegistry(fakeRegistry(fakeWs(home))), 400); // 服务"晚到"
+  cron.trigger(taskH, 'itest');
+  await sleep(150);
+  cron.reload(); // 模拟 60s tick：整表换新对象 ⇒ 旧对象从此不在 inst.tasks 里
+  await sleep(1200);
+  const onDiskH = JSON.parse(readFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), 'utf8'))
+    .tasks.find((t) => t.id === 'itest-attach-h');
+  check('H1 反例·reload 换对象后落账不许被静默吞掉（盘上必须读得到 lastAttach）',
+    !!onDiskH?.lastAttach?.attached, JSON.stringify(onDiskH?.lastAttach || null));
 
   // F 反例：registry 拿不到（预算已压到 2s）→ 必须记成**失败**，不许记成成功
   // （E 的会话没结束 ⇒ 闸还占着，同一任务会被 skip:already-running；测试里手动放闸）

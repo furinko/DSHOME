@@ -195,16 +195,19 @@ async function attachToWorkspace(hostCtx, { taskId, sessionId, runTarget, regist
 /** 把一次 attach 的结果**记在任务上**（2026-09-24 加）——归因盲区的补丁。
  *  为什么必须落账：2026-09-24 那次"未分组"事后**判不了**是"registry 没就绪"还是"attachSession 重试窗口不够"，
  *  根因就是 `wsOut` 只进了 console.warn（stdout 被壳消费后不留存）⇒ **没有任何持久证据**（同 `limits` L3
- *  「没有触发点的面＝没有灯的面」）。现在写进任务的 `lastAttach`：字段少而全（attached/reason/attempts/
+ *  「没有触发点的面＝没有灯的面」）。现在写进任务的 `lastAttach`：字段少而全（attached/reason/`error`/attempts/
  *  registryWaitedMs/workspaceId/cwd/declared/deferred），够回答"这次为什么没归上"，且**面板的编辑不会清掉它**
- *  （`update()` 只碰已知字段）。记账本身**不许影响自治**（写盘失败只吞掉，不阻断会话）。 */
+ *  （`update()` 只碰已知字段）。记账本身**不许阻断自治**（写盘失败不抛）——但**也不许静默**（见下）。 */
 function recordAttach(task, sessionId, wsOut, runTarget, extra = {}) {
   if (!task || typeof task !== 'object') return;
-  task.lastAttach = {
+  const rec = {
     at: new Date().toISOString(),
     sessionId: String(sessionId),
     attached: !!(wsOut && wsOut.attached),
     reason: (wsOut && wsOut.reason) || null,
+    // `error` 是 `attach-threw` 的**全部信息量**（"会话还没落盘" / "cwd 校验不过" / "服务没起"…处方完全不同）
+    //   —— 第一版把它丢了 ⇒ `lastAttach` 只剩 reason，等于把这次要治的"只进 stdout"又留了一半（复核指出）。
+    error: (wsOut && wsOut.error) || null,
     attempts: (wsOut && wsOut.attempts) ?? null,
     registryWaitedMs: (wsOut && wsOut.registryWaitedMs) ?? 0,
     workspaceId: (wsOut && wsOut.workspaceId) || null,
@@ -212,13 +215,27 @@ function recordAttach(task, sessionId, wsOut, runTarget, extra = {}) {
     declared: !!(runTarget && runTarget.declared),
     ...(extra.deferred ? { deferred: true } : {}),
   };
+  task.lastAttach = rec; // 先写在**调用方持有的那个对象**上（内存可见，即使落盘路径失败）
   try {
     const inst = getCronInstance();
-    // 🔴 只写**自己所属**的那个实例：`getCronInstance()` 是模块单例，`new DshCron` 多于一次的场景
-    //   （itests / 未来多实例）里它可能指向**另一个实例**，其 tasks 属于别的 DSH_HOME ⇒
-    //   拿它的 tasks 写当前 `CRON_FILE()` 就是**跨实例互相踩**（会把别人的任务表写进本机文件）。
-    if (inst && Array.isArray(inst.tasks) && inst.tasks.includes(task)) saveCron(inst.tasks);
-  } catch { /* 记账失败不阻断自治（会话已建出来，归属结果下次还会再记） */ }
+    if (!inst || !Array.isArray(inst.tasks)) return; // 无实例（纯函数测试 / 未注册）⇒ 只留内存
+    // 🔴 按 **id 认领活对象**，**不用** `inst.tasks.includes(task)`：
+    //   ① 挡跨实例这件事要保（`getCronInstance()` 是模块单例，其 tasks 可能属于别的 DSH_HOME）；
+    //   ② 但 `reload()` **每 60s 用 `loadCron()` 整表换新对象**，而后台补登记持有的是 `executeTask` 当时的**旧对象**
+    //      ⇒ `includes` 必为 false ⇒ 落账被静默吞掉（**独立复核发现、2026-09-24 当场复现**：旧对象有 lastAttach、
+    //      盘上 `cron.json` 是 null 且无告警；45s 后台窗口跨过一次 60s tick 的概率可达 ~23–45%）
+    //      —— 丢的正是"deferred 成功"这条最想拿到的证据。按 id 认领后写的是**当前活对象**，reload 打不穿。
+    const live = inst.tasks.find((t) => t && t.id === task.id);
+    if (!live) {
+      // **响亮**：账本自己"没写成"也必须留痕——否则与"失败只进 stdout"同型（复核："新账本自己也会静默不写"）。
+      console.warn('[dshome-cron]', task.id, '：attach 结果**未能落账**——单例实例里找不到同 id 任务（已在别处删除？）');
+      return;
+    }
+    live.lastAttach = rec;
+    saveCron(inst.tasks);
+  } catch (e) {
+    console.warn('[dshome-cron]', task.id, '：attach 结果落盘失败（不影响自治）', e?.message ?? e);
+  }
 }
 
 /** 服务**晚到**时的后台补登记（2026-09-24 加）：不阻塞 `executeTask` 的返回路径（闸交棒靠它），
@@ -295,8 +312,11 @@ async function executeTask(hostCtx, task) {
     //   ⇒ 首查 `registryWaitMs: 0`（与旧行为逐字等价）；**只有"服务未就绪"这一种**才转后台有界重试，
     //   记账与告警都在后台完成（不占 executeTask 的返回路径）。
     const wsOut = await attachToWorkspace(hostCtx, { taskId: task.id, sessionId, runTarget, registryWaitMs: 0 });
-    const lateRegistry = !wsOut.attached && !runTarget.skipAttach && wsOut.reason === 'workspace-registry-unavailable';
-    if (lateRegistry) {
+    // 分流（2026-09-24 复核后改：**能力面 vs 内容面**，不再认单个字符串）：
+    //   · 能力面（`ATTACH_CAPABILITY_FAILS`）＝依赖还没就绪 / 瞬态坏 ⇒ 值得**后台有界重试**；
+    //   · 内容面（其余）＝工作区没注册 / 路径不匹配 / 实体没这个方法 ⇒ 等多久都一样 ⇒ **就地告警 + 落账**。
+    const deferAttach = !wsOut.attached && !runTarget.skipAttach && ATTACH_CAPABILITY_FAILS.has(wsOut.reason);
+    if (deferAttach) {
       deferAttachInBackground(hostCtx, task, sessionId, runTarget);
     } else {
       recordAttach(task, sessionId, wsOut, runTarget); // 归属结果**落账**（否则失败只进 stdout、事后无法归因）
@@ -329,7 +349,7 @@ async function executeTask(hostCtx, task) {
     return {
       status: 'created', sessionId: String(agent.id), cwd: runTarget.cwd,
       // `deferred` = 服务未就绪、补登记在后台跑（调用方别把这次当最终结论；最终结果看任务上的 `lastAttach`）
-      workspace: lateRegistry ? { ...wsOut, deferred: true } : wsOut,
+      workspace: deferAttach ? { ...wsOut, deferred: true } : wsOut,
     };
   } catch (error) {
     return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
@@ -370,6 +390,11 @@ const GATE_POLL_MS = 500; // 等闸轮询间隔（仅兜底；闸一接上会**�
 const ATTACH_REGISTRY_WAIT_MS = Number(process.env.DSHOME_CRON_ATTACH_WAIT_MS) > 0
   ? Number(process.env.DSHOME_CRON_ATTACH_WAIT_MS) : 45 * 1000;
 const ATTACH_POLL_MS = 500; // 等 registry 的轮询间隔
+// attach 失败的**能力面**（依赖还没就绪 / 瞬态坏 ⇒ 值得有界重试）白名单；**不在**这里的一律算**内容面**
+//   （工作区没注册 / 路径不匹配 / 实体没这个方法 ⇒ 等多久都一样，重试是白等）。
+//   2026-09-24 复核后加：原来只认 `'workspace-registry-unavailable'` 一个字符串 ⇒ `attach-threw` / `resolve-threw`
+//   同属"我比依赖早"却**失去重试机会**（不对称）；独立复核以"先抛后正常的 registry"为反例指出该洞。
+const ATTACH_CAPABILITY_FAILS = new Set(['workspace-registry-unavailable', 'resolve-threw', 'attach-threw']);
 
 // ── 任务存储 ────────────────────────────────────────────────────────────────
 function loadCron() {

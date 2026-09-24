@@ -76,8 +76,10 @@ const SAFE = new Set([
   'scripts/mind-cron-recipes-itest.mjs',
   // 2026-09-24 加：cron 自治「工作区归属登记」——registry 晚到时有界等待 + 每次 run 落 `lastAttach`。
   // 病灶＝冷启动补跑抢跑（宿主 22:22:55 启动、catch-up 22:23:09 就拉起会话）⇒ 归属静默失败、**无人能归因**。
-  // 无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· 14 项含 3 反例 · PASS 0 / FAIL 1；env 覆盖（
-  // `DSHOME_CRON_ATTACH_WAIT_MS`）把 45s 预算压到 2s ⇒ 全程 ~3.5s（同 `DSHOME_CRON_GATE_WAIT_MS` 口径）。
+  // 无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· 18 项含 4 反例 · PASS 0 / FAIL 1；env 覆盖（
+  // `DSHOME_CRON_ATTACH_WAIT_MS`）把 45s 预算压到 2s ⇒ 全程 ~8.6s（同 `DSHOME_CRON_GATE_WAIT_MS` 口径）。
+  // H 用例（2026-09-24 复核后加）专钉一条**静默丢账**：`reload()` 每 60s 整表换对象 ⇒ 后台补登记的落账
+  //   会被 `inst.tasks.includes(旧对象)` 判否、再被 `catch{}` 吞掉（修复前盘上 `cron.json` 是 null、无告警）。
   'scripts/mind-cron-attach-itest.mjs',
   // 2026-09-23 加：写入归属台账（`git-writer-probe` 归属维度的**数据源**——台账错则探针把归属
   // 指错人，比"没有归属"更坏）。无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· PASS 0 / FAIL 1。
