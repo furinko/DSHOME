@@ -1,0 +1,19 @@
+{
+  "name": "dshome-quick-phrases",
+  "version": "0.1.0",
+  "description": "DSHOME quick phrases: an editable phrase book (create/edit/delete/search) whose rows send their body as one message into the current session, docked next to the composer submit action.",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.cjs",
+  "exports": {
+    ".": "./lib/index.cjs",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

@@ -89,6 +89,13 @@
     - id: dshome-desktop
       name: dshome/desktop
       disabled: true
+    # dshome-quick-phrases（client+host）：快捷短语本——输入框提交键前的「短语」小按钮
+    # （官方 conversation.input.right 槽，id "phrases"），点开＝搜索/新建/改/删面板，
+    # **点短语行＝立刻把正文作为一条消息发给当前会话**；数据落本机私密区
+    # mind-private/plugin-data/quick-phrases.json（.gitignore 已忽略），读写走本包 host 半的
+    # 三个同源端点 /dshome-quick-phrases/{list,save,delete}（loopback fence）。
+    - id: dshome-quick-phrases
+      name: dshome-quick-phrases
 
 # -- 覆盖官方行（整体替换 config，不合并）--
 - id: web-runtime

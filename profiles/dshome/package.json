@@ -52,6 +52,7 @@
     "dshome-mind": "workspace:*",
     "dshome-palette": "workspace:*",
     "dshome-plugin-center": "workspace:*",
+    "dshome-quick-phrases": "workspace:*",
     "dshome-theme": "workspace:*"
   },
   "dsh": {

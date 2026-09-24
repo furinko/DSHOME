@@ -82,6 +82,8 @@ importers:
 
   packages/dshome-plugin-center: {}
 
+  packages/dshome-quick-phrases: {}
+
   packages/dshome-theme: {}
 
   packages/imagegen-plugin:
@@ -242,6 +244,9 @@ importers:
       dshome-plugin-center:
         specifier: workspace:*
         version: link:../../packages/dshome-plugin-center
+      dshome-quick-phrases:
+        specifier: workspace:*
+        version: link:../../packages/dshome-quick-phrases
       dshome-theme:
         specifier: workspace:*
         version: link:../../packages/dshome-theme
