@@ -13,12 +13,15 @@
 // 拿 **staged 内容 vs HEAD 内容** 直接比：
 //   · 内容变了 + 版本行**没变** ⇒ ❌ 红（"改了正文没提版本"）
 //   · 内容变了 + 版本行变了   ⇒ ✅（这就是流程要求的形态）
-//   · 头/尾版本号不一致（两行都在时）⇒ ⚠️ warn（历史遗留只提示、不拦）
+//   · 头/尾版本号不一致（两行都在时）⇒ ⚠️ warn（**历史遗留**只提示、不拦）
+//   · **本次改动新引入**的头/尾不一致（改前一致、改后不一致）⇒ ❌ 红（2026-09-24 收紧：原先只 warn，
+//     实测「头 1.3 / 尾 1.4」仍 PASS ⇒ 新改动引入的不一致会**静默通过**；历史遗留不误伤）
 // 只看**已暂存**的改动（pre-commit 里就是本次提交的内容）；新文件（HEAD 无同名）跳过。
 //
 // ── 反例（写不出反例＝没验过；`--selftest` 可执行）──────────────────────────
 //   ① 只改正文不动版本行 → 必须红 · ② 只动版本行 → 必须不红 · ③ 两处都改 → 不红
-//   ④ 内容未变 → 不红 · ⑤ 头尾不一致 → warn（不红）
+//   ④ 内容未变 → 不红 · ⑤ 历史遗留的头尾不一致 → warn（不红）
+//   ⑧ 改前一致、改后不一致（本次引入）⇒ 必须红
 //
 // 用法：node scripts/verify-l1-versions.mjs [--selftest]
 // 退出码：0 = 通过；1 = 有断言失败（或 git 不可用——门禁跑不起来要响亮，见 verify-integrity）
@@ -59,12 +62,21 @@ export function judgeL1VersionChange(oldText, newText) {
   const va = versionsOf(a);
   const vb = versionsOf(b);
   const bumped = va.head !== vb.head || va.foot !== vb.foot;
-  const warn = (vb.head !== null && vb.foot !== null && vb.head !== vb.foot)
-    ? `头(${vb.head}) ≠ 尾(${vb.foot})` : null;
+  const mismatchAfter = vb.head !== null && vb.foot !== null && vb.head !== vb.foot;
+  const mismatchBefore = va.head !== null && va.foot !== null && va.head !== va.foot;
+  const warn = mismatchAfter ? `头(${vb.head}) ≠ 尾(${vb.foot})` : null;
   if (!bumped) {
     return {
       ok: false, warn,
       reason: `内容已改但版本行未变（头 ${va.head ?? '—'} / 尾 ${va.foot ?? '—'}）⇒ 按 Ritual §四 须「版本号 +0.1 + 版本行追加摘要」`,
+    };
+  }
+  // 2026-09-24 收紧：**本次改动新引入**的头尾不一致 ⇒ 红（两行同批改才是流程要求的形态）；
+  //   **历史遗留**的不一致（改前就一致不了）仍只 warn，避免误伤与本次改动无关的旧账。
+  if (mismatchAfter && !mismatchBefore) {
+    return {
+      ok: false, warn,
+      reason: `本次改动引入了头/尾版本不一致（头 ${vb.head} / 尾 ${vb.foot}）—— 两行必须同批改（历史遗留的不一致仍只提示）`,
     };
   }
   return { ok: true, warn, reason: `版本行已更新（头 ${va.head ?? '—'}→${vb.head ?? '—'} / 尾 ${va.foot ?? '—'}→${vb.foot ?? '—'}）` };
@@ -85,12 +97,14 @@ function selftest() {
     ['② 只动版本行 → 不红', base, base.replaceAll('1.0 | 2026-01-01', '1.1 | 2026-02-02'), true],
     ['③ 两处都改 → 不红', base, base.replace('- 原文', '- 改了正文').replaceAll('1.0 | 2026-01-01', '1.1 | 2026-02-02'), true],
     ['④ 内容未变 → 不红', base, base, true],
-    ['⑤ 头尾不一致 → warn 但不红', base, base.replace('- 原文', '- 改了正文').replaceAll('1.0 | 2026-01-01', '1.1 | 2026-02-02').replace('_版本：1.1', '_版本：1.0'), true],
+    ['⑤ 历史遗留的头尾不一致 → warn 但不红', base.replace('_版本：1.0', '_版本：0.9'), base.replace('- 原文', '- 改了正文').replace('> 版本：1.0', '> 版本：1.1'), true],
+    ['⑧ 本次改动引入头尾不一致 → 必须红', base, base.replace('- 原文', '- 改了正文').replaceAll('1.0 | 2026-01-01', '1.1 | 2026-02-02').replace('_版本：1.1', '_版本：1.0'), false],
   ];
   let bad = 0;
   for (const [name, oldT, newT, wantOk] of cases) {
     const r = judgeL1VersionChange(oldT, newT);
-    const ok = r.ok === wantOk && (name.startsWith('⑤') ? !!r.warn : true);
+    const wantWarn = name.startsWith('⑤') || name.startsWith('⑧');
+    const ok = r.ok === wantOk && (wantWarn ? !!r.warn : true);
     if (!ok) bad += 1;
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}  → ok=${r.ok} warn=${r.warn ?? '—'}  «${r.reason}»`);
   }
@@ -106,7 +120,7 @@ function selftest() {
   const v7 = versionsOf(withTemplate);
   if (v7.foot === '1.2') console.log('ok   ⑦ 尾版本取最后一个匹配（模板占位不冒充真尾）');
   else { bad += 1; console.error(`FAIL ⑦ 尾版本取错：得到 ${v7.foot}（期望 1.2）—— 正文模板占位会遮住真尾行`); }
-  console.log(bad ? `\nverify-l1-versions --selftest: ${bad} 项失败` : '\nverify-l1-versions --selftest: 全部通过（5 反例 + 1 退化检查 + 1 尾行取值检查 = 7 项）');
+  console.log(bad ? `\nverify-l1-versions --selftest: ${bad} 项失败` : '\nverify-l1-versions --selftest: 全部通过（6 反例 + 1 退化检查 + 1 尾行取值检查 = 8 项）');
   process.exit(bad ? 1 : 0);
 }
 
