@@ -11,6 +11,11 @@
 // 改动：把 strikethrough 扩展的默认值 `(<v>=!0)` → `(<v>=!1)` —— 等长替换，语法零风险。
 // 语义：单个 `~` 不再成对；`~~双波浪线~~` 的删除线照旧可用。
 //
+// 本脚本共三块补丁（各自独立：命中即打、已打即报、靶标认不出就响亮失败）：
+//   ① 上面这块：remark-gfm `singleTilde` → false
+//   ② 权限下拉补 `mind-guard` 档位图标（盾牌 + 锁，2026-09-18 加）
+//   ③ 右栏宽度跨刷新保持（初始化读 localStorage + 拖拽写回，2026-09-24 加；详见文末「补丁三」）
+//
 // 用法：
 //   node scripts/patch-web-assets.mjs                 # 默认：仓库 dev 树 + build-stage/payload（存在的才处理）
 //   node scripts/patch-web-assets.mjs --verify-only   # 只检测不改写；有未打补丁的目标 → exit 1
@@ -273,6 +278,82 @@ for (const root of roots) {
   }
   console.log(`[patch-web] PATCH ✓ ${rel}`);
   console.log(`[patch-web]   sha ${short(before)} → ${short(readFileSync(file))}  (+${GLYPH_ENTRY.length} bytes, 纯插入)`);
+  patched += 1;
+}
+
+// ── 补丁三：右栏宽度跨刷新保持（2026-09-24 加）────────────────────────────────
+// 为什么：官方右栏的宽度偏好**只活在内存 store**——`@deepseek-ai/dsh-client-ui-sidebar-right/README.zh.md:70`
+//   原文「状态只在内存中。刷新会让每个会话回到折叠的默认态」；宽度初值取 `RIGHTBAR_DEFAULT_RATIO = 0.45`
+//   （首次打开＝视口 45%；`RIGHTBAR_MIN = 300` / `RIGHTBAR_MAX_RATIO = 0.7`，见同仓 `columns.d.ts`）。
+//   而对外服务面 `ctx.layout`（ILayout）**没有 setRightbar**（只有 toggleSidebar/openRightbar/closeRightbar）
+//   ⇒ 插件拿不到公开 API 设定宽度，只能改产物。
+// 改动（`dsh-client-ui-layout/lib/client.js` 两处）：
+//   ① 读：store `init()` 的 `rightbar: null` → 从 localStorage 读上次拖拽值（键缺失仍是 null ＝官方行为）
+//   ② 写：`setRightbar` 的 clamp 行**之后**追加一行，把**夹取后的最终 px**写回 localStorage
+// 语义：拖一次即成为「默认宽度」，跨刷新/重启保持；关闭面板不清除（与官方 `closing the panel
+//   preserves this preference` 同口径）。**缩进从锚点行提取**（不猜 tab/空格）；锚点认不出即响亮失败。
+const RIGHTBAR_KEY = 'dshome:layout:rightbar';
+const RIGHTBAR_READ_MARK = `localStorage.getItem("${RIGHTBAR_KEY}")`;
+const RIGHTBAR_WRITE_MARK = `localStorage.setItem("${RIGHTBAR_KEY}"`;
+
+function layoutClientFile(root) {
+  const f = join(root, 'node_modules', '@deepseek-ai', 'dsh-client-ui-layout', 'lib', 'client.js');
+  return existsSync(f) ? f : null;
+}
+
+for (const root of roots) {
+  const file = layoutClientFile(root);
+  if (file === null) {
+    console.log(`[patch-web] 跳过（未装 dsh-client-ui-layout）: ${root}`);
+    continue;
+  }
+  const rel = file.slice(root.length + 1).replace(/\\/g, '/');
+  const before = readFileSync(file);
+  const text = before.toString('utf8');
+  if (text.includes(RIGHTBAR_READ_MARK) && text.includes(RIGHTBAR_WRITE_MARK)) {
+    console.log(`[patch-web] 已打补丁 ✓ ${rel}  sha=${short(before)}`);
+    already += 1;
+    continue;
+  }
+  const initRe = /^([ \t]*)rightbar: null,$/m;
+  const clampRe = /^([ \t]*)d\.layoutInfo\.rightbar = clampWidth\(px, 300, Math\.max\(300, d\.layoutInfo\.viewportWidth \* RIGHTBAR_MAX_RATIO\)\);$/m;
+  const mInit = initRe.exec(text);
+  const mClamp = clampRe.exec(text);
+  if (!mInit || !mClamp) {
+    console.error(`[patch-web] 未找到右栏宽度靶标（上游实现变了）: ${rel}`);
+    failed = true;
+    continue;
+  }
+  if (verifyOnly) {
+    console.error(`[patch-web] 未打补丁 ✗ ${rel}（右栏拖好的宽度刷新后会回落 45%）`);
+    failed = true;
+    continue;
+  }
+  const readLine = `${mInit[1]}rightbar: (() => { try { const v = localStorage.getItem("${RIGHTBAR_KEY}"); const n = v === null ? null : Number(v); return Number.isFinite(n) && n >= 300 ? n : null; } catch { return null; } })(),`;
+  const writeLine = `${mClamp[1]}try { localStorage.setItem("${RIGHTBAR_KEY}", String(Math.round(d.layoutInfo.rightbar))); } catch {}`;
+  const next = text.replace(initRe, readLine).replace(clampRe, `${mClamp[0]}\n${writeLine}`);
+  try {
+    rmSync(file, { force: true }); // 同补丁一/二：先断 pnpm store 硬链接，再写
+    writeFileSync(file, next);
+  } catch (e) {
+    try { writeFileSync(file, before); } catch { /* 留给 pnpm install 重建 */ }
+    console.error(`[patch-web] 写入失败（已尽力回滚）: ${rel} — ${e.message}`);
+    failed = true;
+    continue;
+  }
+  const after = readFileSync(file).toString('utf8');
+  // 复核：两个标记都在、初始化那行确已改写、且周边字段没被动（不许动别人）
+  const ok = after.includes(RIGHTBAR_READ_MARK)
+    && after.includes(RIGHTBAR_WRITE_MARK)
+    && !after.includes('rightbar: null,')
+    && after.includes('rightbarShown: false,');
+  if (!ok) {
+    console.error(`[patch-web] 写入后复核失败: ${rel}`);
+    failed = true;
+    continue;
+  }
+  console.log(`[patch-web] PATCH ✓ ${rel}`);
+  console.log(`[patch-web]   sha ${short(before)} → ${short(readFileSync(file))}  (右栏宽度：初始化读 + 拖拽写回)`);
   patched += 1;
 }
 
