@@ -24,6 +24,7 @@
 // 隔离：`DSH_HOME` 指向临时目录（不碰真仓库），跑完删除；临时根必须含 `mind/`（否则 cron.cjs 回落真仓库）。
 // 用法：node scripts/mind-cron-attach-itest.mjs
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -35,6 +36,14 @@ const require = createRequire(import.meta.url);
 const results = [];
 const check = (name, ok, extra) => results.push([name, ok ? 'PASS' : 'FAIL', extra]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 读临时 home 里的 run 台账（复核指出"新增的 attach-failed 行零断言" ⇒ 补上） */
+function readRuns(home) {
+  const p = join(home, 'mind-private', 'tasks', 'cron-runs.jsonl');
+  if (!existsSync(p)) return [];
+  return readFileSync(p, 'utf8').split('\n').filter(Boolean)
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+}
 
 function makeHome() {
   const home = mkdtempSync(join(tmpdir(), 'dshome-cronattach-'));
@@ -48,6 +57,7 @@ function makeHome() {
       // G 用**独立任务**：`lastAttach` 挂在任务对象上，共用一条会被上一个用例的旧账污染（本用例第一版就中招）
       { id: 'itest-attach-g', cron: '0 0 * * *', prompt: 'attach-g', cwd: home, catchUp: false, enabled: true },
       { id: 'itest-attach-h', cron: '0 0 * * *', prompt: 'attach-h', cwd: home, catchUp: false, enabled: true },
+      { id: 'itest-attach-i', cron: '0 0 * * *', prompt: 'attach-i', cwd: home, catchUp: false, enabled: true },
     ],
   }, null, 2));
   return home;
@@ -152,6 +162,16 @@ const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance,
     !kk.__timeout && kk.attached === false && kk.reason === 'workspace-registry-unavailable' && kMs < 6000,
     `total=${kMs}ms reason=${kk.reason}`);
 
+  // K3（复核指出"默认 45s 那一格仍零覆盖"）：**另起子进程、剥掉 env** 断言默认就是 45000 ——
+  //   K1 断言的是 env 覆盖值 2000，而注释却自称断言了 45s（"注释声称" ≠ "测试覆盖"）。
+  const cronModPath = require.resolve('../packages/dshome-mind/lib/cron.cjs');
+  const childEnv = { ...process.env };
+  delete childEnv.DSHOME_CRON_ATTACH_WAIT_MS;
+  const childOut = execFileSync(process.execPath, ['-e',
+    `process.env.DSHOME_CRON_ATTACH_WAIT_MS='';console.log(require(${JSON.stringify(cronModPath)}).ATTACH_REGISTRY_WAIT_MS)`],
+    { encoding: 'utf8', env: childEnv }).trim();
+  check('K3 → 默认预算 **45000ms**（不设 env，另起子进程断言）', childOut === '45000', `child=${childOut}`);
+
   setWorkspaceRegistry(null);
   rmSync(home, { recursive: true, force: true });
 }
@@ -234,6 +254,26 @@ const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance,
   check('F1 反例·登记失败 → lastAttach.attached=false 且 reason 可读（绝不记成成功）',
     !!la2 && la2.attached === false && la2.reason === 'workspace-registry-unavailable', JSON.stringify(la2));
   check('F2 → 会话照常建出来（归属失败**不阻断**自治）', st.created.length >= 2, `created=${JSON.stringify(st.created)}`);
+  // F3 复核指出"新增的 attach-failed 行零断言" ⇒ 断言它**真的落了**（能力面失败路径）
+  check('F3 → 能力面失败（后台重试后仍失败）**落了台账一行**（status=attach-failed · source=attach）',
+    readRuns(home).some((r) => r.taskId === 'itest-attach' && r.status === 'attach-failed' && r.source === 'attach'),
+    JSON.stringify(readRuns(home).filter((r) => r.taskId === 'itest-attach')));
+
+  // L 内容面失败**也要留痕**（复核 2026-09-24 应修）：分流让内容面不重试，但"不该重试 ≠ 不该留痕"——
+  //   `workspace` 指向不存在路径这类永久配置错是**每次 run 必失败**，只有 lastAttach（留最后一次）+ stdout
+  //   时与"静默"同型。
+  cron.active.clear();
+  setWorkspaceRegistry(fakeRegistry(fakeWs(join(home, 'no-such-ws')))); // registry 在，但路径不匹配
+  const taskL = cron.tasks.find((t) => t.id === 'itest-attach-i');
+  taskL.cwd = home;
+  cron.trigger(taskL, 'itest');
+  await sleep(600);
+  const laL = taskL.lastAttach;
+  check('L1 内容面失败（no-matching-workspace）→ lastAttach 落账且 attached=false',
+    !!laL && laL.attached === false && laL.reason === 'no-matching-workspace', JSON.stringify(laL));
+  check('L2 → **同时**落 cron-runs.jsonl 一行（内容面失败不再只有 stdout）',
+    readRuns(home).some((r) => r.taskId === 'itest-attach-i' && r.status === 'attach-failed'),
+    JSON.stringify(readRuns(home).filter((r) => r.taskId === 'itest-attach-i')));
 
   cron.clear();
   setWorkspaceRegistry(null);

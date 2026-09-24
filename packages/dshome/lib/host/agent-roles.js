@@ -768,11 +768,19 @@ export function selectCard(discovery, roleId) {
   const broken = discovery && Array.isArray(discovery.broken) ? discovery.broken : [];
   const wanted = typeof roleId === 'string' ? roleId.trim() : '';
   if (wanted === '') return { ok: false, error: '未指定角色卡 id', ids, broken };
-  const card = cards.find((item) => item.id === wanted);
+  let card = cards.find((item) => item.id === wanted);
   if (!card) {
+    // `role=` 也接受**卡中文名**（与 `role_send` 的寻址口径对齐，2026-09-24 复核后加）：内联建卡折算出的 id
+    //   是 `inline-<hex>`（不可读），只认 id 等于把"用中文名复用"这条路堵死——而当时**注释与注入文案都在
+    //   这么写**（"验证过的假"）。**重名不猜**：多张同名卡 ⇒ 当作未找到（让调用方显式给 id）。
+    const byName = cards.filter((item) => item.name === wanted);
+    if (byName.length === 1) card = byName[0];
+  }
+  if (!card) {
+    const avail = cards.map((item) => (item.name && item.name !== item.id ? `${item.id}（${item.name}）` : item.id));
     return {
       ok: false,
-      error: `未找到角色卡 "${wanted}"（可用：${ids.length > 0 ? ids.join('、') : '无'}${broken.length > 0 ? `；另有 ${broken.length} 张坏卡见 role_list` : ''}）`,
+      error: `未找到角色卡 "${wanted}"（可用：${avail.length > 0 ? avail.join('、') : '无'}${broken.length > 0 ? `；另有 ${broken.length} 张坏卡见 role_list` : ''}）`,
       ids,
       broken,
     };

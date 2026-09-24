@@ -76,11 +76,14 @@ const SAFE = new Set([
   'scripts/mind-cron-recipes-itest.mjs',
   // 2026-09-24 加：cron 自治「工作区归属登记」——registry 晚到时有界等待 + 每次 run 落 `lastAttach`。
   // 病灶＝冷启动补跑抢跑（宿主 22:22:55 启动、catch-up 22:23:09 就拉起会话）⇒ 归属静默失败、**无人能归因**。
-  // 无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· 20 项含 4 反例 · PASS 0 / FAIL 1；env 覆盖（
-  // `DSHOME_CRON_ATTACH_WAIT_MS`）把 45s 预算压到 2s ⇒ 全程 ~10.7s（同 `DSHOME_CRON_GATE_WAIT_MS` 口径）。
-  // K1/K2（2026-09-24 复核后加）：常量导出后可**断言**（POLL=500 / 上界 10min / 预算=env 值）；
+  // 无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· 24 项含 4 反例 · PASS 0 / FAIL 1；env 覆盖（
+  // `DSHOME_CRON_ATTACH_WAIT_MS`）把 45s 预算压到 2s ⇒ 全程 ~11.2s（同 `DSHOME_CRON_GATE_WAIT_MS` 口径）。
+  // K1/K2/K3（2026-09-24 复核后加）：常量导出后可**断言**（POLL=500 / 上界 10min / 预算=env 值）；
   //   `registryWaitMs: Infinity` **不再无限轮询**（K2 自带 `Promise.race` 超时 ⇒ 退化会**报红**，
-  //   不会把门禁链**挂住**——挂住的测试比红的测试更坏）。
+  //   不会把门禁链**挂住**——挂住的测试比红的测试更坏）；**K3 另起子进程剥掉 env 断言默认 45000**
+  //   （复核指出：K1 断言的是 env 覆盖值，"默认 45s"当时零覆盖，而注释却自称断言了它）。
+  // F3/L1/L2（复核后加）：`attach-failed` 那行**真的落了**——能力面 F3、**内容面** L1+L2
+  //   （复核："分流的意义是内容面不值得重试，**不该重试 ≠ 不该留痕**"）。
   // H 用例（2026-09-24 复核后加）专钉一条**静默丢账**：`reload()` 每 60s 整表换对象 ⇒ 后台补登记的落账
   //   会被 `inst.tasks.includes(旧对象)` 判否、再被 `catch{}` 吞掉（修复前盘上 `cron.json` 是 null、无告警）。
   'scripts/mind-cron-attach-itest.mjs',

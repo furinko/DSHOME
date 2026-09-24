@@ -242,6 +242,19 @@ function recordAttach(task, sessionId, wsOut, runTarget, extra = {}) {
   }
 }
 
+/** 归属失败**统一留痕**（2026-09-24 复核后加）：**能力面**（后台重试后仍失败）与**内容面**（永久配置错：
+ *  工作区没注册 / 路径不匹配…）**都要落** `cron-runs.jsonl` 一行——`lastAttach` 只留最后一次、看不出连续失败，
+ *  而内容面失败**每次 run 必失败**（更该有账）。⚠️ 台账语义＝**事件流**，不是 run 计数：同一 `sessionId`
+ *  可能两行（`attach-failed` + 之后的 `ok/error`），靠 `source:'attach'` 区分。 */
+function recordAttachFailure(task, sessionId, wsOut) {
+  try {
+    appendCronRun({
+      ts: new Date().toISOString(), taskId: task.id, sessionId: String(sessionId),
+      status: 'attach-failed', errorCode: String((wsOut && wsOut.reason) ?? 'unknown'), source: 'attach',
+    });
+  } catch { /* 留痕失败不影响自治 */ }
+}
+
 /** 服务**晚到**时的后台补登记（2026-09-24 加）：不阻塞 `executeTask` 的返回路径（闸交棒靠它），
  *  用默认预算在后台有界重试，**成败都落账 + 失败响亮**。冷启动补跑（宿主启动 14s 就跑）走的就是这条路。 */
 function deferAttachInBackground(hostCtx, task, sessionId, runTarget) {
@@ -257,12 +270,7 @@ function deferAttachInBackground(hostCtx, task, sessionId, runTarget) {
       // **站得住的消费者**（2026-09-24 加，独立复核指"灯装上了没人接线"）：失败也落 `cron-runs.jsonl`——
       //   那条台账是既有真源（JSONL 追加、天然时间序列、已有体积上界），比"只写 lastAttach（只留最后一次）"
       //   更能看出**连续失败**；且不依赖 `recordAttach` 的落盘路径成功。
-      try {
-        appendCronRun({
-          ts: new Date().toISOString(), taskId: task.id, sessionId: String(sessionId),
-          status: 'attach-failed', errorCode: String(out.reason ?? 'unknown'), source: 'attach',
-        });
-      } catch { /* 留痕失败不影响自治 */ }
+      recordAttachFailure(task, sessionId, out);
     })
     .catch((e) => { console.warn('[dshome-cron]', task.id, '：后台补登记异常（不影响自治）', e?.message ?? e); });
 }
@@ -334,6 +342,10 @@ async function executeTask(hostCtx, task) {
     } else {
       recordAttach(task, sessionId, wsOut, runTarget); // 归属结果**落账**（否则失败只进 stdout、事后无法归因）
       if (!wsOut.attached && !runTarget.skipAttach) {
+        // **内容面失败也要落台账**（2026-09-24 复核指出）：分流的意义是"内容面**不值得重试**"，
+        //   但**不该重试 ≠ 不该留痕**——`workspace` 指向不存在路径这类永久配置错是**每次 run 必失败**，
+        //   只有 `lastAttach`（只留最后一次）+ stdout 时，与本次要治的"静默"同型。
+        recordAttachFailure(task, sessionId, wsOut);
         const why = `${wsOut.reason}${wsOut.error ? ': ' + wsOut.error : ''}`;
         if (runTarget.declared) {
           console.warn('[dshome-cron]', task.id, `：**已指定工作区但登记未成功**（${why}）——本会话会落「未分组」；目标: ${runTarget.workspacePath}`);
