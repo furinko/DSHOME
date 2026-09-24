@@ -60,6 +60,10 @@ const SAFE = new Set([
   // 而挂上就让它每次提交都真跑一次（不挂＝写了没人跑）。
   'scripts/git-writer-probe.mjs',
   'scripts/verify-l1-versions.mjs',
+  // 2026-09-24 加：手写表格「行被吞 / 两行被黏」检查（治 `edit` 锚点粘连——同日复发 2 次）。
+  // 无参＝**只读扫描** `mind/` + `mind-private/`（不写任何文件）；退出码 0/1 都是"读数"（本冒烟只认
+  // 运行期崩溃特征）⇒ 挂它不会造成假红，而挂上就让它每次提交都真跑一次（不挂＝写了没人跑）。
+  'scripts/check-md-tables.mjs',
   'scripts/verify-payload.mjs',
   'scripts/verify-safe-overlay.mjs',
   'scripts/verify-shell-autostart.mjs',
