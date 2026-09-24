@@ -547,6 +547,13 @@ async function main() {
   assert('pathAllowed: sibling path denied', pathAllowed(`${ws}/other/a.md`, [`${ws}/a.md`], ws) === false, false, pathAllowed(`${ws}/other/a.md`, [`${ws}/a.md`], ws));
   assert('pathAllowed: relative target resolved against cwd', pathAllowed('sub/b.md', ['sub'], ws) === true, true, pathAllowed('sub/b.md', ['sub'], ws));
   assert('pathAllowed: empty target fails closed', pathAllowed('', [ws], ws) === false, false, pathAllowed('', [ws], ws));
+  // 2026-09-24 加（治真实绕过）：绝对路径里的 `..` **必须先被消解再判定**。原实现 `isAbsolute(raw) ? raw : resolve(...)`
+  // 让绝对路径原样保留 `..`，而判定是字符串前缀匹配 ⇒ `…/ok/../bad/a.md` 会被判放行，写入层却消解成 `…/bad/a.md`
+  // ⇒ 真机实测文件落到白名单外（证据：L3 `project.md` 该条 + `2026-09-24_dotdot-escape-evidence.txt`）。
+  // 反证方式：把 `normalizePath` 改回 `isAbsolute(raw) ? raw : resolve(...)`，下面第 1、3 条必须变红（第 2 条是防过度拦截的正对照）。
+  assert('pathAllowed: absolute `..` escape is denied (regression: was a real bypass)', pathAllowed(`${ws}/ok/../bad/a.md`, [`${ws}/ok`], ws) === false, false, pathAllowed(`${ws}/ok/../bad/a.md`, [`${ws}/ok`], ws));
+  assert('pathAllowed: absolute `..` that stays inside is still allowed (no over-blocking)', pathAllowed(`${ws}/sub/../a.md`, [ws], ws) === true, true, pathAllowed(`${ws}/sub/../a.md`, [ws], ws));
+  assert('pathAllowed: multi-level absolute `..` escape is denied', pathAllowed(`${ws}/ok/a/../../bad/a.md`, [`${ws}/ok`], ws) === false, false, pathAllowed(`${ws}/ok/a/../../bad/a.md`, [`${ws}/ok`], ws));
   assert('ownScopeTools: lists non-restrictable visible names', JSON.stringify(ownScopeTools({ visible: new Map([['subagent', {}], ['read', {}]]), restrictableNames: new Set(['read']) })) === '["subagent"]', '["subagent"]', ownScopeTools({ visible: new Map([['subagent', {}], ['read', {}]]), restrictableNames: new Set(['read']) }));
   assert('ownScopeTools: null when the view is unavailable', ownScopeTools(null) === null, null, ownScopeTools(null));
 

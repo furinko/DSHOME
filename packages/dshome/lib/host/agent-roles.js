@@ -31,7 +31,7 @@
 // 测试传临时目录即可。
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Stable Cordis plugin name (row: `name: dshome/agent-roles`). */
@@ -534,7 +534,10 @@ function normalizePath(target, cwd) {
   try {
     const raw = String(target || '');
     if (raw === '') return '';
-    const abs = isAbsolute(raw) ? raw : resolve(cwd || process.cwd(), raw);
+    // 2026-09-24 修：**绝对路径也必须过 `resolve`**。原实现 `isAbsolute(raw) ? raw : resolve(...)` 让绝对路径原样保留，
+    // 而判定是字符串前缀匹配（见 `pathAllowed`）⇒ `E:\…\mind-private\..\x.txt` 只要字符串以白名单前缀开头就放行，
+    // 但写入层会消解 `..` ⇒ 真机实测文件真落到白名单外（证据与复现见 L3 project.md 对应条目）。
+    const abs = resolve(cwd || process.cwd(), raw);
     return abs.replace(/[\\/]+/g, '\\').replace(/\\+$/, '').toLowerCase();
   } catch { return ''; }
 }
