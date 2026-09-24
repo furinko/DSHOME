@@ -73,6 +73,10 @@ const SAFE = new Set([
   // 2026-09-23 加：写入归属台账（`git-writer-probe` 归属维度的**数据源**——台账错则探针把归属
   // 指错人，比"没有归属"更坏）。无参可跑 · 只用临时 DSH_HOME（真仓库零触碰）· PASS 0 / FAIL 1。
   'scripts/mind-write-log-itest.mjs',
+  // 2026-09-24 加：`userRules` 排序 + 上限保护的反例表（9 组含 3 反例 + 真数据面；无参=只读自检，
+  // 只 import 纯函数库并跑断言）。**不挂链它就是张纸**——将来谁改坏 `pickUserRules`，
+  // 没有门禁会红（同 09-23 `git-writer-probe` 的理由）。配套纯函数在 `scripts/mind-prime-lib.mjs`。
+  'scripts/mind-prime-rules-itest.mjs',
   // 视觉自检工具（2026-09-18 加）：无参只打用法 + exit 2 ⇒ 属于"usage 退出不算失败"那一类，
   // 挂白名单只是为了每次提交都真跑一次"它至少能起来"（它自身要带目标文件才有实际动作）。
   'scripts/shot.mjs',
