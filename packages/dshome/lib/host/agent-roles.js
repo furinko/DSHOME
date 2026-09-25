@@ -1962,9 +1962,18 @@ function ensureMemberGuard(ctx, state, childId, label, cwd) {
   let child = null;
   try { child = (ctx.agents.list() || []).find((candidate) => candidate && String(candidate.id) === String(childId)) || null; }
   catch { child = null; }
-  if (!child) return { installed: false, reason: '成员不在本进程注册表（未持有其 agent，无法装闸）' };
-  const childCwd = baseCwd || agentCwd(child);
+  const childCwd = baseCwd || (child ? agentCwd(child) : '');
   const built = guardFilterForMember(state, childCwd, recognized.cardId);
+  // 2026-09-26 修（**第四例实测**：跨重启 `role_send` 唤醒成员 ⇒ 返回值 `guardInstalled:false`
+  //   + reason「成员不在本进程注册表（未持有其 agent，无法装闸）」）：
+  //   原实现在**找不到 agent 对象**时直接 early-return ⇒ **跳过了 `installChildGuard` 的 `pendingGuards` 挂起路**，
+  //   而 `agent/created` 处理器正是靠 `pendingGuards` 给「刚进注册表的成员」补装闸（本文件旧注释自陈
+  //   「两条路合起来无竞态」）——这条早退等于把第二条路掐掉：**跨进程/跨轮恢复的成员永远补不上执行期闸**。
+  //   现改为：拿不到对象 ⇒ **走挂起路**（reason 明说「已挂起，等 agent/created 补装」），语义仍是 fail-closed
+  //   （认不出卡依旧不装，见上方 recognizeMember 分支）。
+  if (!child) {
+    return installChildGuard(ctx, state, childId, built.filter, typeof label === 'string' ? label : '', built.writePaths, childCwd);
+  }
   const applied = applyChildGuard(ctx, state, child, built.filter, typeof label === 'string' ? label : '', built.writePaths, childCwd);
   return { installed: applied.installed, reason: built.reason || applied.reason, ownScope: applied.ownScope || null };
 }
