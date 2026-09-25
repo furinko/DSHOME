@@ -184,14 +184,31 @@ if (!candidates.length) {
   process.exit(0);
 }
 
+// 2026-09-26 加（待办 89「假绿」面 · 取方案③「不骗人」）：**非零退出不再印 ✅**。
+//   旧行为：凡「无运行期崩溃」就印 `✅ …（exit N，无运行期崩溃）`—— `--all` 实测 28 行里 **4 行 exit≠0**
+//   （evolve-log 1 / verify-payload 1 / shot 2 / gui-shot 2）**全被印 ✅**，其中 `verify-payload` 是真 FAIL
+//   ⇒「跑了它 ≠ 判了它」。本改动**只动显示与汇总，不动退出码判据**：`verify-payload` 在「打包前触发式」
+//   口径下合法非零，硬判会造新的恒亮灯 ⇒ 要升门禁须连同「合法非 0 白名单」一起裁（方案①，仍未定）。
+//   反例（怎么让本改动变红）：把 `scripts/shot.mjs` 从 USAGE_EXIT 移出 ⇒ 它那行由 ✅ 变 ⚠️ 且进汇总。
+const USAGE_EXIT = new Map([
+  ['scripts/evolve-log.mjs', 1], // 无参只打用法（usage）
+  ['scripts/shot.mjs', 2],       // 无参只打用法 + exit 2
+  ['scripts/gui-shot.mjs', 2],   // 同上：活 SPA 截图探针
+]);
 console.log(`[verify-scripts-run] 真跑冒烟 ${candidates.length} 个脚本（判据：运行期崩溃特征 + **itest 须退出码 0**；工具脚本的 usage 退出不算失败）`);
 const fails = [];
+const nonzero = [];
 for (const rel of candidates) {
   const r = runOne(rel);
   if (r.status === 'crash') { fails.push(r); console.log(`  ❌ ${rel}  → ${r.detail}`); }
   else if (r.status === 'fail') { fails.push(r); console.log(`  ❌ ${rel}  → ${r.detail}`); }
   else if (r.status === 'missing') { console.log(`  ⏭ ${rel}（不存在，跳过）`); }
-  else { console.log(`  ✅ ${rel}（exit ${r.code}，无运行期崩溃）`); }
+  else if (r.code === 0) { console.log(`  ✅ ${rel}（exit 0）`); }
+  else if (USAGE_EXIT.get(rel) === r.code) { console.log(`  ✅ ${rel}（usage 退出 ${r.code}，预期）`); }
+  else {
+    nonzero.push({ rel, code: r.code });
+    console.log(`  ⚠️ ${rel}（exit ${r.code}，无运行期崩溃 —— **非 usage 退出，未按「通过」计**）`);
+  }
 }
 if (skippedForeign.length) {
   console.log(`  ⏭ 跳过 ${skippedForeign.length} 个未在安全白名单（需检时用 --file 点名）：${skippedForeign.join(', ')}`);
@@ -200,4 +217,8 @@ if (fails.length) {
   console.error(`[verify-scripts-run] ❌ ${fails.length} 个脚本真跑失败（崩溃 / itest 断言未过）—— 语法检查过了不等于能跑`);
   process.exit(1);
 }
-console.log('[verify-scripts-run] ✅ 全部通过（真跑无运行期崩溃，itest 全绿）');
+if (nonzero.length) {
+  console.log(`[verify-scripts-run] ℹ️ 另有 ${nonzero.length} 行**非零退出**（不判失败，也不按通过计）：${nonzero.map((x) => `${x.rel}(exit ${x.code})`).join('、')}`);
+  console.log('[verify-scripts-run]    ⇒ 请按各自脚本自己的输出人工确认——可能是真 FAIL（如 `verify-payload` 在「打包前触发式」口径下的合法红），也可能是尚未登记进 USAGE_EXIT 的用法退出');
+}
+console.log('[verify-scripts-run] ✅ 全部跑完（真跑无运行期崩溃，itest 全绿；非零退出行已单独标注）');
