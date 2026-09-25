@@ -144,3 +144,12 @@ node scripts/verify-web-patches.mjs
 #    反例可执行：把 `verify-agent-roles-card-tools.mjs` 任一断言改成必红 ⇒ 本链在 ⑰ 处 exit 1（已实测）。
 node scripts/verify-agent-roles.mjs
 node scripts/verify-agent-roles-card-tools.mjs
+# ⑱ 会话缩略导航自测直挂（2026-09-26 加）：`packages/dshome-theme/selftest.mjs`
+#    为什么不进 ⑥ 的 SAFE 白名单：⑥ 的候选池＝**git 暂存区的脚本**，而它住在 `packages/` ——
+#    只改 `client.js` 的那次提交里它不在暂存区 ⇒ **永不执行**（⑮⑯⑰ 之后**第四次**同一课）。
+#    代价当场发生过：套件写完后 pre-commit 只打「无可跑候选 / 跳过 2 个不在安全白名单」
+#    ⇒ 那套判据**只有人手动敲才存在**，谁改坏 client.js 都不会红。
+#    可直挂依据：无参**只读**（无 writeFile/mkdir/rm 调用）· 从**仓库根**跑已实测 ALL PASS 退 0 ·
+#    语义化退出码（PASS 0 / FAIL 1）· 纯 vm 假 DOM（无网络、无等待）。
+#    反例可执行：把套件里任一断言改成必红 ⇒ 本链应在 ⑱ 处 exit 1（改后实测）。
+node packages/dshome-theme/selftest.mjs
