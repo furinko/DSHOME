@@ -52,6 +52,10 @@ const SAFE = new Set([
   // 2026-09-23 加：自建角色 agent 的 143 条断言（无参可跑 · 只用临时目录 · PASS 退出 0 / FAIL 退出 1）
   // ⇒ 挂白名单让每次提交都真跑一次；不挂的话它谁也不在链上（= 测试写了没人跑）。
   'scripts/verify-agent-roles.mjs',
+  // 2026-09-25 加：角色卡「自动调优」闭环的三把工具（list/read/write）端到端断言——正例 + 6 类反例
+  // （乐观锁过期 / id 不一致 / 新文本不可解析 / 缺 reason / 卡不存在 / 台账写不进去必须拒绝改动）+ 不污染本机。
+  // 无参可跑 · 只用临时 DSH_HOME 与临时工作区 · PASS 退出 0 / FAIL 退出 1 ⇒ 挂白名单让每次提交都真跑一次。
+  'scripts/verify-agent-roles-card-tools.mjs',
   // 2026-09-23 加：心智面板「层带登记一致性」——客户端 LAYER_ORDER 漏登记 ⇒ 整块图谱白屏
   // （2026-09-16 实录）。无参可跑、只读两个源文件、PASS 退出 0 / FAIL 退出 1。
   'scripts/verify-mind-panel-layers.mjs',
