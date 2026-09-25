@@ -1,14 +1,18 @@
 // e2e: role_card_list / role_card_read / role_card_write —— 正例 + 反例 + 不污染
-// 用法: node _t-card-tools-e2e.mjs
+// 用法: node scripts/verify-agent-roles-card-tools.mjs
+// 可移植：路径全部从本文件位置反推（`scripts/` → 仓库根），**不写盘符**——本机带盘符的路径
+//   既会进推送面（按口径「机器痕迹 0 命中」），换到另一台机器（如公司那台）还会**直接跑不了**。
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const TMP = 'E:\\DSHOME\\_tmp_cardtools';
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..'); // scripts/ → 仓库根
+const TMP = join(REPO, '_tmp_cardtools');
 const HOME = join(TMP, 'home');
 const WS = join(TMP, 'ws');
 const CARD_DIR = join(WS, '.agent-roles');
 const LEDGER = join(HOME, 'profiles', 'dshome', '.dsh-market', 'agent-roles-card-ledger.jsonl');
-const REAL_LEDGER = 'E:\\DSHOME\\profiles\\dshome\\.dsh-market\\agent-roles-card-ledger.jsonl';
+const REAL_LEDGER = join(REPO, 'profiles', 'dshome', '.dsh-market', 'agent-roles-card-ledger.jsonl');
 
 let pass = 0; let fail = 0;
 const check = (label, cond, extra = '') => {
@@ -32,11 +36,11 @@ const realLedgerBefore = existsSync(REAL_LEDGER) ? readFileSync(REAL_LEDGER, 'ut
 // 2026-09-25 补齐此面的原因：读侧曾把 `at` 读成 `ts` ⇒ 成员归属的**时间静默为空**（不报错、不告警），
 // 而当时的用例只覆盖卡面（list/read/write/台账），**成员面零断言** ⇒ 22 PASS 全绿也照不出它。
 const MEMBER_MAP = join(HOME, 'profiles', 'dshome', '.dsh-market', 'agent-roles-members.jsonl');
-const REAL_MEMBER_MAP = 'E:\\DSHOME\\profiles\\dshome\\.dsh-market\\agent-roles-members.jsonl';
+const REAL_MEMBER_MAP = join(REPO, 'profiles', 'dshome', '.dsh-market', 'agent-roles-members.jsonl');
 mkdirSync(join(HOME, 'profiles', 'dshome', '.dsh-market'), { recursive: true });
 writeFileSync(MEMBER_MAP, `${JSON.stringify({ childId: 'child-1', cardId: 't1', label: '端到端测试卡:甲', at: '2026-09-25T12:00:00.000Z' })}\n`, 'utf8');
 
-const mod = await import('file:///E:/DSHOME/packages/dshome/lib/host/agent-roles.js');
+const mod = await import(pathToFileURL(join(REPO, 'packages', 'dshome', 'lib', 'host', 'agent-roles.js')).href);
 const state = { home: HOME, nameIndex: new Map(), pendingGuards: new Map(), childGuards: new Map(), childOwnScope: new Map(), memberCards: new Map(), memberCardsLoaded: false };
 const tools = mod.makeRoleTools({ ctx: {}, state });
 const exec = { agent: { id: 'test-agent', session: { header: { cwd: WS } } } };
