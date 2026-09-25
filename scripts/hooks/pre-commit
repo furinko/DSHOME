@@ -135,3 +135,12 @@ node scripts/skill-version.mjs --check
 #    可执行反例：`pnpm install` 后直接跑 ⇒ 报未打 + exit 1；修复＝`node scripts/patch-web-assets.mjs`
 #    （`stage-payload` 也会自动打）。薄包装，真源判据在 patcher 里。
 node scripts/verify-web-patches.mjs
+# ⑰ 卡线两支套件直挂（2026-09-25 加）：`verify-agent-roles.mjs` / `verify-agent-roles-card-tools.mjs`
+#    此前**不在提交链的必跑面** —— 前者只在「真跑冒烟」（⑥）的 SAFE 白名单里，而该步**默认只跑暂存脚本**
+#    （`--all` 才全量）⇒ 改插件而它不在暂存区时**永不执行**；后者是新件、同理。
+#    代价当场发生过：插件注册面 3→6 把，`verify-agent-roles` 里写死的 `exactly three tools registered`
+#    变红（248/249），而 pre-commit **全绿放行**（同型第三次：⑮ `skill-version`、⑯ `web-patches` 都栽在
+#    "挂进白名单被当成挂上链"）。⇒ 判据落成"这两支必须**每次都跑**"，与暂存区无关。
+#    反例可执行：把 `verify-agent-roles-card-tools.mjs` 任一断言改成必红 ⇒ 本链在 ⑰ 处 exit 1（已实测）。
+node scripts/verify-agent-roles.mjs
+node scripts/verify-agent-roles-card-tools.mjs
