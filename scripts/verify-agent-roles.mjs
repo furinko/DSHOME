@@ -491,11 +491,12 @@ async function main() {
   // 期望面**写死在测试里**，不从 ROLE_TOOL_NAMES 取——那是拿插件比自己，恒真、零咬合力。
   // 2026-09-25：卡生命周期三工具（role_card_list/read/write）落地，注册面由三把扩到六把，
   // 本行原先写死的「三把」字面量成了恒红断言（verify-agent-roles 实测 248/249）。
-  eq('exactly six tools registered', host.record.registered.map((definition) => definition.name), ['role_list', 'role_spawn', 'role_send', 'role_card_list', 'role_card_read', 'role_card_write']);
+  // 2026-09-26：再加 `role_card_retire`（退役卡）⇒ 六把扩到**七把**，同步本行与下方 policy 断言标签。
+  eq('exactly seven tools registered', host.record.registered.map((definition) => definition.name), ['role_list', 'role_spawn', 'role_send', 'role_card_list', 'role_card_read', 'role_card_write', 'role_card_retire']);
   eq('one policy section registered', host.record.sections.map((section) => section.name), ['agent-roles:policy']);
   eq('policy section order name', host.record.sectionOrderName, 'TEAM_POLICY');
   eq('policy section sits at TEAM_POLICY order', host.record.sections[0] && host.record.sections[0].order, 600);
-  assert('policy text names all six role tools', ROLE_TOOL_NAMES.every((toolName) => host.record.sections[0].text().includes(toolName)), 'policy text mentions role_list/role_spawn/role_send/role_card_*', host.record.sections[0].text().slice(0, 120));
+  assert('policy text names all seven role tools', ROLE_TOOL_NAMES.every((toolName) => host.record.sections[0].text().includes(toolName)), 'policy text mentions role_list/role_spawn/role_send/role_card_*', host.record.sections[0].text().slice(0, 120));
   assert('child agent (depth 1) got no install', host.record.childInstalled !== true, 'child register never called', host.record.childInstalled === true);
   assert('no install-scope warning', host.record.warns.filter((message) => /作用域安装异常/.test(message)).length === 0, 'no 作用域安装异常 warn', host.record.warns);
   const markerPath = join(TMP_HOME, 'profiles', 'dshome', '.dsh-market', 'agent-roles-marker.txt');

@@ -81,7 +81,7 @@ export const CASCADE_DENY = ['subagent', 'subagent_fork', 'workflow', 'ralph'];
 /** 本插件自己的**六把**工具（成员线 3 + 卡线 3）：只在顶层 own-scope，属于「子成员不可解析」的名字（绝不能进 filter）。
  *  卡线三把（2026-09-25 加，主人放行）：`role_card_list` / `role_card_read` / `role_card_write` —— 把"自动调优卡片"
  *  从"只能拿通用写工具改文件"补成**受控闭环**（乐观锁 + 原子写 + 卡改动台账 + 只动 version 那一行）。 */
-export const ROLE_TOOL_NAMES = ['role_list', 'role_spawn', 'role_send', 'role_card_list', 'role_card_read', 'role_card_write'];
+export const ROLE_TOOL_NAMES = ['role_list', 'role_spawn', 'role_send', 'role_card_list', 'role_card_read', 'role_card_write', 'role_card_retire'];
 /** `restrict()` 明确拒收的保留名（PTC 传输层，`dsh-tools/lib/index.js:2800`）。 */
 const RESERVED_TOOL_NAMES = ['run_code'];
 
@@ -847,6 +847,7 @@ export function renderPolicyText() {
     '5. 同一把工具不能同时写进 allow 与 deny —— 那是自相矛盾的声明，role_spawn 会直接报错（不会静默按 deny 处理）。',
     '6. 派**可写成员**（工程师这类）时尽量给 `write_scope`（路径白名单，目录前缀或具体文件）：给了它，成员的 `write`/`edit` 落到范围外会**当场被拒**；不给＝`unbounded`（只留痕、不拦，返回值会如实标注）。⚠️ `pwsh` **不受路径闸约束**（命令级"是不是写"解析不可靠）——所以卡里的行为契约仍然算数，别把"没被拦"当成"没风险"。',
     '7. 起成员后看返回值：`guardInstalled` 必须是 true；`ownScopeTools` 非空 ⇒ 这名成员手里有 **`restrict` 裁不掉的自注册工具**（真机实测：`subagent` 就是这一类）——**它仍在执行期闸的枪口下**（`buildToolGuard` 默认装上并拒调用，实测成员会话 `c779743f` 调用即报「角色能力面未放行」）；真正已在闸下被拒的那些由返回值 `ownScopeBlocked` 单列，别把"列在表里"读成"能用"。插件另写 marker 留痕。',
+    '8. **退役卡走 `role_card_retire`**（`cardId` + `reason` 必填）：移出卡池（`role_list` / `role_spawn` 从此看不见它），**不物理删、可 `restore`、卡改动台账留痕**；与全局回收站 `TRASH\\` 的分工见该工具说明（它会把 `evolve-log trash` 命令打印出来）。',
     '【管理层宪章（Lead 岗位）】',
     '你的岗位 = 判断（做什么 / 验收判据）+ 分工（派谁 / 工具面 / 写范围）+ 演绎（与用户对话、汇报）；生产性执行（写码 / 改文件 / 大范围检索 / 构建 / 写文档）优先派成员。',
     '例外（自己做，不派）：一行改动、读文件即答、纯核查（抽查证据 / 复跑验证）。',
@@ -1116,6 +1117,25 @@ const ROLE_LIST_SCHEMA = {
   },
 };
 
+/** role_card_retire 的输出形状（退役 / 列出已退役 / 取回）。 */
+const CARD_RETIRE_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['ok'],
+  properties: {
+    ok: { type: 'boolean' },
+    error: { type: 'string' },
+    code: { type: 'string' },
+    cardId: { type: 'string' },
+    from: { type: 'string' },
+    to: { type: 'string' },
+    restore: { type: 'string' },
+    trashCmd: { type: 'string' },
+    liveMembers: { type: 'number' },
+    note: { type: 'string' },
+    retired: { type: 'array', items: { type: 'object', additionalProperties: true } },
+  },
+};
 const CARD_LIST_SCHEMA = {
   type: 'object',
   additionalProperties: true,
@@ -1621,6 +1641,97 @@ export function makeRoleTools({ ctx, state }) {
       },
     },
 
+    roleCardRetire: {
+      name: 'role_card_retire',
+      description: '把一张卡从卡池**退役**（**不物理删 / 可 restore / 有留痕**）：移到卡目录下的 `.retired\\`，`role_list` 与 `role_spawn` 从此看不见它；并在卡改动台账记 begin/done 两行（`reason` 必填）。三种用法：`cardId`+`reason` 退役 · `list:true` 列出已退役卡 · `restore:"<文件名>"` 取回。⚠️ **仓库级回收站 `TRASH\\` 是另一套机制**（`node scripts/evolve-log.mjs trash <路径> --reason "…"`）——本工具会把那条命令打印出来，需要升级到全局回收站时照跑即可（别用 `rm`）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          cardId: { type: 'string', description: '要退役的卡 id 或卡中文名' },
+          reason: { type: 'string', description: '为什么退役（退役必填；写进卡改动台账）' },
+          list: { type: 'boolean', description: '列出已退役的卡（在卡目录 .retired\\ 下）' },
+          restore: { type: 'string', description: '按文件名从 .retired\\ 取回卡池' },
+        },
+      },
+      output: { schema: CARD_RETIRE_SCHEMA, render: renderJson },
+      async execute(args, exec) {
+        const agent = callerOf(exec);
+        if (!agent) return { ok: false, error: 'role_card_retire 需要调用者 agent（exec.agent 为空）' };
+        try {
+          const a = args || {};
+          const dirs = cardDirs(state, agentCwd(agent));
+          const dirList = [dirs.privateDir, dirs.workspaceDir].filter((d) => typeof d === 'string' && d !== '');
+          const retiredDirOf = (dir) => join(dir, '.retired');
+          const by = String(agent.id || '');
+          // ① list：看已退役的卡
+          if (a.list === true) {
+            const retired = [];
+            for (const dir of dirList) {
+              const rd = retiredDirOf(dir);
+              let names = [];
+              try { names = readdirSync(rd).filter((n) => n.endsWith('.md')); } catch { names = []; }
+              for (const n of names) {
+                let bytes = 0;
+                try { bytes = Buffer.byteLength(readFileSync(join(rd, n), 'utf8'), 'utf8'); } catch { bytes = 0; }
+                retired.push({ file: n, path: join(rd, n), bytes, restore: `role_card_retire restore:"${n}"` });
+              }
+            }
+            return { ok: true, retired, note: '这些卡不在卡池里；restore 可取回。要进全局 TRASH 见工具说明。' };
+          }
+          // ② restore：取回
+          if (typeof a.restore === 'string' && a.restore.trim() !== '') {
+            const want = basename(a.restore.trim());
+            for (const dir of dirList) {
+              const from = join(retiredDirOf(dir), want);
+              if (!existsSync(from)) continue;
+              const to = join(dir, want);
+              if (existsSync(to)) return { ok: false, code: 'target-exists', error: `取回失败：${to} 已存在（不覆盖）` };
+              appendCardLedger({ ts: new Date().toISOString(), action: 'restore', cardId: want, from, to, by, phase: 'begin' });
+              renameSync(from, to);
+              appendCardLedger({ ts: new Date().toISOString(), action: 'restore', cardId: want, from, to, by, phase: 'done' });
+              return { ok: true, restore: want, to, note: '已取回卡池（role_list 重新可见）；台账 begin/done 已记。' };
+            }
+            return { ok: false, code: 'not-found', error: `在 .retired\\ 里找不到「${want}」（先用 list:true 看一眼）` };
+          }
+          // ③ retire：退役
+          const wanted = typeof a.cardId === 'string' ? a.cardId.trim() : '';
+          if (wanted === '') return { ok: false, code: 'bad-args', error: 'role_card_retire 需要 cardId（或 list:true / restore:"<文件名>"）' };
+          const reason = typeof a.reason === 'string' ? a.reason.trim() : '';
+          if (reason === '') return { ok: false, code: 'bad-args', error: '退役必须给 reason（留痕；Memory §十一 硬约束 5）' };
+          const found = selectCard(discoverCards(dirs), wanted);
+          if (!found.ok) return { ok: false, code: 'card-not-found', error: found.error, ids: found.ids };
+          const card = found.card;
+          const src = card.sourcePath;
+          const dir = dirname(src);
+          const file = basename(src);
+          const to = join(retiredDirOf(dir), file);
+          if (existsSync(to)) return { ok: false, code: 'already-retired', error: `已退役过：${to}（要取回用 restore:"${file}"）` };
+          let liveMembers = 0;
+          try {
+            for (const m of readMemberMap()) if (String(m.cardId) === String(card.id)) liveMembers += 1;
+          } catch { liveMembers = 0; }
+          // 台账写不进去 ⇒ 抛（**不吞**，与归属表的 fail-open 刻意相反）：改了卡却没留痕＝审计缺口。
+          appendCardLedger({ ts: new Date().toISOString(), action: 'retire', cardId: card.id, path: src, reason, by, liveMembers, phase: 'begin' });
+          mkdirSync(retiredDirOf(dir), { recursive: true });
+          renameSync(src, to);
+          const trashCmd = `node scripts/evolve-log.mjs trash "${to}" --reason "${reason.replace(/"/g, "'")}"`;
+          appendCardLedger({ ts: new Date().toISOString(), action: 'retire', cardId: card.id, path: src, to, reason, by, liveMembers, trashCmd, phase: 'done' });
+          return {
+            ok: true,
+            cardId: card.id,
+            from: src,
+            to,
+            restore: `role_card_retire restore:"${file}"`,
+            trashCmd,
+            liveMembers,
+            note: '已移出卡池（role_list / role_spawn 不再可见）；本机随时可 restore。要进全局回收站 TRASH 请跑 trashCmd（别用 rm）。',
+          };
+        } catch (error) {
+          return { ok: false, error: `role_card_retire 失败：${describeError(error)}` };
+        }
+      },
+    },
+
     roleSpawn: {
       name: 'role_spawn',
       description: '用角色卡起一个 durable 成员子代理。给 role=<卡 id>；或给 persona（正文=系统提示词）+ name 内联建卡（save=true 才落盘，scope=workspace|private）。可选 tools/model 覆盖卡（tools={allow:[],deny:[]}，名字必须是调用者当前可下发的工具，否则直接报错）。task 是首条任务消息。成员的 persona/工具面/模型都按卡落地；成员只能被本工具起的顶层会话看到。',
@@ -2069,7 +2180,7 @@ function installScoped(agent, ctx, state) {
     }
 
     const roleTools = makeRoleTools({ ctx, state });
-    const definitions = [roleTools.roleList, roleTools.roleSpawn, roleTools.roleSend, roleTools.roleCardList, roleTools.roleCardRead, roleTools.roleCardWrite];
+    const definitions = [roleTools.roleList, roleTools.roleSpawn, roleTools.roleSend, roleTools.roleCardList, roleTools.roleCardRead, roleTools.roleCardWrite, roleTools.roleCardRetire];
     for (const definition of definitions) {
       if (!scoped.tools || typeof scoped.tools.register !== 'function') throw new Error('agent scope 没有 tools.register');
       keep(scoped.tools.register(definition));

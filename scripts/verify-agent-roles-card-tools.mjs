@@ -118,6 +118,26 @@ console.log('== 11) 不污染本机：真 DSH_HOME 的台账未被创建/改动 
 const realLedgerAfter = existsSync(REAL_LEDGER) ? readFileSync(REAL_LEDGER, 'utf8') : null;
 check('真台账与跑之前一致', realLedgerBefore === realLedgerAfter, realLedgerAfter === null ? '（真台账不存在，正确）' : '（内容有变化！）');
 
+console.log('== 12) role_card_retire 三态（退役 / 列出 / 取回）+ 反例 ==');
+const R0 = await tools.roleCardRetire.execute({}, exec);
+check('反例：空参 ⇒ bad-args', R0.ok === false && R0.code === 'bad-args', JSON.stringify(R0));
+const R1 = await tools.roleCardRetire.execute({ cardId: 't1' }, exec);
+check('反例：缺 reason ⇒ bad-args（留痕是前置门）', R1.ok === false && R1.code === 'bad-args', JSON.stringify(R1));
+const R2 = await tools.roleCardRetire.execute({ cardId: 't1', reason: 'e2e：一次性卡已过期' }, exec);
+check('退役 ok=true 且 liveMembers=1（面板归属读得到）', R2.ok === true && R2.liveMembers === 1, JSON.stringify(R2));
+check('卡已离开卡池原址（不物理存在）', !existsSync(CARD_PATH), CARD_PATH);
+check('落到卡目录下 .retired\\（不物理删）', existsSync(R2.to) && R2.to.includes('.retired'), R2.to);
+check('返回了 restore 指引与 TRASH 升级命令', String(R2.restore).includes('role_card_retire') && String(R2.trashCmd).includes('evolve-log.mjs trash'), JSON.stringify({ restore: R2.restore, trashCmd: R2.trashCmd }));
+const L2 = await tools.roleCardList.execute({}, exec);
+check('退役后 role_card_list 看不见它（卡池空）', L2.ok === true && L2.cards.length === 0, JSON.stringify(L2.cards));
+const L3 = await tools.roleCardRetire.execute({ list: true }, exec);
+check('list 能列出已退役那张', L3.ok === true && L3.retired.some((r) => r.file === R2.to.split(/[\\/]/).pop()), JSON.stringify(L3.retired));
+const retireLedger = ledgerLines().map((line) => JSON.parse(line)).filter((entry) => entry.action === 'retire');
+check('台账记 begin/done 两行且带 reason', retireLedger.length === 2 && retireLedger[0].phase === 'begin' && retireLedger[1].phase === 'done' && retireLedger[1].reason === 'e2e：一次性卡已过期', JSON.stringify(retireLedger.map((e) => e.phase)));
+const R3 = await tools.roleCardRetire.execute({ restore: R2.to.split(/[\\/]/).pop() }, exec);
+check('restore 取回 ok=true 且卡池重新可见', R3.ok === true && existsSync(CARD_PATH) && (await tools.roleCardList.execute({}, exec)).cards.length === 1, JSON.stringify(R3));
+check('取回也留痕（台账再 +2 行 restore）', ledgerLines().map((line) => JSON.parse(line)).filter((entry) => entry.action === 'restore').length === 2);
+
 console.log(`\nRESULT: ${pass} PASS / ${fail} FAIL`);
 rmSync(TMP, { recursive: true, force: true });
 console.log('临时环境已清理:', !existsSync(TMP));
