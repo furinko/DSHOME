@@ -1,7 +1,7 @@
 ---
 name: visual-verification
 description: 视觉/UI 类交付的验证法——先划"呈现面"，再读实测值（不猜 CSS），用渲染截图+放大镜+逐帧自看当验收；桩测试全绿也可能是错的。触发：视觉交付 / UI 不对 / 样式没生效 / CSS 不生效 / 浮层关不掉 / 面板能滚 / 布局错位 / 错位 / 对不齐 / 响应式 / 动画不对 / 逐帧 / 截图自检 / 真看渲染 / computed style / 呈现面 / 多显示器 / 缩放后。
-version: 1.0.0
+version: 1.0.1
 author: DSHOME
 license: internal
 metadata:
@@ -63,8 +63,8 @@ contract:
 **L1：** `mind/L1/Ritual.md` §四（自我修改硬流程：快照 / validate / **生效确认**）
 **L2 Skill：** `verify-integrity.md`（真加载 / 反例证伪 / 输入缺失即响亮失败——"桩不解析 CSS"是它的判例族）· `required-action-wiring.md`（"就绪判定"要用对方自报的信号，别用近似物）· `landing-audit.md`（定义 / 接线 / 数据三查）
 **工具：** `scripts/shot.mjs`（`--at` 定格 / `--frames` 多帧 / `--zoom` 放大镜；打印 PNG 绝对路径供 `read_image`）
-**L3：** `mind-private/L3/common/lessons/` 同族结晶（"同步文件 ≠ 运行态生效" · "结论必须自带验证链"）
+**L3：** 生效面同族教训（检索入口 `/api/mind/search`；⚠️ 2026-09-25 抽核：原按标题引用的「同步文件不等于运行态生效」在私有区**全域 0 落点**（含 TRASH）⇒ **已不再按标题引用**，避免引一个不存在的对象）
 
 ---
 
-_版本：1.0.0 | 2026-09-18 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：视觉类复发 ≥9 条 Learn 条目 + 仓库既有"桩不解析 CSS"判例；配套工具 `scripts/shot.mjs`（同日落地）补齐"一条命令看渲染"那半边。_
+_版本：1.0.1 | 2026-09-25 | **双区卫生 + 修死链**：L3 关联原引 `mind-private/L3/common/lessons/`（**该目录不存在**；`common\` 下实为主题 anima-imagegen / dshome-plugin-dev / user-rules / 方法论）⇒ 改「**按标题引用**（私有区不推送）」；**独立复核抽核当场抓出一处"换个形态的幽灵引用"** —— 同行的第二条标题"结论必须自带验证链"在 `mind-private` 全域（含 TRASH）**0 落点**、`mind\` 里也只有本行 ⇒ **删掉该标题**，不再引不存在的对象（其内容由同卡 64 行已列的 `verify-integrity.md` 承载）| 1.0.0 | 2026-09-18 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：视觉类复发 ≥9 条 Learn 条目 + 仓库既有"桩不解析 CSS"判例；配套工具 `scripts/shot.mjs`（同日落地）补齐"一条命令看渲染"那半边。_

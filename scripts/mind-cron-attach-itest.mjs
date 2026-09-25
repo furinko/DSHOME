@@ -58,6 +58,8 @@ function makeHome() {
       { id: 'itest-attach-g', cron: '0 0 * * *', prompt: 'attach-g', cwd: home, catchUp: false, enabled: true },
       { id: 'itest-attach-h', cron: '0 0 * * *', prompt: 'attach-h', cwd: home, catchUp: false, enabled: true },
       { id: 'itest-attach-i', cron: '0 0 * * *', prompt: 'attach-i', cwd: home, catchUp: false, enabled: true },
+      // J 用独立任务：断言的是 `run()` **自己写的** `lastRunAt`（2026-09-25 修的同族第二处）
+      { id: 'itest-runat', cron: '0 0 * * *', prompt: 'runat', cwd: home, catchUp: false, enabled: true },
     ],
   }, null, 2));
   return home;
@@ -242,6 +244,29 @@ const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance,
     .tasks.find((t) => t.id === 'itest-attach-h');
   check('H1 反例·reload 换对象后落账不许被静默吞掉（盘上必须读得到 lastAttach）',
     !!onDiskH?.lastAttach?.attached, JSON.stringify(onDiskH?.lastAttach || null));
+
+  // J 反例（**同族第二处 · 2026-09-25 修**）：与 H 同一病灶，但落在 `run()` **自己写的** `lastRunAt` 上——
+  //   `.then()` 回调跨 `await`（`executeTask` 建会话），期间 `reload()` 整表换新对象 ⇒ 旧写法写的是
+  //   **已不在表里的旧对象**、而 `saveCron(this.tasks)` 落的是**新表** ⇒ `lastRunAt` **静默丢失**
+  //   （无告警、无台账）。活读数（2026-09-25 00:00 self-clean 会话）：会话已建成、`lastAttach` 已写，
+  //   而 `lastRunAt` 仍停在 `2026-09-24T14:23:09.877Z` **未推进**。
+  //   🔴 与 H 的区别：本用例**不等**再 reload —— `trigger()` 后**立刻** `reload()`，此刻 `executeTask`
+  //   必然尚未 resolve ⇒ **确定性复现**（不靠 60s tick 与建会话耗时的竞争）。
+  //   判据＝reload 之后，**盘上**该任务的 `lastRunAt` 必须已被推进（且该任务确实跑过，排除假绿）。
+  cron.active.clear();
+  const beforeJ = st.created.length;
+  const taskJ = cron.tasks.find((t) => t.id === 'itest-runat');
+  taskJ.cwd = home;
+  cron.trigger(taskJ, 'itest');
+  cron.reload(); // 立刻整表换新 —— executeTask 尚未 resolve
+  await sleep(900);
+  const onDiskJ = JSON.parse(readFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), 'utf8'))
+    .tasks.find((t) => t.id === 'itest-runat');
+  check('J1 反例·`run()` 写的 lastRunAt 不许被 reload 静默吞掉（盘上必须已推进）',
+    typeof onDiskJ?.lastRunAt === 'string' && onDiskJ.lastRunAt.length > 0,
+    JSON.stringify({ lastRunAt: onDiskJ?.lastRunAt ?? null }));
+  check('J2 → 该任务确实被跑过（排除"没跑当然没时间戳"的假绿）',
+    st.created.length > beforeJ, `created ${beforeJ}→${st.created.length}`);
 
   // F 反例：registry 拿不到（预算已压到 2s）→ 必须记成**失败**，不许记成成功
   // （E 的会话没结束 ⇒ 闸还占着，同一任务会被 skip:already-running；测试里手动放闸）

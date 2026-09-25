@@ -1,7 +1,7 @@
 ---
 name: prompt-surface-audit
 description: 注入面体检——出厂提示词/系统提示词「每会话都带着」的那一面，怎么量、怎么核、怎么改：先钉真身（谁注入·注入什么·几次），再量化各段字符（**真跑装配器**，不读文档），再逐条核机制承诺是否接线，判据是"每行值不值得每个会话看到"，改高危区走快照+validate+版本门禁，验收要真跑+基线人工比对。触发：注入面 / 提示词优化 / 出厂提示词 / 系统提示词 / 每会话注入 / token 账本 / 瘦身 / 减注入 / R0 R1 / 上下文预算 / 宪法改动 / 重复冗余。
-version: 1.0.2
+version: 1.0.3
 author: DSHOME
 license: internal
 metadata:
@@ -91,9 +91,9 @@ contract:
 ## 五、关联索引
 
 **L0/L1（权威源）：** `mind/L0/SOUL.md` + `mind/L0/AGENTS.md`（R0 双件本体）· `mind/L1/HUB.md §三`（加载策略真源）· `mind/L1/Ritual.md §四`（高危改动：分档判据 + 事务四段式）· `mind/L1/changelog-L0.md`（L0 沿革归档）
-**L2 Skill：** `verify-integrity.md`（真加载 / 反例证伪 / 无输入即失败）· `factory-hygiene.md`（推送面卫生）· `evolution-checkup.md`（机制体检，私有区）· `landing-audit.md`（书面红线 vs 真门禁接线）
+**L2 Skill：** `verify-integrity.md`（真加载 / 反例证伪 / 无输入即失败）· `factory-hygiene.md`（推送面卫生）· `landing-audit.md`（书面红线 vs 真门禁接线）
 **工具：** `packages/dshome/lib/host/mind-inject.js`（R0 注入器 + marker）· `scripts/mind-prime.mjs` + `scripts/mind-prime-lib.mjs`（R1 装配器 / 纯函数库）· `scripts/mind-prime-rules-itest.mjs`（user-rules 排序与上限的反例表）· `scripts/mind-validate.mjs`（(c) payload 同步 / (d) 注入源检查）· `scripts/verify-l1-versions.mjs` · `scripts/search-regression.mjs`
 
 ---
 
-_版本：1.0.2 | 2026-09-24 | 订正 `label` 口径（推翻本卡旧结论「label 只能改段内容、不能改格式」）：新格式＝`<卡中文名>:<成员名>`（实测 `沉淀员:命名验证`）、旧格式 `role:<卡id>:<名>` 仍被兼容解析（跨进程恢复补闸靠它认人）；格式可演进的代价三条——① 新旧双格式都必须能解析 ② 新格式必须能唯一确定是哪张卡（左段唯一命中已知卡名，重名即不认）③ 需 append-only 归属表 `agent-roles-members.jsonl` 作第二来源兜底；取证入口＝`packages/dshome/lib/host/agent-roles.js` 的 `parseRoleLabel` / `recognizeMember` | 1.0.1 | 2026-09-24 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：由当日「出厂提示词注入面体检」实做蒸馏（R0 5125 + R1 5256 分节账本 · 三处引用失真 · 批次 `l0-polish`）；本卡只写"怎么量 / 怎么核 / 怎么验收"，注入源与门禁的真实位置一律指过去。_
+_版本：1.0.3 | 2026-09-25 | **清幽灵关联索引**：删 `evolution-checkup.md`（机制体检位；**全库含 TRASH 0 命中**——同批 `recall-tuning` / `concurrent-writers` 已清、本卡漏清）| 1.0.2 | 2026-09-24 | 订正 `label` 口径（推翻本卡旧结论「label 只能改段内容、不能改格式」）：新格式＝`<卡中文名>:<成员名>`（实测 `沉淀员:命名验证`）、旧格式 `role:<卡id>:<名>` 仍被兼容解析（跨进程恢复补闸靠它认人）；格式可演进的代价三条——① 新旧双格式都必须能解析 ② 新格式必须能唯一确定是哪张卡（左段唯一命中已知卡名，重名即不认）③ 需 append-only 归属表 `agent-roles-members.jsonl` 作第二来源兜底；取证入口＝`packages/dshome/lib/host/agent-roles.js` 的 `parseRoleLabel` / `recognizeMember` | 1.0.1 | 2026-09-24 | 新建——判据三条全过（跨项目可复用 / 有验证过的事实 / 以后还会遇到）：由当日「出厂提示词注入面体检」实做蒸馏（R0 5125 + R1 5256 分节账本 · 三处引用失真 · 批次 `l0-polish`）；本卡只写"怎么量 / 怎么核 / 怎么验收"，注入源与门禁的真实位置一律指过去。_

@@ -644,8 +644,22 @@ class DshCron {
         // 只在闸接上时才占闸（降级面不跟踪，免得 active 永久积累没人放闸）
         if (this.watching === true) this.active.set(String(r.sessionId), { id: task.id, since: Date.now() }); // 交棒给真实会话
         // 记录实际触发时间（供 missed 补跑判定）
-        task.lastRunAt = new Date().toISOString();
-        saveCron(this.tasks);
+        // 🔴 **按 id 认领活对象再写**（2026-09-25 修 · 与 `recordAttach` 09-24 修的是**同一病灶**）：
+        //    `task` 是 `run()` 的入参，而本回调**跨 `await`**（`executeTask` 建会话耗时秒级），
+        //    期间 `reload()`（每 60s）会 `this.tasks = loadCron()` **整表换新对象** ⇒ 直接写
+        //    `task.lastRunAt` 会落在**已不在表里的旧对象**上、而 `saveCron(this.tasks)` 落的却是新表
+        //    ⇒ **静默丢失**（无告警、无台账）。活读数（2026-09-25 00:00 self-clean）：会话已建成、
+        //    `lastAttach` 已写，而 `lastRunAt` 仍停在 `2026-09-24T14:23:09.877Z` **未推进**。
+        //    后果：`catchUpMissed()` 用 `job.nextRun(new Date(t.lastRunAt))` 判"错过没" ⇒ 读数是滞后旧值。
+        const stamp = new Date().toISOString();
+        const live = this.tasks.find((t) => t && t.id === task.id);
+        if (live) {
+          live.lastRunAt = stamp;
+          saveCron(this.tasks);
+        } else {
+          // 响亮（同 `recordAttach` 的口径）：账本自己"没写成"也必须留痕，不许静默。
+          console.warn('[dshome-cron]', task.id, '：lastRunAt **未能落账**——当前任务表里找不到同 id 任务（已被删除？）');
+        }
         // 一次性任务：跑完自动移除 + 停表
         if (task.once) {
           this.unschedule(task.id);

@@ -17,13 +17,18 @@
 //   · **本次改动新引入**的头/尾不一致（改前一致、改后不一致）⇒ ❌ 红（2026-09-24 收紧：原先只 warn，
 //     实测「头 1.3 / 尾 1.4」仍 PASS ⇒ 新改动引入的不一致会**静默通过**；历史遗留不误伤）
 // 只看**已暂存**的改动（pre-commit 里就是本次提交的内容）；新文件（HEAD 无同名）跳过。
+// ⚠️ 2026-09-25 补（独立复核指出）：**「跳过」不等于「验过」**——`changed.length === 0` 时原实现直接
+//   `exit 0` 打印"跳过"，于是「工作区改了 L1 却没 `git add`」的人跑它也会读成"全绿"（假绿）。
+//   现在：跳过分支会读 `git status`，工作区有 L1 改动就**响亮列出来**并给出真判据；另加 `--all`
+//   （`HEAD` ↔ **工作区**，含未跟踪）供"直接跑"用。**刻意不做成硬失败**：pre-commit 场景下
+//   "本次提交不含 L1"本就是正确跳过，硬失败会误伤与 L1 无关的提交。
 //
 // ── 反例（写不出反例＝没验过；`--selftest` 可执行）──────────────────────────
 //   ① 只改正文不动版本行 → 必须红 · ② 只动版本行 → 必须不红 · ③ 两处都改 → 不红
 //   ④ 内容未变 → 不红 · ⑤ 历史遗留的头尾不一致 → warn（不红）
 //   ⑧ 改前一致、改后不一致（本次引入）⇒ 必须红
 //
-// 用法：node scripts/verify-l1-versions.mjs [--selftest]
+// 用法：node scripts/verify-l1-versions.mjs [--selftest] [--all]
 // 退出码：0 = 通过；1 = 有断言失败（或 git 不可用——门禁跑不起来要响亮，见 verify-integrity）
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -130,22 +135,48 @@ function git(args) {
 
 function main() {
   if (process.argv.includes('--selftest')) selftest();
+  const allMode = process.argv.includes('--all');
   let changed;
   try {
-    changed = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '--', L1_DIR])
-      .split('\n').map((s) => s.trim()).filter((s) => s.endsWith('.md'));
+    if (allMode) {
+      // `--all`：`HEAD` ↔ **工作区**（含未跟踪）——"直接跑"要判的是磁盘现状，不是暂存区。
+      const tracked = git(['diff', '--name-only', '--diff-filter=ACMR', 'HEAD', '--', L1_DIR]);
+      const untracked = git(['ls-files', '--others', '--exclude-standard', '--', L1_DIR]);
+      changed = [...tracked.split('\n'), ...untracked.split('\n')]
+        .map((s) => s.trim()).filter((s) => s.endsWith('.md'));
+    } else {
+      changed = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '--', L1_DIR])
+        .split('\n').map((s) => s.trim()).filter((s) => s.endsWith('.md'));
+    }
   } catch (e) {
     // 🔴 门禁跑不起来要**响亮**（verify-integrity：输入缺失即失败）——静默跳过＝假绿。
-    console.error(`[verify-l1-versions] ❌ 无法读取暂存区（git 不可用？）：${e?.message ?? e}`);
+    console.error(`[verify-l1-versions] ❌ 无法读取改动面（git 不可用？）：${e?.message ?? e}`);
     process.exit(1);
   }
-  if (changed.length === 0) { console.log('[verify-l1-versions] 本次提交无 L1 改动 → 跳过'); process.exit(0); }
+  if (changed.length === 0) {
+    // 跳过 ≠ 验过（2026-09-25 补）：工作区有 L1 改动就**响亮列出来**，别让人把"跳过"读成"全绿"。
+    let dirty = [];
+    try { dirty = git(['status', '--porcelain', '--', L1_DIR]).split('\n').map((s) => s.trim()).filter(Boolean); }
+    catch { /* git 面已在上游响亮报错 */ }
+    if (dirty.length > 0) {
+      console.log(`[verify-l1-versions] ⚠️ 本次提交无 L1 改动（暂存区），但**工作区有 ${dirty.length} 项 L1 改动未被本门禁校验**：`);
+      for (const d of dirty.slice(0, 10)) console.log('   ' + d);
+      console.log('[verify-l1-versions] ⇒ 要校验工作区请跑 `node scripts/verify-l1-versions.mjs --all`（或先 `git add` 走提交口径）');
+    } else {
+      console.log('[verify-l1-versions] 本次提交无 L1 改动 → 跳过（工作区亦无 L1 改动）');
+    }
+    process.exit(0);
+  }
   let failed = 0; let warned = 0;
   for (const p of changed) {
     let oldText = null;
     try { oldText = git(['show', `HEAD:${p}`]); } catch { oldText = null; /* 新文件 */ }
     let newText = '';
-    try { newText = git(['show', `:${p}`]); } catch { console.error(`[verify-l1-versions] ❌ 读不到暂存内容：${p}`); failed += 1; continue; }
+    if (allMode) {
+      try { newText = readFileSync(join(repoRoot, p), 'utf8'); } catch { console.error(`[verify-l1-versions] ❌ 读不到工作区文件：${p}`); failed += 1; continue; }
+    } else {
+      try { newText = git(['show', `:${p}`]); } catch { console.error(`[verify-l1-versions] ❌ 读不到暂存内容：${p}`); failed += 1; continue; }
+    }
     const r = judgeL1VersionChange(oldText, newText);
     if (!r.ok) { failed += 1; console.error(`  ❌ ${p}：${r.reason}`); }
     else if (r.warn) { warned += 1; console.log(`  ⚠️  ${p}：${r.warn}（历史遗留，只提示）`); }
