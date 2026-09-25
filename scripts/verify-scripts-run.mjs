@@ -145,6 +145,16 @@ function runOne(rel) {
   if (/[-_]itest\.mjs$/.test(rel) && r.status !== 0) {
     return { rel, status: 'fail', detail: `itest 退出码 ${r.status}（断言失败＝测试没通过，不算"无崩溃"）` };
   }
+  // 2026-09-26 加（待办 89 **方案①**，主人「你决定吧」）：**`verify-*.mjs` 退出码即判据**。
+  //   旧判据（只认崩溃特征）下真 FAIL 会被印 ✅ —— 实测 `verify-payload` 的 payload 漂移即一例。
+  //   本类脚本**没有 usage 模式**（无参就是全量自检）⇒ 非 0 即失败，不该按"通过"计。
+  //   ⚠️ 已知边界（**可熄灭**，不是恒亮灯）：`verify-payload` 在"payload 陈旧"时非 0 —— 跑一次
+  //   `node scripts/stage-payload.mjs` 即绿；且 `pre-commit` 第 ⑦ 项本就以它为准（口径一致）。
+  //   反例（怎么变红）：`printf 'process.exit(1)' > scripts/verify-probe.mjs` 后
+  //   `--file scripts/verify-probe.mjs` ⇒ 必须 ❌ + exit 1；删掉探针 ⇒ 复绿。
+  if (/^scripts\/verify-[^/]*\.mjs$/.test(rel) && r.status !== 0) {
+    return { rel, status: 'fail', detail: `verify-* 退出码 ${r.status}（本类无 usage 模式：非 0 即失败；若是 payload 漂移请先跑 stage-payload）` };
+  }
   return { rel, status: 'ok', code: r.status };
 }
 
