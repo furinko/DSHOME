@@ -28,6 +28,14 @@ writeFileSync(CARD_PATH, CARD0, 'utf8');
 
 const realLedgerBefore = existsSync(REAL_LEDGER) ? readFileSync(REAL_LEDGER, 'utf8') : null;
 
+// 成员归属表夹具：**字段名照抄真机写侧**（`rememberMember` 写的是 childId/cardId/label/**at**）。
+// 2026-09-25 补齐此面的原因：读侧曾把 `at` 读成 `ts` ⇒ 成员归属的**时间静默为空**（不报错、不告警），
+// 而当时的用例只覆盖卡面（list/read/write/台账），**成员面零断言** ⇒ 22 PASS 全绿也照不出它。
+const MEMBER_MAP = join(HOME, 'profiles', 'dshome', '.dsh-market', 'agent-roles-members.jsonl');
+const REAL_MEMBER_MAP = 'E:\\DSHOME\\profiles\\dshome\\.dsh-market\\agent-roles-members.jsonl';
+mkdirSync(join(HOME, 'profiles', 'dshome', '.dsh-market'), { recursive: true });
+writeFileSync(MEMBER_MAP, `${JSON.stringify({ childId: 'child-1', cardId: 't1', label: '端到端测试卡:甲', at: '2026-09-25T12:00:00.000Z' })}\n`, 'utf8');
+
 const mod = await import('file:///E:/DSHOME/packages/dshome/lib/host/agent-roles.js');
 const state = { home: HOME, nameIndex: new Map(), pendingGuards: new Map(), childGuards: new Map(), childOwnScope: new Map(), memberCards: new Map(), memberCardsLoaded: false };
 const tools = mod.makeRoleTools({ ctx: {}, state });
@@ -40,6 +48,8 @@ check('ok=true', listed.ok === true, JSON.stringify(listed));
 check('1 张卡', Array.isArray(listed.cards) && listed.cards.length === 1, JSON.stringify(listed.cards));
 check('id=t1 且 hash 16 位', listed.cards[0].id === 't1' && String(listed.cards[0].hash).length === 16, JSON.stringify(listed.cards[0]));
 check('version 读到 1.0.0', listed.cards[0].version === '1.0.0', listed.cards[0].version);
+check('成员归属面：1 条且 childId/cardId 正确', Array.isArray(listed.members) && listed.members.length === 1 && listed.members[0].childId === 'child-1' && listed.members[0].cardId === 't1', JSON.stringify(listed.members));
+check('成员归属面：时间字段 `at` 真读到（读成 `ts` ⇒ 空串 ⇒ 本断言必红）', listed.members[0] && listed.members[0].at === '2026-09-25T12:00:00.000Z', JSON.stringify(listed.members[0]));
 
 console.log('== 2) role_card_read ==');
 const read1 = await tools.roleCardRead.execute({ cardId: 't1' }, exec);
@@ -90,7 +100,17 @@ check('code=ledger-unwritable', w7.ok === false && w7.code === 'ledger-unwritabl
 check('卡文件未被改动（拒绝得彻底）', readFileSync(CARD_PATH, 'utf8') === before4);
 rmSync(LEDGER, { recursive: true, force: true });
 
-console.log('== 10) 不污染本机：真 DSH_HOME 的台账未被创建/改动 ==');
+console.log('== 10) 归属表夹具口径 vs 真机写侧（防「夹具照抄读侧」自证） ==');
+if (existsSync(REAL_MEMBER_MAP)) {
+  const realFirst = readFileSync(REAL_MEMBER_MAP, 'utf8').split('\n').filter(Boolean)[0];
+  let realKeys = [];
+  try { realKeys = Object.keys(JSON.parse(realFirst)); } catch { realKeys = []; }
+  check('真机归属表用 `at`（夹具的来源是它，不是读侧代码）', realKeys.includes('at') && realKeys.includes('childId'), JSON.stringify(realKeys));
+} else {
+  console.log('  NOTE  真机归属表不存在（本机从未起过成员）⇒ 跳过口径对照，不算失败');
+}
+
+console.log('== 11) 不污染本机：真 DSH_HOME 的台账未被创建/改动 ==');
 const realLedgerAfter = existsSync(REAL_LEDGER) ? readFileSync(REAL_LEDGER, 'utf8') : null;
 check('真台账与跑之前一致', realLedgerBefore === realLedgerAfter, realLedgerAfter === null ? '（真台账不存在，正确）' : '（内容有变化！）');
 

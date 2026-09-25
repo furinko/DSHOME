@@ -1125,7 +1125,7 @@ const CARD_LIST_SCHEMA = {
     error: { type: 'string' },
     code: { type: 'string' },
     cards: { type: 'array', items: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' }, name: { type: 'string' }, source: { type: 'string' }, path: { type: 'string' }, hash: { type: 'string' }, version: { type: 'string' }, bodyChars: { type: 'number' } } } },
-    members: { type: 'array', items: { type: 'object', additionalProperties: true, required: ['childId'], properties: { childId: { type: 'string' }, cardId: { type: 'string' } } } },
+    members: { type: 'array', items: { type: 'object', additionalProperties: true, required: ['childId'], properties: { childId: { type: 'string' }, cardId: { type: 'string' }, at: { type: 'string' } } } },
     dirs: { type: 'object', additionalProperties: true },
   },
 };
@@ -1314,7 +1314,10 @@ export function bumpCardVersion(text) {
   return { text: source, changed: false, from: '', to: '' };
 }
 
-/** 读成员归属表（append-only JSONL）→ [{childId, cardId}]。读不到就返回空表（不抛）。 */
+/** 读成员归属表（append-only JSONL）→ [{childId, cardId, at}]。读不到就返回空表（不抛）。
+ *  ⚠️ 时间字段是 **`at`**（写侧 `rememberMember` 就这么写）——2026-09-25 曾误读成 `ts`，
+ *  结果 `role_card_list` 的成员归属**每次都静默返回空时间**（字段名对不上 ⇒ `?? ''` 兜成空串，
+ *  不报错、不告警）。**字段名照抄写侧，不做转译**：转译就是这种静默假数据的温床。 */
 function readMemberMap() {
   const out = [];
   try {
@@ -1323,7 +1326,7 @@ function readMemberMap() {
       if (!line.trim()) continue;
       try {
         const obj = JSON.parse(line);
-        if (obj && obj.childId) out.push({ childId: String(obj.childId), cardId: String(obj.cardId ?? ''), ts: String(obj.ts ?? '') });
+        if (obj && obj.childId) out.push({ childId: String(obj.childId), cardId: String(obj.cardId ?? ''), at: String(obj.at ?? '') });
       } catch { /* 单行坏了不拖垮整表 */ }
     }
   } catch { /* 表不存在 = 还没起过成员 */ }
