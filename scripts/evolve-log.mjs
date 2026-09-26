@@ -274,6 +274,9 @@ const READ_ONLY_CMDS = new Set(['health', 'metrics', 'pending-invalid']);
 const isReadOnlyRun = READ_ONLY_CMDS.has(cmd)
   || (cmd === 'rollback' && (rest[0] === '--list' || rest[0] === '-l'))
   || (cmd === 'trash' && (rest[0] === '--list' || rest[0] === '-l'))
+  // 2026-09-26 加：`snap-prune` 不带 `--apply` 是**预览**，不许有写盘副作用——否则"干跑"会在
+  //   SNAP/LOG 缺失时把库建出来（独立复核实测指出：这条令 `--apply` 才是唯一写入口）。
+  || (cmd === 'snap-prune' && !rest.includes('--apply'))
   || cmd === undefined;
 if (!isReadOnlyRun) ensureStore();
 
@@ -863,7 +866,96 @@ if (cmd === 'snapshot') {
     }
     console.log(`[evolve-log] 已移入 TRASH ${ok}/${paths.length} 项 · 理由：${reason}`);
   }
+} else if (cmd === 'snap-prune') {
+  // ── 快照时间窗裁剪（2026-09-26 建）────────────────────────────────────────
+  // `Memory §十一` 范围表早就写死口径：「`tasks\evolution\snapshots\` 可按**时间窗**裁剪（默认**保留最近
+  // 2 个自然日**，超出即移 `TRASH\`），且裁剪动作本身要留痕」。但**全仓没有实现**（本条注释就是那次补账）：
+  // 规则成文、机器件为零 ⇒ 活快照区只涨不清（实测 43 件 / 3 MB），旧快照最后整批堆进 TRASH。
+  // 本分支把那条口径落成动作：默认 dry-run，`--apply` 才真移；移动一律走 TRASH + 索引 + changelog（同 `trash`）。
+  const snapApply = rest.includes('--apply');
+  const ki = rest.indexOf('--keep-days');
+  const keepDays = ki >= 0 ? Number(rest[ki + 1]) : 2;
+  const ri2 = rest.indexOf('--reason');
+  const snapReason = (ri2 >= 0 ? rest[ri2 + 1] : '') || `快照时间窗裁剪（保留最近 ${keepDays} 个自然日，Memory §十一）`;
+  // 2026-09-26 独立复核后收紧：① 必须有下限（`--keep-days 0` 会把**当天刚建的**快照也判超窗 ⇒ 清空整个区）；
+  //   ② 非法值不许静默降级（`abc`/无值/负数 ⇒ 响亮失败）。
+  if (!Number.isInteger(keepDays) || keepDays < 1) {
+    console.error(`[evolve-log] ❌ --keep-days 要给 ≥1 的整数（收到 ${JSON.stringify(rest[ki + 1] ?? '(无值)')}）——0 会清空整个快照区，拒绝执行`);
+    process.exit(1);
+  }
+  // ③ "自然日"＝**本地日**：快照名里的时间戳是 `toISOString()` 后把 `:` 换成 `-` 的形态
+  //   （`2026-09-26T10-43-25_…`，**不是**合法 ISO——直接 `new Date(...)` 会得到 NaN），
+  //   历史口径不能改（改了找不到老快照），故这里**把时分秒的 `-` 还原成 `:`** 再解析成本地日。
+  const parseNameStamp = (s) => new Date(`${String(s).slice(0, 10)}T${String(s).slice(11, 19).replace(/-/g, ':')}Z`);
+  const localDay = (s) => { const d = parseNameStamp(s); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const localToday = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  if (/NaN/.test(localDay('2026-01-02T03-04-05_x'))) { console.error('[evolve-log] ❌ 时间窗解析失败（内部错误：快照名时间戳解析成 NaN）——拒绝在解析不了的时候动快照'); process.exit(1); }
+  let snapFiles = [];
+  try { snapFiles = readdirSync(SNAP).filter((f) => /^\d{4}-\d{2}-\d{2}T/.test(f)).sort(); } catch { snapFiles = []; }
+  // ── 两种裁剪模式（2026-09-26 加第二种）──────────────────────────────────────
+  //   `--keep-days N`（默认 2）＝按**时间窗**：留最近 N 个本地自然日。
+  //   `--keep-per-file N`     ＝按**回滚链**：同一目标文件（`pathTag` 相同）只留最近 N 版。
+  //     为什么要有它：快照的价值＝"兜住的那一版内容"，而**回滚点是有链的**——同一文件一天里改 16 次
+  //     就有 16 版（实测 `L1\Learn.md`），时间窗对它几乎无效（当天全在窗内），而"留最近 N 版"才精确。
+  //     它**不会杀掉某文件唯一的回滚点**：只有链长 > N 的才裁，且链尾（最新）恒保。
+  const kpi = rest.indexOf('--keep-per-file');
+  const keepPerFile = kpi >= 0 ? Number(rest[kpi + 1]) : null;
+  if (keepPerFile !== null && (!Number.isInteger(keepPerFile) || keepPerFile < 1)) {
+    console.error(`[evolve-log] ❌ --keep-per-file 要给 ≥1 的整数（收到 ${JSON.stringify(rest[kpi + 1] ?? '(无值)')}）`);
+    process.exit(1);
+  }
+  if (keepPerFile !== null && (ki >= 0)) {
+    console.error('[evolve-log] ❌ --keep-days 与 --keep-per-file 二选一（口径不同，混用无意义）');
+    process.exit(1);
+  }
+  let stale;
+  let modeDesc;
+  if (keepPerFile !== null) {
+    const chains = new Map();
+    for (const f of snapFiles) {
+      const m = /^\d{4}-\d{2}-\d{2}T[\d-]+_([0-9a-f]{8})_/.exec(f);
+      const key = m ? m[1] : '(无tag)';
+      if (!chains.has(key)) chains.set(key, []);
+      chains.get(key).push(f);
+    }
+    stale = [];
+    for (const [, list] of chains) {
+      // 链内按名字（= 时间戳前缀）升序 ⇒ 尾部最新；只裁"超出最近 N 版"的那些
+      const sorted = [...list].sort();
+      if (sorted.length > keepPerFile) stale.push(...sorted.slice(0, sorted.length - keepPerFile));
+    }
+    stale.sort();
+    modeDesc = `每个目标文件保留最近 ${keepPerFile} 版（回滚链口径：${chains.size} 条链 / ${snapFiles.length} 版）`;
+  } else {
+    // 文件 → 它所属的**本地日**（名字里是 UTC，换算成本地日再比窗口；见上面 ③ 的说明）
+    const dayOf = new Map(snapFiles.map((f) => [f, localDay(f.slice(0, 19))]));
+    const snapDays = [...new Set(snapFiles.map((f) => dayOf.get(f)))].sort().reverse();
+    const keepSet = new Set(snapDays.slice(0, keepDays));
+    stale = snapFiles.filter((f) => !keepSet.has(dayOf.get(f)));
+    modeDesc = `保留最近 ${keepDays} 个自然日（本地日 ${localToday}） = ${[...keepSet].join(', ') || '(无)'}`;
+  }
+  if (!snapFiles.length) { console.log(`[evolve-log] snapshots/ 为空或不存在（${SNAP}）——无裁剪对象。`); process.exit(0); }
+  console.log(`[evolve-log] ${snapApply ? '🔴 APPLY' : '🧪 DRY-RUN（不加 --apply 不动）'} snap-prune · ${modeDesc}`);
+  console.log(`  快照 ${snapFiles.length} 个；超出${keepPerFile !== null ? '保留版数' : '时间窗'} ${stale.length} 个${stale.length ? '：' : '（无）'}`);
+  for (const f of stale.slice(0, 20)) console.log(`    · ${f}`);
+  if (stale.length > 20) console.log(`    … 其余 ${stale.length - 20} 个`);
+  if (!snapApply || !stale.length) process.exit(0);
+  mkdirSync(TRASH, { recursive: true });
+  let snapMoved = 0;
+  for (const f of stale) {
+    const abs = join(SNAP, f);
+    const at = ts();
+    const dst = join(TRASH, `${at}__${pathTag(abs)}__${f}`);
+    if (existsSync(dst)) { console.error(`[evolve-log] ❌ 回收站已存在同名，拒绝覆盖：${dst}`); process.exitCode = 1; continue; }
+    let size = 0;
+    try { size = statSync(abs).size; } catch { /* 取不到就记 0 */ }
+    movePath(abs, dst);
+    appendTrashIndex(at, relOf(abs), humanSize(size), snapReason);
+    appendFileSync(LOG, `| ${at.slice(0, 10)} | ↳裁剪:${f} | ${snapReason} | 移入 TRASH（不删只移） | — |\n`);
+    snapMoved++;
+  }
+  console.log(`[evolve-log] 🗑 snap-prune 已移入 TRASH ${snapMoved}/${stale.length} 个 · 理由：${snapReason}`);
 } else {
-  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid | lesson-scan | batch <名> <file...> | batch-status [<名>] | entry-log <file> <anchor> "<why>" | entry-mark <id|last> | entry-list | entry-rollback <id|last> [--dry-run] [--force] | trash <path...> --reason "<为什么>" | trash --list | trash --restore <名>');
+  console.error('用法: snapshot <path> | rollback <path> [<快照时间戳前缀>] | rollback --list <path> | log "<[信号]|对象|why|what>" | effect <对象> auto | effect auto | effect "<对象>|<观察>|<verdict>" | decide <对象> <留观|回滚|改进化> "<理由>" | bump <信号> | metrics | health | pending-invalid | lesson-scan | batch <名> <file...> | batch-status [<名>] | entry-log <file> <anchor> "<why>" | entry-mark <id|last> | entry-list | entry-rollback <id|last> [--dry-run] [--force] | trash <path...> --reason "<为什么>" | trash --list | trash --restore <名> | snap-prune [--apply] [--keep-days N]');
   process.exit(1);
 }

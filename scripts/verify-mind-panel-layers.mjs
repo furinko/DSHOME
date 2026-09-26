@@ -57,7 +57,6 @@ function idsBetween(text, startToken, endToken, quote) {
 console.log('[verify-mind-panel-layers] 面板层带登记一致性');
 const backendSrc = fs.readFileSync(backendPath, 'utf8');
 const clientSrc = fs.readFileSync(clientPath, 'utf8');
-
 const backendIds = idsBetween(backendSrc, 'const LAYER_MAP', 'function layerOf', "'");
 const clientIds = idsBetween(clientSrc, 'var LAYER_ORDER', 'var CANVAS_W', '"');
 
@@ -77,6 +76,44 @@ if (typeof backendIds?.includes === 'function') {
   assert('后端登记了「角色卡」层 AG（2026-09-23 加的 L2/agents 档）', backendIds.includes('AG'), '包含 AG', backendIds);
   assert('客户端同步登记了「角色卡」层 AG', Array.isArray(clientIds) && clientIds.includes('AG'), '包含 AG', clientIds);
 }
+
+// ── 样式注入纪律（2026-09-26 加）──────────────────────────────────────────────
+// 病史：主人报「隐藏快照按钮 / 短语按钮 / 插队条**经常**丢渲染」，根因形态之一是**样式注入只认内存
+// flag**：`var styleInjected=false; if (styleInjected) return; styleInjected=true;`。客户端热更新后
+// 模块状态会重置、而 `<style>` 节点可能已不在 DOM —— flag 说"注入过"、DOM 里其实没有 ⇒ 元素以裸样式
+// 渲染（看着就是"丢渲染"）。规定：一律**以 DOM 为真源**（`querySelector('style[data-…]')` 不存在才注入）。
+// 反例（**应当变红**）：在任一 `packages/*/lib/client.js` 里写回 `if (styleInjected) return;` ⇒ 这里 FAIL。
+const clientFiles = [];
+for (const dir of fs.readdirSync(path.join(repoRoot, 'packages'), { withFileTypes: true })) {
+  if (!dir.isDirectory()) continue;
+  const p = path.join(repoRoot, 'packages', dir.name, 'lib', 'client.js');
+  if (fs.existsSync(p)) clientFiles.push(p);
+}
+assert('扫到了客户端插件文件（找不到＝输入缺失，响亮失败，不许静默绿）', clientFiles.length >= 5, '>= 5 个 client.js', clientFiles.length);
+const srcOf = new Map(clientFiles.map((p) => [p, fs.readFileSync(p, 'utf8')]));
+const flagOnly = clientFiles.filter((p) => /if \(styleInjected\) return;/.test(srcOf.get(p)));
+assert('没有插件再用「只认 flag」的样式注入（须以 DOM 为真源）', flagOnly.length === 0, '[]', flagOnly.map((p) => path.relative(repoRoot, p)));
+// **2026-09-26 追加（真因第二层）**：`ensureStyle()` 只在 apply 那一刻跑一次 ⇒ 之后 `<style>` 节点若被
+// 删除/整批替换（上游重挂界面 / 安全模式 / 别的插件清 head），**没人再补** ⇒ 元素退回裸样式，**外观与
+// 布局一起掉**（刷新才恢复）。故：凡注入样式的插件，必须同时挂**常驻守卫**（head 观察者 + 缺了就补），
+// 且守卫的选择器要认得出它自己的样式节点标记。反例（应当变红）：删掉任一 `guardStyle`、或改掉它的选择器。
+const injectors = clientFiles.filter((p) => /function ensureStyles?0?\(\)/.test(srcOf.get(p)));
+assert('至少 5 个插件在注入样式（否则下面那条守卫断言空转）', injectors.length >= 5, '>= 5 个注入者', injectors.map((p) => path.relative(repoRoot, p)));
+const noGuard = injectors.filter((p) => !/function guardStyle\(\)/.test(srcOf.get(p)));
+assert('每个注入样式的插件都挂了常驻守卫 guardStyle（缺了＝`<style>`被删后无人补）', noGuard.length === 0, '[]', noGuard.map((p) => path.relative(repoRoot, p)));
+const badSel = [];
+for (const p of injectors) {
+  const t = srcOf.get(p);
+  if (!/function guardStyle\(\)/.test(t)) continue;
+  const sel = /var sel = "([^"]+)"/.exec(t);
+  if (!sel) { badSel.push(path.relative(repoRoot, p) + ': 守卫里没有 sel'); continue; }
+  const idM = /^#(.+)$/.exec(sel[1]);
+  const hit = idM
+    ? t.includes(`.id = "${idM[1]}"`) || t.includes(`.id = '${idM[1]}'`) || t.includes(`"${idM[1]}"`)
+    : (() => { const a = /style\[([^=\]]+)=/.exec(sel[1]); return a ? t.includes(`setAttribute("${a[1]}"`) || t.includes(`setAttribute('${a[1]}'`) : false; })();
+  if (!hit) badSel.push(path.relative(repoRoot, p) + ': 选择器认不出自己的标记 ' + sel[1]);
+}
+assert('守卫选择器与插件自己的样式标记对得上（认不出＝白挂）', badSel.length === 0, '[]', badSel);
 
 console.log(failures.length === 0 ? `PASS ${pass}/${pass}` : `FAIL ${failures.length}/${pass + failures.length} assertion(s)`);
 process.exit(failures.length === 0 ? 0 : 1);
