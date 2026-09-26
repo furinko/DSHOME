@@ -303,8 +303,11 @@ if (!anyCompaction) {
   console.log('   做法：重启 DSHOME 后在目标会话执行 /compact（或聊到超窗自动压缩），再定向跑本工具。');
   if (strictSingle) failed += 1;
 } else if (!anyMarkerEvidence) {
-  console.log('⚠ 有压缩记录，但**没有任何** inject#repair 标记 ⇒ 若该会话发生在重启之前，属正常（旧进程还是 v3.0 代码）；');
-  console.log('  重启后新产生的「压缩 → 补注入」才会带标记，届时本工具给出权威判据。');
+  console.log('⚠ 有压缩记录，但**没有任何** inject#repair 标记——这有**两种正常情形**，都不代表修复失效：');
+  console.log('  ① 该会话的压缩发生在进程重启之前（走的是旧代码路径，见上面 ❌ 的行）；');
+  console.log('  ② 本进程从未注入过 R0/R1 ⇒ 重启/resume 后**首次**补注入一律无标记（`ever` 是**进程级**状态，见复核 N1）。');
+  console.log('  标记只在「同一进程内先注入过 → 再被压缩 → 补注入」时出现；无标记时以上面 ✅ 的 post-compaction（非同段首注）判据为准。');
+  console.log('  注：`inject#repair` 是**注入消息的块头**（文本层），不是 marker 文件的行——marker 只记 `inject: len=…`。');
 }
 if (anyHeuristic) {
   console.log('⚠ 有注入项是按**文本块头**兜底认定的（无 source 字段）⇒ 读数可能虚高，请人工核对。');
