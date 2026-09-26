@@ -7,7 +7,7 @@
 //   工具面按卡收窄（`request.toolFilter` → `childCtx.tools.restrict`），模型按卡路由（`request.agentOptions`）。
 //
 // 与官方范式的同构点（照抄结构、不照抄内容）：
-//   · 六把工具（成员线 role_list/role_spawn/role_send + **卡线 role_card_list/role_card_read/role_card_write**）注册进「顶层 agent 的精确 scope」而不是宿主平面全局 —— `dsh-experimental-tool-agent-team/lib/index.js:225-548`
+//   · 八把工具（成员线 role_list/role_spawn/role_send + **卡线 role_card_list/read/write/retire/rename**）注册进「顶层 agent 的精确 scope」而不是宿主平面全局 —— `dsh-experimental-tool-agent-team/lib/index.js:225-548`
 //     （全局注册会让子代理也看得见、`restrict` 又管不到；`dsh-tools/lib/index.js:2781,2854-2880`）。
 //   · 管控者协议不是 pre-step 塞消息，而是同一 scoped install 里的 `systemPrompt.section`（官方 `:238-245`）。
 //   · `exec.agent` 是唯一正确的 parent（`dsh-tools/lib/types/index.d.ts:208`；官方 `dsh-tool-subagent/lib/index.js:490-492`
@@ -30,7 +30,7 @@
 // legacyRoleLabel / parseRoleLabel / normalizeTools / normalizeModel。fs 只出现在 discoverCards /
 // saveCardAtomic / writeMarker 里，测试传临时目录即可。
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,10 +78,13 @@ export const DEFAULT_PROVIDER = 'spawn';
 export const MEMBER_MAX_DEPTH = 1;
 /** 固定级联闸：成员不得再起成员/跑编排（先按调用者可见性过滤后再进 filter，见 buildToolFilter）。 */
 export const CASCADE_DENY = ['subagent', 'subagent_fork', 'workflow', 'ralph'];
-/** 本插件自己的**六把**工具（成员线 3 + 卡线 3）：只在顶层 own-scope，属于「子成员不可解析」的名字（绝不能进 filter）。
- *  卡线三把（2026-09-25 加，主人放行）：`role_card_list` / `role_card_read` / `role_card_write` —— 把"自动调优卡片"
- *  从"只能拿通用写工具改文件"补成**受控闭环**（乐观锁 + 原子写 + 卡改动台账 + 只动 version 那一行）。 */
-export const ROLE_TOOL_NAMES = ['role_list', 'role_spawn', 'role_send', 'role_card_list', 'role_card_read', 'role_card_write', 'role_card_retire'];
+/** 本插件自己的**八把**工具（成员线 3 + 卡线 5）：只在顶层 own-scope，属于「子成员不可解析」的名字（绝不能进 filter）。
+ *  卡线先三把（2026-09-25 加，主人放行）：`role_card_list` / `role_card_read` / `role_card_write` —— 把"自动调优卡片"
+ *  从"只能拿通用写工具改文件"补成**受控闭环**（乐观锁 + 原子写 + 卡改动台账 + 只动 version 那一行）；
+ *  同批后续加 `role_card_retire`（退役卡：移出卡池、可 restore、有留痕）与 `role_card_rename`
+ *  （**给卡改 id**：内联建卡折算出的 `inline-<hex>` 靠它改成可读 id —— 只重写 frontmatter 的 `id:` 那一行 + 文件名，
+ *  同样带乐观锁/台账/原子写）。 */
+export const ROLE_TOOL_NAMES = ['role_list', 'role_spawn', 'role_send', 'role_card_list', 'role_card_read', 'role_card_write', 'role_card_retire', 'role_card_rename'];
 /** `restrict()` 明确拒收的保留名（PTC 传输层，`dsh-tools/lib/index.js:2800`）。 */
 const RESERVED_TOOL_NAMES = ['run_code'];
 
@@ -825,7 +828,7 @@ export function composePersona(card) {
   return body === '' ? PERSONA_TAIL : `${body}\n\n${PERSONA_TAIL}`;
 }
 
-/** 管控者协议文本（顶层会话可见；与六把工具一一对应）。 */
+/** 管控者协议文本（顶层会话可见；与八把工具一一对应）。 */
 export function renderPolicyText() {
   return [
     '【角色卡管控者协议（dshome/agent-roles）】',
@@ -836,6 +839,7 @@ export function renderPolicyText() {
     '· role_card_list：列出卡的 hash / version / 路径 / 工具面 + 成员归属（childId→cardId）。',
     '· role_card_read：按 id 读整卡原文（调优的第一步）。',
     '· role_card_write：受控写回（cardId + content + **reason 必填**；可选 expectHash 乐观锁、bumpVersion 默认 true）——先记卡改动台账再落盘，台账写不进去就拒绝改动。',
+    '· role_card_rename：给卡**改 id**（连带磁盘文件名）：cardId（或卡中文名）+ newId + **reason 必填**；可选 expectHash 乐观锁。**只重写 frontmatter 的 `id:` 那一行**（不重建整卡 ⇒ version/contract/metadata/paths 等字段原样保留），新路径原子写 + 删旧路径 + 台账 begin/done。⚠️ **成员归属表 `agent-roles-members.jsonl` 是 append-only 历史、本工具不追改**：老成员仍指向旧 id 属**预期**，别把它的历史行当错误。',
     '规则：',
     '1. **派活前先定线**：任何委派（含一次性临时活）都先 role_list 看有没有匹配岗位卡 —— 有就走 role_spawn（带卡的工具面 + 执行期闸 + 可给写范围）；**岗位对不上卡**才退到官方 `subagent`（⚠️ 裸线无工具面闸，"只读/别写"全靠 prompt 撑着）。同 id 时项目卡优先，别凭印象猜卡里有什么。',
     '1·补：`subagent_fork`（继承本对话上下文的 fork）是卡线**没有**的能力 —— 只在"要独立复核我自己"时用它。',
@@ -843,7 +847,7 @@ export function renderPolicyText() {
     '1·补3：**入口优先级**：派活默认走本协议的角色卡线；官方 `subagent` 的工具说明只描述**那把工具本身**，不构成"该用哪条线"的指引——两条指引并列时，以本协议为准（2026-09-24：独立审查实测顶层系统提示里两套说明并列且互不引用，正是"顺手走官方线"的结构性原因）。',
     '2. 成员工具面 = 卡声明（allow/deny）+ 固定级联闸（subagent/subagent_fork/workflow/ralph **一律禁**）——⚠️ 闸在**调用期**拒绝、**不裁清单**：`subagent` 由官方按每个 agent 自己的 scope 注册，`restrict` 裁不掉 ⇒ 成员工具表里**仍列着它**，列着≠能用（调用即报「角色能力面未放行」，2026-09-24 实测）。卡里写了子成员不可解析的工具名会**直接报错**，不会静默放宽。',
     '3. 成员完成后用一条消息回报；你负责验收并给最终答复。成员不得自建成员、不得改分工。',
-    '4. 卡正文即成员系统提示词：改卡只影响之后起的成员，已起的成员不受影响。**改卡走 `role_card_read` → `role_card_write`**（带 `reason`，自动进卡改动台账）——不要用通用写工具直接改卡文件：那样没有乐观锁、没有原子写、也没有留痕。',
+    '4. 卡正文即成员系统提示词：改卡只影响之后起的成员，已起的成员不受影响。**改卡走 `role_card_read` → `role_card_write`**（带 `reason`，自动进卡改动台账）、**改 id（含卡文件名）走 `role_card_rename`**（同样带 `reason`、同样进台账）——不要用通用写工具直接改卡文件：那样没有乐观锁、没有原子写、也没有留痕。',
     '5. 同一把工具不能同时写进 allow 与 deny —— 那是自相矛盾的声明，role_spawn 会直接报错（不会静默按 deny 处理）。',
     '6. 派**可写成员**（工程师这类）时尽量给 `write_scope`（路径白名单，目录前缀或具体文件）：给了它，成员的 `write`/`edit` 落到范围外会**当场被拒**；不给＝`unbounded`（只留痕、不拦，返回值会如实标注）。⚠️ `pwsh` **不受路径闸约束**（命令级"是不是写"解析不可靠）——所以卡里的行为契约仍然算数，别把"没被拦"当成"没风险"。',
     '7. 起成员后看返回值：`guardInstalled` 必须是 true；`ownScopeTools` 非空 ⇒ 这名成员手里有 **`restrict` 裁不掉的自注册工具**（真机实测：`subagent` 就是这一类）——**它仍在执行期闸的枪口下**（`buildToolGuard` 默认装上并拒调用，实测成员会话 `c779743f` 调用即报「角色能力面未放行」）；真正已在闸下被拒的那些由返回值 `ownScopeBlocked` 单列，别把"列在表里"读成"能用"。插件另写 marker 留痕。',
@@ -1191,6 +1195,29 @@ const CARD_WRITE_SCHEMA = {
   },
 };
 
+/** role_card_rename 的输出形状（改 id：新/旧路径 + 前后 hash + 旧文件是否真删掉）。 */
+const CARD_RENAME_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+  required: ['ok'],
+  properties: {
+    ok: { type: 'boolean' },
+    error: { type: 'string' },
+    code: { type: 'string' },
+    cardId: { type: 'string' },
+    newId: { type: 'string' },
+    oldPath: { type: 'string' },
+    path: { type: 'string' },
+    beforeHash: { type: 'string' },
+    afterHash: { type: 'string' },
+    currentHash: { type: 'string' },
+    reason: { type: 'string' },
+    oldRemoved: { type: 'boolean' },
+    ids: { type: 'array', items: { type: 'string' } },
+    warning: { type: 'string' },
+  },
+};
+
 const ROLE_SPAWN_SCHEMA = {
   type: 'object',
   additionalProperties: true,
@@ -1242,7 +1269,7 @@ function renderJson(_args, value) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 三把工具（注册进顶层 agent 的精确 scope）
+// 八把工具（注册进顶层 agent 的精确 scope）
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** exec.agent 是唯一正确的调用者身份（exec.parent 是 token，不能当 parent）。 */
@@ -1332,6 +1359,43 @@ export function bumpCardVersion(text) {
     return { text: lines.join('\n'), changed: true, from: m[2], to };
   }
   return { text: source, changed: false, from: '', to: '' };
+}
+
+/**
+ * 就地重写 frontmatter 的 `id:` 行（`role_card_rename` 的"外科手术刀"）。
+ *
+ * 为什么只动这一行、不做整卡 re-serialize：同 `bumpCardVersion` —— `serializeCard` 只认
+ * id/name/description/model/tools/persona，整卡重建会**静默丢掉** `version` / `contract` / `metadata` /
+ * `paths` / 其余 extra（本仓血债：一份 157 行文档被写成 25 字节）。
+ *
+ * 定位口径**照抄解析器**：`parseFrontmatter` 只把**顶层**（无缩进）的 `id:` 收进 `fm.id`
+ * ⇒ 这里也只认顶层行（缩进的行属于某个子键的 map，改了它等于改错行）；同一文件里出现多行时
+ * **最后一行赢**（解析器就是后写覆盖）⇒ 从后往前找，保证改的就是解析器真正读到的那个 id。
+ * 值两端的引号风格（`id: "x"` / `id: 'x'`）原样保留；`id :`（冒号前有空格）也认。
+ * @returns `{ text, changed, from }`；找不到顶层 id 行 ⇒ `changed:false`（调用方响亮失败，绝不猜、绝不重建）
+ */
+export function renameCardIdLine(text, newId) {
+  const source = String(text ?? '');
+  const target = String(newId ?? '');
+  const lines = source.split('\n');
+  let first = -1;
+  for (let i = 0; i < lines.length; i += 1) { if (lines[i].trim() !== '') { first = i; break; } }
+  if (first < 0 || lines[first].trim() !== '---') return { text: source, changed: false, from: '' };
+  let close = -1;
+  for (let i = first + 1; i < lines.length; i += 1) { if (lines[i].trim() === '---') { close = i; break; } }
+  if (close < 0) return { text: source, changed: false, from: '' };
+  for (let i = close - 1; i > first; i -= 1) {
+    const m = /^id\s*:\s*(.*?)\s*$/.exec(lines[i]);
+    if (!m) continue;
+    const raw = m[1];
+    const quoted = raw.length >= 2
+      && ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")));
+    const quote = quoted ? raw[0] : '';
+    const from = stripQuotes(raw);
+    lines[i] = `id: ${quote}${target}${quote}`;
+    return { text: lines.join('\n'), changed: true, from };
+  }
+  return { text: source, changed: false, from: '' };
 }
 
 /** 读成员归属表（append-only JSONL）→ [{childId, cardId, at}]。读不到就返回空表（不抛）。
@@ -1446,7 +1510,7 @@ async function resolveMember(ctx, state, agent, target) {
 }
 
 /**
- * 造三把工具的定义（raw register 形态；不用 defineTool）。
+ * 造八把工具的定义（raw register 形态；不用 defineTool）。
  * @param {{ctx:object, state:object}} deps
  */
 export function makeRoleTools({ ctx, state }) {
@@ -1728,6 +1792,124 @@ export function makeRoleTools({ ctx, state }) {
           };
         } catch (error) {
           return { ok: false, error: `role_card_retire 失败：${describeError(error)}` };
+        }
+      },
+    },
+
+    roleCardRename: {
+      name: 'role_card_rename',
+      description: '给角色卡**改 id**（连带磁盘文件名；内联建卡折算出的 `inline-<hex>` 就是靠它改成可读 id）：cardId（卡 id 或卡中文名）+ newId + reason 三者必填；可选 expectHash 乐观锁（口径同 role_card_write：不符 ⇒ stale-card 且**一个文件都不动**）。newId 须匹配 ^[A-Za-z0-9][A-Za-z0-9._-]*$、不得与现存任何卡的 id 相同（私密目录 + 项目 .agent-roles **一起看**）、不得等于原 id。落盘顺序：**先写卡改动台账 begin**（写不进 ⇒ ledger-unwritable，不改任何文件）→ 新路径**原子写** → **删旧路径**（删不掉 ⇒ 返回值带 warning 且在台账 done 行标注，不静默）→ 台账 done。改法是**外科手术式**：只重写 frontmatter 的 `id:` 那一行，其余字段（version/contract/metadata/paths…）一个字节都不动，**绝不整卡重建**。⚠️ **成员归属表 `agent-roles-members.jsonl` 是 append-only 历史、本工具不追改**：老成员仍指向旧 id 属**预期**（重启后按 childId→旧 id 认人读不到卡 ⇒ 只装无条件级联闸；要它按新卡装闸，用 role_send 唤醒让它重认，或之后用新 id 重起成员）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          cardId: { type: 'string', description: '目标卡 id 或卡中文名' },
+          newId: { type: 'string', description: '新卡 id（= 磁盘文件名；只允许 [A-Za-z0-9._-] 且以字母数字开头，不能含 ":"）' },
+          reason: { type: 'string', description: '为什么改 id（必填；进卡改动台账）' },
+          expectHash: { type: 'string', description: '可选乐观锁：当前卡的 hash（取自 role_card_read / role_card_list）' },
+        },
+        required: ['cardId', 'newId', 'reason'],
+      },
+      output: { schema: CARD_RENAME_SCHEMA, render: renderJson },
+      async execute(args, exec) {
+        const agent = callerOf(exec);
+        if (!agent) return { ok: false, error: 'role_card_rename 需要调用者 agent（exec.agent 为空）' };
+        try {
+          const a = args && typeof args === 'object' ? args : {};
+          const cardIdArg = typeof a.cardId === 'string' ? a.cardId.trim() : '';
+          const newId = typeof a.newId === 'string' ? a.newId.trim() : '';
+          const reason = typeof a.reason === 'string' ? a.reason.trim() : '';
+          if (cardIdArg === '' || newId === '' || reason === '') {
+            return { ok: false, code: 'bad-args', error: 'role_card_rename 需要 cardId + newId + reason（三者都必须是非空字符串）' };
+          }
+          const dirs = cardDirs(state, agentCwd(agent));
+          const discovery = discoverCards(dirs);
+          const found = selectCard(discovery, cardIdArg);
+          if (!found.ok) return { ok: false, code: 'card-not-found', error: found.error, ids: found.ids };
+          const card = found.card;
+          const oldPath = card.sourcePath;
+          const beforeText = readFileSync(oldPath, 'utf8');
+          const beforeHash = cardTextHash(beforeText);
+          // ① newId 的合法性 / 冲突：全部在**碰盘之前**判完（任一不过 ⇒ 一个文件都不动）
+          if (!CARD_ID_RE.test(newId)) {
+            return { ok: false, code: 'bad-id', error: `newId 不合法：${JSON.stringify(newId)}（只允许 [A-Za-z0-9._-]、须以字母数字开头，且不能含 ":"——label 用 ":" 分段）`, currentHash: beforeHash };
+          }
+          if (newId === card.id) {
+            return { ok: false, code: 'bad-id', error: `newId 与原 id 相同（${card.id}）——没有可改的东西`, currentHash: beforeHash };
+          }
+          const clash = discovery.cards.filter((item) => item.id === newId);
+          if (clash.length > 0) {
+            return { ok: false, code: 'bad-id', error: `newId ${JSON.stringify(newId)} 与现存角色卡 id 冲突：${clash.map((item) => item.sourcePath).join('、')}（卡池里 id 必须唯一——私密目录与项目 .agent-roles 一起看）`, currentHash: beforeHash };
+          }
+          const newPath = join(dirname(oldPath), `${newId}.md`);
+          // 目标路径已被占用也要挡（**含 Windows 大小写不敏感**：`t1` → `T1` 是同一个文件 ⇒ 先写后删＝把新写的删掉；
+          //   同时挡住"恰好同名的坏卡文件被静默覆盖"）。这条不是规格要求的，是"宁可拒绝、不许静默毁文件"的兜底。
+          if (newPath !== oldPath && existsSync(newPath)) {
+            return { ok: false, code: 'bad-id', error: `目标路径已被占用：${newPath}（不覆盖——换个 newId，或先处理那个文件）`, currentHash: beforeHash };
+          }
+          // ② 乐观锁（与 role_card_write 同口径）
+          const expectHash = typeof a.expectHash === 'string' ? a.expectHash.trim() : '';
+          if (expectHash !== '' && expectHash !== beforeHash) {
+            return { ok: false, code: 'stale-card', error: `卡已被改动（expectHash=${expectHash}，当前=${beforeHash}）—— 重新 read 再改`, currentHash: beforeHash };
+          }
+          // ③ 外科手术：只重写 frontmatter 的 id: 那一行
+          const edited = renameCardIdLine(beforeText, newId);
+          if (!edited.changed) {
+            return { ok: false, code: 'invalid-card', error: '这张卡的 frontmatter 里找不到顶层 `id:` 行，无法外科手术式改名（本工具不整卡重建）', currentHash: beforeHash };
+          }
+          const afterText = edited.text;
+          const parsed = parseCard(afterText, newPath);
+          if (!parsed.ok) return { ok: false, code: 'invalid-card', error: `改 id 后的卡不可解析：${parsed.reason}`, currentHash: beforeHash };
+          if (parsed.card.id !== newId) {
+            return { ok: false, code: 'invalid-card', error: `改 id 后解析出的 id 是 ${parsed.card.id}（期望 ${newId}）——已拒绝改动`, currentHash: beforeHash };
+          }
+          const afterHash = cardTextHash(afterText);
+          const base = {
+            ts: new Date().toISOString(),
+            action: 'rename',
+            cardId: card.id,
+            newId,
+            oldPath,
+            path: newPath,
+            beforeHash,
+            afterHash,
+            reason,
+            by: String(agent.id || ''),
+          };
+          // ④ 台账 begin（写不进去 ⇒ 拒绝改动；**不吞异常**，与归属表的 fail-open 刻意相反）
+          try { appendCardLedger({ ...base, phase: 'begin' }); }
+          catch (error) {
+            return { ok: false, code: 'ledger-unwritable', error: `卡改动台账写不进去，已拒绝改动：${describeError(error)}`, currentHash: beforeHash };
+          }
+          // ⑤ 新路径原子写
+          saveCardAtomic(newPath, afterText);
+          // ⑥ 删旧路径——这才是"改名"。删不掉 ⇒ 响亮告警（返回值 + 台账 done 行双处标注），绝不静默
+          let warning = '';
+          let oldRemoved = true;
+          try { rmSync(oldPath); }
+          catch (error) {
+            oldRemoved = false;
+            warning = `新路径已写好（${newPath}），但旧路径删不掉：${describeError(error)}——卡池里会同时出现 "${newId}" 与 "${card.id}" 两个 id，请手工删掉旧文件`;
+          }
+          // ⑦ 台账 done
+          try { appendCardLedger({ ...base, phase: 'done', oldRemoved, warning }); }
+          catch (error) {
+            if (warning === '') warning = `卡已改名，但台账 done 行写失败：${describeError(error)}`;
+          }
+          return {
+            ok: true,
+            cardId: card.id,
+            newId,
+            oldPath,
+            path: newPath,
+            beforeHash,
+            afterHash,
+            currentHash: afterHash,
+            reason,
+            oldRemoved,
+            warning,
+          };
+        } catch (error) {
+          return { ok: false, error: `role_card_rename 失败：${describeError(error)}` };
         }
       },
     },
@@ -2160,7 +2342,7 @@ function applyChildGuard(ctx, state, child, filter, label, writePaths, cwd) {
 }
 
 /**
- * 给一个顶层 agent 的精确 scope 装：管控者协议段 + 三把工具。
+ * 给一个顶层 agent 的精确 scope 装：管控者协议段 + 八把工具。
  * 失败回滚并返回 null（fails-open）。
  */
 function installScoped(agent, ctx, state) {
@@ -2180,7 +2362,7 @@ function installScoped(agent, ctx, state) {
     }
 
     const roleTools = makeRoleTools({ ctx, state });
-    const definitions = [roleTools.roleList, roleTools.roleSpawn, roleTools.roleSend, roleTools.roleCardList, roleTools.roleCardRead, roleTools.roleCardWrite, roleTools.roleCardRetire];
+    const definitions = [roleTools.roleList, roleTools.roleSpawn, roleTools.roleSend, roleTools.roleCardList, roleTools.roleCardRead, roleTools.roleCardWrite, roleTools.roleCardRetire, roleTools.roleCardRename];
     for (const definition of definitions) {
       if (!scoped.tools || typeof scoped.tools.register !== 'function') throw new Error('agent scope 没有 tools.register');
       keep(scoped.tools.register(definition));
@@ -2206,7 +2388,7 @@ function installScoped(agent, ctx, state) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 宿主插件主体：每个**顶层** agent（`delegationDepth ?? 0 === 0`）装一次三把工具 + 协议段；
+ * 宿主插件主体：每个**顶层** agent（`delegationDepth ?? 0 === 0`）装一次八把工具 + 协议段；
  * `agent/created` 增量装、`agent/disposed` 卸。子代理 agent 不装（否则子成员也能起成员、且 global 注册 restrict 管不到）。
  */
 export function apply(ctx) {

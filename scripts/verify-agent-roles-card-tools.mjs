@@ -1,4 +1,4 @@
-// e2e: role_card_list / role_card_read / role_card_write —— 正例 + 反例 + 不污染
+// e2e: role_card_list / role_card_read / role_card_write / role_card_retire / role_card_rename —— 正例 + 反例 + 不污染
 // 用法: node scripts/verify-agent-roles-card-tools.mjs
 // 可移植：路径全部从本文件位置反推（`scripts/` → 仓库根），**不写盘符**——本机带盘符的路径
 //   既会进推送面（按口径「机器痕迹 0 命中」），换到另一台机器（如公司那台）还会**直接跑不了**。
@@ -137,6 +137,85 @@ check('台账记 begin/done 两行且带 reason', retireLedger.length === 2 && r
 const R3 = await tools.roleCardRetire.execute({ restore: R2.to.split(/[\\/]/).pop() }, exec);
 check('restore 取回 ok=true 且卡池重新可见', R3.ok === true && existsSync(CARD_PATH) && (await tools.roleCardList.execute({}, exec)).cards.length === 1, JSON.stringify(R3));
 check('取回也留痕（台账再 +2 行 restore）', ledgerLines().map((line) => JSON.parse(line)).filter((entry) => entry.action === 'restore').length === 2);
+
+console.log('== 13) role_card_rename：改 id 正例 + 反例（每条反例都断言「盘上没动」） ==');
+// 观测面：新旧卡路径 + 冲突夹具 + 卡改动台账。**台账也算"盘"**——反例连一行台账都不许写。
+const CARD2_PATH = join(CARD_DIR, 't2.md');
+const PRIV_DIR = join(HOME, 'mind-private', 'L2', 'agents');
+const PRIV_PATH = join(PRIV_DIR, 'p1.md');
+const RENAMED_PATH = join(CARD_DIR, 't1-renamed.md');
+const FRESH_PATH = join(CARD_DIR, 'fresh.md');
+const WATCH = [CARD_PATH, RENAMED_PATH, FRESH_PATH, CARD2_PATH, PRIV_PATH, LEDGER];
+const snap = () => JSON.stringify(WATCH.map((p) => [p, existsSync(p) ? readFileSync(p, 'utf8') : null]));
+
+const before13 = readFileSync(CARD_PATH, 'utf8');
+const memberMapBefore = readFileSync(MEMBER_MAP, 'utf8');
+const read13 = await tools.roleCardRead.execute({ cardId: 't1' }, exec);
+const N1 = await tools.roleCardRename.execute({ cardId: 't1', newId: 't1-renamed', reason: 'e2e：inline-hex 折成可读 id', expectHash: read13.hash }, exec);
+check('正例：ok=true', N1.ok === true, JSON.stringify(N1));
+check('正例：oldPath/path 指向新旧两处', N1.oldPath === CARD_PATH && N1.path === RENAMED_PATH, JSON.stringify({ old: N1.oldPath, path: N1.path }));
+check('正例：新路径存在、旧路径不存在（真改名，不是复制）', existsSync(RENAMED_PATH) && !existsSync(CARD_PATH), JSON.stringify({ newExists: existsSync(RENAMED_PATH), oldExists: existsSync(CARD_PATH) }));
+const renamedText = readFileSync(RENAMED_PATH, 'utf8');
+check('正例：frontmatter 的 id 已改成新 id', /^id: t1-renamed$/m.test(renamedText), renamedText.split('\n').slice(0, 8).join(' | '));
+// 「其它字段一字不丢」的强判据：**原文只换 id 那一行**，其余必须逐字节相等（整卡 re-serialize ⇒ 本断言必红）
+check('正例：其它字段一字不丢（=原文只动 id 那一行）', renamedText === before13.replace(/^id: t1$/m, 'id: t1-renamed'), 'only the id line differs');
+check('正例：version/tools/description 原样还在', renamedText.includes('version: 1.1.0') && renamedText.includes('    - read') && renamedText.includes('description: e2e') && renamedText.includes('新增一行'), renamedText.replace(/\n/g, '\\n'));
+check('正例：beforeHash=读卡时的 hash，afterHash=新盘上 hash，currentHash=afterHash', N1.beforeHash === read13.hash && N1.afterHash === mod.cardTextHash(renamedText) && N1.currentHash === N1.afterHash, JSON.stringify({ before: N1.beforeHash, after: N1.afterHash, current: N1.currentHash }));
+check('正例：oldRemoved=true 且无 warning（旧文件真删掉了）', N1.oldRemoved === true && N1.warning === '', JSON.stringify({ oldRemoved: N1.oldRemoved, warning: N1.warning }));
+const renLedger = ledgerLines().map((line) => JSON.parse(line)).filter((entry) => entry.action === 'rename');
+check('正例：台账 begin+done 两行', renLedger.length === 2 && renLedger[0].phase === 'begin' && renLedger[1].phase === 'done', JSON.stringify(renLedger.map((e) => e.phase)));
+check('正例：台账如实记新旧 id / 新旧路径 / reason / oldRemoved', renLedger[1].cardId === 't1' && renLedger[1].newId === 't1-renamed' && renLedger[1].oldPath === CARD_PATH && renLedger[1].path === RENAMED_PATH && renLedger[1].oldRemoved === true && renLedger[1].reason === 'e2e：inline-hex 折成可读 id', JSON.stringify(renLedger[1]));
+const list13 = await tools.roleCardList.execute({}, exec);
+check('正例：卡池现在只有新 id（旧 id 消失）', list13.ok === true && list13.cards.length === 1 && list13.cards[0].id === 't1-renamed', JSON.stringify(list13.cards.map((card) => card.id)));
+check('正例：成员归属表一个字没动（append-only 历史，本工具不追改）', readFileSync(MEMBER_MAP, 'utf8') === memberMapBefore, readFileSync(MEMBER_MAP, 'utf8'));
+check('正例：归属表仍指旧 id t1 —— 老成员指向旧 id 是**预期**，不是坏数据', JSON.parse(readFileSync(MEMBER_MAP, 'utf8').split('\n').filter(Boolean)[0]).cardId === 't1');
+
+// 冲突反例的夹具：项目卡 t2 + 私密卡 p1（两目录一起看 ⇒ 都要挡）
+writeFileSync(CARD2_PATH, ['---', 'id: t2', 'name: 二号卡', 'version: 1.0.0', '---', '', '正文二。', ''].join('\n'), 'utf8');
+mkdirSync(PRIV_DIR, { recursive: true });
+writeFileSync(PRIV_PATH, ['---', 'id: p1', 'name: 私密卡', '---', '', '正文私。', ''].join('\n'), 'utf8');
+const TARGET = 't1-renamed';
+const snapBefore = snap();
+
+const F1 = await tools.roleCardRename.execute({ cardId: TARGET, newId: 'bad:id', reason: '不该发生' }, exec);
+check('反例①：非法 id（含 ":"）⇒ code=bad-id', F1.ok === false && F1.code === 'bad-id', JSON.stringify(F1));
+check('反例①：盘上没动（含台账）', snap() === snapBefore);
+
+const F2 = await tools.roleCardRename.execute({ cardId: TARGET, newId: 't2', reason: '不该发生' }, exec);
+check('反例②：与项目目录现存卡 id 冲突 ⇒ code=bad-id', F2.ok === false && F2.code === 'bad-id' && String(F2.error).includes('t2'), JSON.stringify(F2));
+check('反例②：盘上没动', snap() === snapBefore);
+
+const F3 = await tools.roleCardRename.execute({ cardId: TARGET, newId: 'p1', reason: '不该发生' }, exec);
+check('反例③：与**私密目录**现存卡 id 冲突 ⇒ code=bad-id（两个目录一起看）', F3.ok === false && F3.code === 'bad-id', JSON.stringify(F3));
+check('反例③：盘上没动', snap() === snapBefore);
+
+const F4 = await tools.roleCardRename.execute({ cardId: TARGET, newId: TARGET, reason: '不该发生' }, exec);
+check('反例④：newId == 原 id ⇒ code=bad-id', F4.ok === false && F4.code === 'bad-id', JSON.stringify(F4));
+check('反例④：盘上没动', snap() === snapBefore);
+
+const F5 = await tools.roleCardRename.execute({ cardId: TARGET, newId: 'fresh' }, exec);
+check('反例⑤：缺 reason ⇒ code=bad-args', F5.ok === false && F5.code === 'bad-args', JSON.stringify(F5));
+const F5b = await tools.roleCardRename.execute({ cardId: TARGET, newId: 'fresh', reason: '   ' }, exec);
+check('反例⑤b：reason 只有空白 ⇒ code=bad-args', F5b.ok === false && F5b.code === 'bad-args', JSON.stringify(F5b));
+const F5c = await tools.roleCardRename.execute({ cardId: TARGET, reason: 'x' }, exec);
+check('反例⑤c：缺 newId ⇒ code=bad-args', F5c.ok === false && F5c.code === 'bad-args', JSON.stringify(F5c));
+check('反例⑤：盘上没动', snap() === snapBefore);
+
+const F6 = await tools.roleCardRename.execute({ cardId: TARGET, newId: 'fresh', reason: '不该发生', expectHash: 'deadbeefdeadbeef' }, exec);
+check('反例⑥：expectHash 过期 ⇒ code=stale-card', F6.ok === false && F6.code === 'stale-card', JSON.stringify(F6));
+check('反例⑥：盘上没动', snap() === snapBefore);
+
+const F7 = await tools.roleCardRename.execute({ cardId: 'ghost-card', newId: 'fresh', reason: 'x' }, exec);
+check('反例⑦：卡不存在 ⇒ code=card-not-found 且列出可用 ids', F7.ok === false && F7.code === 'card-not-found' && Array.isArray(F7.ids) && F7.ids.includes(TARGET), JSON.stringify(F7));
+check('反例⑦：盘上没动', snap() === snapBefore);
+
+// 反例⑧：台账是**前置门**——写不进去就一个文件都不许动（新路径也不许出现）
+rmSync(LEDGER, { force: true });
+mkdirSync(LEDGER, { recursive: true });           // 同名目录 ⇒ appendFileSync 必失败
+const F8 = await tools.roleCardRename.execute({ cardId: TARGET, newId: 'fresh', reason: '不该发生' }, exec);
+check('反例⑧：台账写不进 ⇒ code=ledger-unwritable', F8.ok === false && F8.code === 'ledger-unwritable', JSON.stringify(F8));
+check('反例⑧：新旧两个路径都在原位（一个文件都没动）', existsSync(RENAMED_PATH) && !existsSync(CARD_PATH) && !existsSync(FRESH_PATH), JSON.stringify({ renamed: existsSync(RENAMED_PATH), old: existsSync(CARD_PATH), fresh: existsSync(FRESH_PATH) }));
+rmSync(LEDGER, { recursive: true, force: true });
 
 console.log(`\nRESULT: ${pass} PASS / ${fail} FAIL`);
 rmSync(TMP, { recursive: true, force: true });

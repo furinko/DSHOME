@@ -477,8 +477,8 @@ async function main() {
   }
   assert('start spec carries persona', spec.request.persona.includes('你是写手。'), 'persona contains card body', spec.request.persona.slice(0, 30));
 
-  // ── ⑥ 挂载面 + 六把工具真跑（临时 DSH_HOME / mock host） ───────────────────
-  console.log('[6] apply — 顶层 scope 安装 + 六把工具真跑（mock host）');
+  // ── ⑥ 挂载面 + 八把工具真跑（临时 DSH_HOME / mock host） ───────────────────
+  console.log('[6] apply — 顶层 scope 安装 + 八把工具真跑（mock host）');
   process.env.DSH_HOME = TMP_HOME;
   const host = makeHost();
   // 归属表**预置**一行（模拟「上个进程写的记录，本进程重启后读回」）：child-55 只在这一行里，label 是自由文本
@@ -492,11 +492,12 @@ async function main() {
   // 2026-09-25：卡生命周期三工具（role_card_list/read/write）落地，注册面由三把扩到六把，
   // 本行原先写死的「三把」字面量成了恒红断言（verify-agent-roles 实测 248/249）。
   // 2026-09-26：再加 `role_card_retire`（退役卡）⇒ 六把扩到**七把**，同步本行与下方 policy 断言标签。
-  eq('exactly seven tools registered', host.record.registered.map((definition) => definition.name), ['role_list', 'role_spawn', 'role_send', 'role_card_list', 'role_card_read', 'role_card_write', 'role_card_retire']);
+  // 本轮：再加 `role_card_rename`（给卡改 id）⇒ 七把扩到**八把**，同样同步本行与 policy 断言标签。
+  eq('exactly eight tools registered', host.record.registered.map((definition) => definition.name), ['role_list', 'role_spawn', 'role_send', 'role_card_list', 'role_card_read', 'role_card_write', 'role_card_retire', 'role_card_rename']);
   eq('one policy section registered', host.record.sections.map((section) => section.name), ['agent-roles:policy']);
   eq('policy section order name', host.record.sectionOrderName, 'TEAM_POLICY');
   eq('policy section sits at TEAM_POLICY order', host.record.sections[0] && host.record.sections[0].order, 600);
-  assert('policy text names all seven role tools', ROLE_TOOL_NAMES.every((toolName) => host.record.sections[0].text().includes(toolName)), 'policy text mentions role_list/role_spawn/role_send/role_card_*', host.record.sections[0].text().slice(0, 120));
+  assert('policy text names all eight role tools', ROLE_TOOL_NAMES.every((toolName) => host.record.sections[0].text().includes(toolName)), 'policy text mentions role_list/role_spawn/role_send/role_card_*', host.record.sections[0].text().slice(0, 120));
   assert('child agent (depth 1) got no install', host.record.childInstalled !== true, 'child register never called', host.record.childInstalled === true);
   assert('no install-scope warning', host.record.warns.filter((message) => /作用域安装异常/.test(message)).length === 0, 'no 作用域安装异常 warn', host.record.warns);
   const markerPath = join(TMP_HOME, 'profiles', 'dshome', '.dsh-market', 'agent-roles-marker.txt');
