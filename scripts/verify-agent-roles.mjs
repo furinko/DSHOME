@@ -861,12 +861,53 @@ async function main() {
   assert('新格式 label 的成员按 name 寻址', sendNewFmt.ok === true && sendNewFmt.childId === 'child-9', 'child-9', sendNewFmt.ok ? sendNewFmt.childId : sendNewFmt.error);
   const sendByCardName = await defs.get('role_send').execute({ target: '工作区评审员', message: '按卡中文名寻址' }, exec);
   assert('按卡中文名寻址（新兜底）', sendByCardName.ok === true && sendByCardName.childId === 'child-9', 'child-9', sendByCardName.ok ? sendByCardName.childId : sendByCardName.error);
-  const sendByCardId = await defs.get('role_send').execute({ target: 'reviewer', message: '按卡 id 寻址' }, exec);
-  assert('按卡 id 寻址（旧 roleId 兜底的等价物）', sendByCardId.ok === true && sendByCardId.childId === 'child-9', 'child-9', sendByCardId.ok ? sendByCardId.childId : sendByCardId.error);
   host.record.children = [{ kind: 'child', id: 'child-9', activity: 'ready', hasChildren: false, mode: 'continuable', label: '同事:张三' }];
   const sendForeignName = await defs.get('role_send').execute({ target: '张三', message: '不该认出' }, exec);
   assert('反例：自由文本 label 的成员不进成员寻址', sendForeignName.ok === false, false, sendForeignName.ok ? sendForeignName.childId : sendForeignName.error);
+  const guardsAfterForeign = host.record.childGuards.length;
   host.record.children = null;
+
+  // ── ⑥''''''' role_send 按**卡 id** 寻址（2026-09-26 修「验证过的假」）─────────────────────────
+  // 背景（今天活进程实测）：`role_send(target=<卡 id>)` **不生效**，只认成员 name / childId / 卡中文名；
+  //   而工具 description 与旧套件都声称它认卡 id。旧断言之所以**绿**：夹具只放**一张**卡起的成员，
+  //   `listChildren` 回填的 label 左段（卡中文名）恰好等于 target 走了 name 兜底 ⇒ **夹具造成的假绿**。
+  // 修法：① 目标解析加「卡 id ⇒ 该卡起的成员」分支（归属表 childId→cardId）；② 命中**不唯一就响亮拒绝**
+  //   （同卡多成员不猜，错误里列候选成员名）；③ 唯一命中时返回值带 `viaCardId:true`。
+  // 本段夹具刻意放**两张不同卡**起的成员（reviewer 的 child-9 + noface 的 child-42）：
+  //   若"按卡 id"再退化回 label 兜底，两张卡的名字都不等于卡 id ⇒ 断言必红（防再次误绿）。
+  const policyText = renderPolicyText();
+  host.record.children = [
+    { kind: 'child', id: 'child-9', activity: 'ready', hasChildren: false, mode: 'continuable', label: '工作区评审员:bob2' },
+    { kind: 'child', id: 'child-42', activity: 'ready', hasChildren: false, mode: 'continuable', label: '未声明面探针:anon' },
+  ];
+  const sendByCardId = await defs.get('role_send').execute({ target: 'reviewer', message: '按卡 id 寻址' }, exec);
+  assert('卡 id 寻址（正例）：target=卡 id ⇒ 命中该卡起的唯一成员', sendByCardId.ok === true && sendByCardId.childId === 'child-9', 'child-9', sendByCardId.ok ? sendByCardId.childId : sendByCardId.error);
+  assert('卡 id 寻址（正例）：返回值注明「是按卡 id 解析到的」', sendByCardId.ok === true && sendByCardId.viaCardId === true, true, sendByCardId.ok ? sendByCardId.viaCardId : sendByCardId.error);
+  assertSchemaResult('role_send 卡 id 寻址返回值符合 schema', 'role_send', sendByCardId);
+  const sendByCardIdNoface = await defs.get('role_send').execute({ target: 'noface', message: '另一张卡也要认出' }, exec);
+  assert('卡 id 寻址（正例）：另一张卡的成员同样按卡 id 认出（不与 reviewer 串号）', sendByCardIdNoface.ok === true && sendByCardIdNoface.childId === 'child-42', 'child-42', sendByCardIdNoface.ok ? sendByCardIdNoface.childId : sendByCardIdNoface.error);
+  const sendGhostCard = await defs.get('role_send').execute({ target: 'ghost-card', message: '没有这张卡' }, exec);
+  assert('卡 id 寻址（反例）：不存在的卡 id ⇒ 拒绝（不落成员、不改投）', sendGhostCard.ok === false, false, sendGhostCard.ok ? sendGhostCard.childId : sendGhostCard.error);
+  assert('卡 id 寻址（反例）：拒绝文案给出可用成员（自带出路）', sendGhostCard.ok === false && /可用成员/.test(sendGhostCard.error || ''), '错误里列可用成员', sendGhostCard.error);
+  assert('卡 id 寻址（反例）：自由文本 label 的成员不因名字被加进成员寻址', host.record.childGuards.length === guardsAfterForeign, guardsAfterForeign, host.record.childGuards.length);
+  // 反例（响亮失败）：同一张卡起了**两个**成员 ⇒ 不猜、拒绝、列出候选成员名
+  host.record.children = [
+    { kind: 'child', id: 'child-9', activity: 'ready', hasChildren: false, mode: 'continuable', label: '工作区评审员:bob2' },
+    { kind: 'child', id: 'child-42', activity: 'ready', hasChildren: false, mode: 'continuable', label: '工作区评审员:eve2' },
+  ];
+  const sendAmbiguous = await defs.get('role_send').execute({ target: 'reviewer', message: '同卡两个成员' }, exec);
+  assert('卡 id 寻址（反例）：同卡多成员 ⇒ 响亮拒绝（不猜）', sendAmbiguous.ok === false, false, sendAmbiguous.ok ? sendAmbiguous.childId : sendAmbiguous.error);
+  assert('卡 id 寻址（反例）：错误里列出候选成员名（bob2 + eve2）', /bob2/.test(sendAmbiguous.error || '') && /eve2/.test(sendAmbiguous.error || '') && /多个/.test(sendAmbiguous.error || ''), '错误含「多个」+ 两个候选名', sendAmbiguous.error);
+  assert('卡 id 寻址（反例）：告诉调用者改用什么（name / childId）', /childId/.test(sendAmbiguous.error || ''), '错误里给 name / childId 出路', sendAmbiguous.error);
+  // 反例：歧义下**不改用猜**——用成员 name 仍能正常投递（证明是"不猜"而不是"不能发"）
+  const sendByNameWhileAmbiguous = await defs.get('role_send').execute({ target: 'bob2', message: '点名发' }, exec);
+  assert('卡 id 寻址（反例对照）：歧义时改按成员 name 仍可投递（是不猜、不是不能发）', sendByNameWhileAmbiguous.ok === true && sendByNameWhileAmbiguous.childId === 'child-9', 'child-9', sendByNameWhileAmbiguous.ok ? sendByNameWhileAmbiguous.childId : sendByNameWhileAmbiguous.error);
+  host.record.children = null;
+
+  // 协议规则 7·补：`role_send` 首次返回 `guardInstalled:false` 是**延迟补装的正常快照**（别按"没装闸"处置）
+  assert('协议规则 7·补：说明 role_send 首次 guardInstalled:false 是延迟补装快照', /延迟补装/.test(policyText) && /已挂起，等 agent\/created 补装/.test(policyText), '含「延迟补装」+ 那句 guardReason', policyText.includes('7·补'));
+  assert('协议规则 7·补：明确"不是失败"且补装早于消息投递', /不是失败/.test(policyText) && /早于消息投递/.test(policyText), '含「不是失败」+「早于消息投递」', /早于消息投递/.test(policyText));
+  assert('role_send 工具说明同口径：卡 id 唯一命中 + 延迟补装快照', /viaCardId/.test(defs.get('role_send').description) && /延迟补装/.test(defs.get('role_send').description), 'description 含 viaCardId + 延迟补装', defs.get('role_send').description.slice(0, 80));
 
   // ── ⑦ 纯函数：normalize / serialize ────────────────────────────────────────
   console.log('[7] normalizeTools / normalizeModel / serializeCard');

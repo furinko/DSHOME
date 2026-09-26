@@ -835,7 +835,7 @@ export function renderPolicyText() {
     '你可以把「角色卡」起成独立成员：每个成员有自己的系统提示词（卡正文）、自己的工具面（卡 frontmatter 的 tools）和自己的模型路由（卡 model）。',
     '· role_list：列出可用角色卡（私密目录 + 项目 .agent-roles；同 id 项目卡覆盖私密卡）与坏卡原因。',
     '· role_spawn：role=<卡 id> 起一个 durable 成员；或 persona+name 内联建卡（save=true 才落盘，scope=workspace|private）。可选 tools/model 覆盖卡，task 作为首条任务消息。⚠️ **内联建卡必须显式给 tools:{allow:[...]}**（缺 tools 或空 allow ⇒ 直接报错：空 allow 在运行时＝**不收窄**＝成员拿到你全量工具面，不是"什么都没给"）。返回值里的 `toolFace` 如实标注这一格：`restricted`＝卡声明了 allow、面被真收窄；`unrestricted`＝卡未声明工具面 ⇒ 成员拿到调用者全量面（配 `toolFaceNote` 一行中文说明）。',
-    '· role_send：给已起成员发消息（target=成员 name 或 childId）；成员在跑就 steer，空闲就唤醒。',
+    '· role_send：给已起成员发消息（target=成员 name 或 childId 或 **卡 id** 或卡中文名）；成员在跑就 steer，空闲就唤醒。⚠️ **卡 id 只认唯一命中**：同一张卡起了**多个**成员时**不猜** ⇒ 直接拒绝并在错误里列出候选成员名（该用成员 name / childId 指明发给谁）；唯一命中时返回值带 `viaCardId:true` 注明"是按卡 id 解析到的"。',
     '· role_card_list：列出卡的 hash / version / 路径 / 工具面 + 成员归属（childId→cardId）。',
     '· role_card_read：按 id 读整卡原文（调优的第一步）。',
     '· role_card_write：受控写回（cardId + content + **reason 必填**；可选 expectHash 乐观锁、bumpVersion 默认 true）——先记卡改动台账再落盘，台账写不进去就拒绝改动。',
@@ -851,6 +851,7 @@ export function renderPolicyText() {
     '5. 同一把工具不能同时写进 allow 与 deny —— 那是自相矛盾的声明，role_spawn 会直接报错（不会静默按 deny 处理）。',
     '6. 派**可写成员**（工程师这类）时尽量给 `write_scope`（路径白名单，目录前缀或具体文件）：给了它，成员的 `write`/`edit` 落到范围外会**当场被拒**；不给＝`unbounded`（只留痕、不拦，返回值会如实标注）。⚠️ `pwsh` **不受路径闸约束**（命令级"是不是写"解析不可靠）——所以卡里的行为契约仍然算数，别把"没被拦"当成"没风险"。',
     '7. 起成员后看返回值：`guardInstalled` 必须是 true；`ownScopeTools` 非空 ⇒ 这名成员手里有 **`restrict` 裁不掉的自注册工具**（真机实测：`subagent` 就是这一类）——**它仍在执行期闸的枪口下**（`buildToolGuard` 默认装上并拒调用，实测成员会话 `c779743f` 调用即报「角色能力面未放行」）；真正已在闸下被拒的那些由返回值 `ownScopeBlocked` 单列，别把"列在表里"读成"能用"。插件另写 marker 留痕。',
+    '7·补：`role_send` **首次**唤醒时可能返回 `guardInstalled:false` + `guardReason:"子 agent 尚未进注册表：已挂起，等 agent/created 补装"`——那是**延迟补装的正常快照**（成员此刻还没进注册表 ⇒ 闸先挂起，随后 `agent/created` **幂等**补装，且补装**早于消息投递**），**不是失败**，别按"没装闸"处置（不要为此重发、更不要以为成员在裸奔）。紧接着再发一次就会看到 `true` + "已装过（幂等跳过）"。',
     '8. **退役卡走 `role_card_retire`**（`cardId` + `reason` 必填）：移出卡池（`role_list` / `role_spawn` 从此看不见它），**不物理删、可 `restore`、卡改动台账留痕**；与全局回收站 `TRASH\\` 的分工见该工具说明（它会把 `evolve-log trash` 命令打印出来）。',
     '【管理层宪章（Lead 岗位）】',
     '你的岗位 = 判断（做什么 / 验收判据）+ 分工（派谁 / 工具面 / 写范围）+ 演绎（与用户对话、汇报）；生产性执行（写码 / 改文件 / 大范围检索 / 构建 / 写文档）优先派成员。',
@@ -1273,6 +1274,8 @@ const ROLE_SEND_SCHEMA = {
     guardInstalled: { type: 'boolean' },
     guardReason: { type: 'string' },
     members: { type: 'array', items: { type: 'string' } },
+    candidates: { type: 'array', items: { type: 'string' } },
+    viaCardId: { type: 'boolean' },
     ...TOOL_FACE_PROPS,
   },
 };
@@ -1523,7 +1526,10 @@ export function serializeCard({ id, name, description, persona, model, tools }) 
   return lines.join('\n');
 }
 
-/** 成员寻址：name（进程内索引 + listChildren 回填 label）/ childId / 卡 id / 卡中文名。 */
+/**
+ * 成员寻址：name（进程内索引 + listChildren 回填 label）/ childId / **卡 id（按归属表，唯一才认）** / 卡中文名。
+ * @returns `{ok:true,childId,name,label,members,via}` / `{ok:false,error,members,candidates}`
+ */
 async function resolveMember(ctx, state, agent, target) {
   const parentId = String(agent && agent.id ? agent.id : '');
   // 新格式 label 的左段要靠「已知卡的 name」才认得出（见 parseRoleLabel）⇒ 这里先发现一次本会话的卡。
@@ -1531,53 +1537,124 @@ async function resolveMember(ctx, state, agent, target) {
   let childId = '';
   let memberName = '';
   let label = '';
+  let via = '';
   for (const [key, value] of state.nameIndex) {
     const parsedKey = splitIndexKey(key);
-    if (parsedKey.parentId === parentId && parsedKey.name === target) { childId = value; memberName = parsedKey.name; break; }
+    if (parsedKey.parentId === parentId && parsedKey.name === target) { childId = value; memberName = parsedKey.name; via = 'name'; break; }
   }
 
   let entries = [];
   try {
     if (typeof ctx.subagents.listChildren === 'function') entries = await ctx.subagents.listChildren(parentId, undefined);
   } catch { entries = []; }
+  const live = Array.isArray(entries) ? entries : [];
 
   const members = [];
-  for (const entry of Array.isArray(entries) ? entries : []) {
+  const nameById = new Map();
+  // 卡 id 的命中候选：**归属表**（childId→cardId）与 **label 里的 cardId**（旧格式 `role:<cardId>:<name>`
+  //   天然带卡 id；新格式只有左段是卡 id 的 label 会等于卡 id）。两条都要**先收集、后定夺**——
+  //   不能像旧代码那样在循环里 direct 提交 childId：那会让"第一个撞上的 label"赢，从而**绕过唯一性判据**
+  //   （本仓血债：套件里"按卡 id 寻址"曾是靠 label 兜底命中的假绿）。
+  const cardIdByEntry = new Map();
+  for (const entry of live) {
     if (!entry || entry.kind !== 'child') continue;
     const entryLabel = typeof entry.label === 'string' ? entry.label : '';
     const parsedLabel = parseRoleLabel(entryLabel, knownCards);
     const entryName = parsedLabel && parsedLabel.name ? parsedLabel.name : '';
-    if (entryName !== '') {
+    // ⚠️ 只有**认得出的角色 label** 才算成员；自由文本 label（含官方 `subagent` 那类）不进成员寻址：
+    //   旧代码把任何"含冒号的自由文本"的右段也当成员名注册进 `nameIndex`，而 `role_send` 正是用**这个索引**
+    //   寻址 ⇒ 官方 subagent 会以它的自由文本名被寻址到、并被装闸 —— **寻址（nameIndex）与装闸
+    //   （recognizeMember）两套判据不一致**，而装闸侧才是 fail-closed 的（认不出就不补闸）。
+    //   2026-09-26 对齐：寻址侧同样只认角色 label。
+    if (parsedLabel && entryName !== '') {
       members.push(`${entryName}(${String(entry.id)})`);
+      nameById.set(String(entry.id), entryName);
       state.nameIndex.set(indexKeyOf(parentId, entryName), String(entry.id));
     }
-    // 兜底寻址：解析出的 **cardId** 或**卡中文名** === target（旧代码只认 roleId === target）
-    const entryCardName = parsedLabel ? cardNameOf(knownCards, parsedLabel.cardId) : '';
-    if (childId === '' && entryName !== '' && (entryName === target || (parsedLabel && (parsedLabel.cardId === target || entryCardName === target)))) {
-      childId = String(entry.id);
-      memberName = entryName;
-      label = entryLabel;
+    // 旧兜底寻址的第一路：**卡中文名** === target（保持旧行为）；卡 id 那一路下沉到下面的候选集合。
+    if (childId === '' && entryName !== '' && parsedLabel) {
+      cardIdByEntry.set(String(entry.id), parsedLabel.cardId);
+      const entryCardName = cardNameOf(knownCards, parsedLabel.cardId);
+      if (entryName === target || entryCardName === target) {
+        childId = String(entry.id);
+        memberName = entryName;
+        label = entryLabel;
+        via = entryName === target ? 'name' : 'cardName';
+      }
+    }
+  }
+  // 卡 id ⇒ 该卡起的成员（归属表 `childId → cardId` 是唯一不受 label 改名/重名影响的依据）。
+  //   为什么不并进上面的 label 兜底：label 左段可能是**自由文本**，撞上卡 id 就是假命中
+  //   （本仓血债：套件里"按卡 id 寻址"那条曾靠夹具的 label 左段走 name 兜底 ⇒ **验证过的假**）。
+  //   口径：命中的活成员**必须唯一**——多成员同卡 ⇒ **不猜**（响亮拒绝 + 列出候选成员名）；
+  //   候选顺序按 `listChildren` 的返回顺序（活成员序），不是 append-only 表的历史写入序。
+  const candidates = [];
+  const candidateIds = [];
+  if (childId === '') {
+    let rows = [];
+    try { rows = readMemberMap(); } catch { rows = []; }
+    const wanted = new Map();
+    for (const row of rows) {
+      if (!row || String(row.cardId) !== target) continue;
+      const ownerId = String(row.childId);
+      if (wanted.has(ownerId)) continue;            // 同 id 多行 ⇒ 认一次（历史行不重复计数）
+      if (!nameById.has(ownerId)) continue;         // 不属于本会话活成员 ⇒ 不参与寻址（别投给认不回的旧 id）
+      wanted.set(ownerId, nameById.get(ownerId));
+    }
+    for (const [id, name] of nameById) {
+      if (wanted.has(id)) { candidates.push(name); candidateIds.push(id); }
+    }
+    const viaMapCount = candidateIds.length;
+    for (const [id, cardId] of cardIdByEntry) {
+      if (cardId !== target || candidateIds.includes(id)) continue;
+      candidates.push(nameById.get(id));
+      candidateIds.push(id);
+    }
+    // 精确命中优先：label 完全等于 target（如旧格式 `role:<卡 id>:<成员名>`）⇒ 这条 label 本身就唯一
+    //   指向那个成员，直接用它；否则（如 target 就是卡 id 的裸形式）「同卡多成员」**不猜**、响亮拒绝。
+    const labelOfId = (id) => {
+      const hit = live.find((entry) => entry && String(entry.id) === id);
+      return hit && typeof hit.label === 'string' ? hit.label : '';
+    };
+    const exactIndex = candidateIds.findIndex((id) => labelOfId(id) === target);
+    if (exactIndex >= 0) {
+      childId = candidateIds[exactIndex];
+      memberName = candidates[exactIndex];
+      via = exactIndex < viaMapCount ? 'cardId' : 'label';
+    } else if (candidates.length === 1) {
+      childId = candidateIds[0];
+      memberName = candidates[0];
+      via = 'cardId';
+    } else if (candidates.length > 1) {
+      return {
+        ok: false,
+        via: '',
+        members,
+        candidates,
+        error: `卡 id "${target}" 命中**多个**成员：${candidates.map((name, index) => `${name}(${candidateIds[index]})`).join('、')}——同卡多成员时**不猜**（按卡 id 寻址只认唯一命中）：请改用成员 name 或 childId 指明发给谁。`,
+      };
     }
   }
   if (childId === '') {
-    for (const entry of Array.isArray(entries) ? entries : []) {
+    for (const entry of live) {
       if (entry && entry.kind === 'child' && String(entry.id) === target) {
         childId = String(entry.id);
-        memberName = memberName || target;
+        memberName = memberName || nameById.get(String(entry.id)) || target;
         label = typeof entry.label === 'string' ? entry.label : '';
+        via = 'childId';
         break;
       }
     }
   }
   // 走进程内索引命中时 label 还是空的 ⇒ 从 listChildren 同一次结果里补上（跨进程恢复补闸要用它）
   if (label === '' && childId !== '') {
-    const hit = (Array.isArray(entries) ? entries : []).find((entry) => entry && String(entry.id) === childId);
+    const hit = live.find((entry) => entry && String(entry.id) === childId);
     if (hit && typeof hit.label === 'string') label = hit.label;
   }
   if (childId === '') {
-    return { ok: false, members, error: `未找到成员 "${target}"（本会话可用成员：${members.length > 0 ? members.join('、') : '无'}）` };
+    return { ok: false, via: '', members, candidates: [], error: `未找到成员 "${target}"（本会话可用成员：${members.length > 0 ? members.join('、') : '无'}）` };
   }
-  return { ok: true, childId, name: memberName || target, label, members };
+  return { ok: true, childId, name: memberName || target, label, members, via };
 }
 
 /**
@@ -2186,11 +2263,11 @@ export function makeRoleTools({ ctx, state }) {
 
     roleSend: {
       name: 'role_send',
-      description: '给本会话已起的角色成员发一条唤醒/steer 消息：target 给成员 name（role_spawn 的 name）、childId、卡 id 或卡中文名。成员在跑就在最近一步边界收到；空闲就被唤醒；进程重启后按 label 从 listChildren 回填——新格式 "<卡中文名>:<name>"（老成员仍是旧格式 "role:<cardId>:<name>"，**两种都能认**），另有 append-only 归属表按 childId→cardId 兜底。返回投递确认，不含成员答复。',
+      description: '给本会话已起的角色成员发一条唤醒/steer 消息：target 给成员 name（role_spawn 的 name）、childId、卡 id 或卡中文名。⚠️ **卡 id 走归属表（childId→cardId）解析，只认唯一命中**：同一张卡起了多个成员时不猜 ⇒ 直接拒绝并在错误里列出候选成员名（改用成员 name / childId）；唯一命中时返回值带 `viaCardId:true` 注明"是按卡 id 解析到的"。成员在跑就在最近一步边界收到；空闲就被唤醒；进程重启后按 label 从 listChildren 回填——新格式 "<卡中文名>:<name>"（老成员仍是旧格式 "role:<cardId>:<name>"，**两种都能认**），另有 append-only 归属表按 childId→cardId 兜底。⚠️ **首次唤醒**可能返回 `guardInstalled:false` + `guardReason:"子 agent 尚未进注册表：已挂起，等 agent/created 补装"`——那是延迟补装的**正常快照**（随后幂等补装，且早于消息投递），不是失败。返回投递确认，不含成员答复。',
       parameters: {
         type: 'object',
         properties: {
-          target: { type: 'string', description: '成员 name 或 childId' },
+          target: { type: 'string', description: '成员 name（role_spawn 的 name）、childId、卡 id 或卡中文名（卡 id 命中多个成员时会被拒）' },
           message: { type: 'string', description: '要投递的消息内容（自包含）' },
         },
         required: ['target', 'message'],
@@ -2209,7 +2286,7 @@ export function makeRoleTools({ ctx, state }) {
             return { ok: false, error: 'ctx.subagents.sendMessage 不可用：缺少 continuable 子代理管理器' };
           }
           const resolved = await resolveMember(ctx, state, agent, target);
-          if (!resolved.ok) return { ok: false, error: resolved.error, members: resolved.members };
+          if (!resolved.ok) return { ok: false, error: resolved.error, members: resolved.members, candidates: resolved.candidates };
           // 跨进程恢复的老成员：起手前先确认它带闸（幂等；新起的成员在 spawn 时已装 ⇒ 这里秒过）
           const guard = ensureMemberGuard(ctx, state, resolved.childId, resolved.label, agentCwd(agent));
           if (guard.installed === false && !/非角色成员/.test(guard.reason || '')) {
@@ -2230,13 +2307,14 @@ export function makeRoleTools({ ctx, state }) {
             [{ type: 'text', text: message }],
             { signal: exec.signal },
           );
-          writeMarker(`send: ${resolved.name} -> ${resolved.childId} @ ${new Date().toISOString()}`);
+          writeMarker(`send: ${resolved.name} -> ${resolved.childId} via=${resolved.via || '?'} @ ${new Date().toISOString()}`);
           return {
             ok: true,
             name: resolved.name,
             childId: resolved.childId,
             messageId: messageId ? String(messageId) : '',
             status: 'accepted',
+            viaCardId: resolved.via === 'cardId',
             guardInstalled: guard.installed === true,
             guardReason: guard.reason || '',
             toolFace: memberFace.toolFace,
