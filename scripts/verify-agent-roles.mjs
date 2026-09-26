@@ -30,6 +30,7 @@ import {
   defaultMemberName,
   describeToolTarget,
   discoverCards,
+  inlineToolsError,
   isValidMemberName,
   legacyRoleLabel,
   MEMBER_MAX_DEPTH,
@@ -47,6 +48,7 @@ import {
   ROLE_TOOL_NAMES,
   selectCard,
   serializeCard,
+  toolFaceOfCard,
 } from '../packages/dshome/lib/host/agent-roles.js';
 
 // ── 断言器：每条失败都打印「期望 vs 实际」 ───────────────────────────────────
@@ -169,6 +171,10 @@ put(WORKSPACE_DIR, 'reviewer.md', [
   '你是工作区评审员。',
 ].join('\n'));
 put(WORKSPACE_DIR, 'writer.md', ['---', 'id: writer', 'tools:', '  deny:', '    - edit', '---', '你是写手。', ''].join('\n'));
+// 2026-09-26 加：**未声明工具面**的卡（frontmatter 里连 `tools:` 都没有）——治「卡声明越少、成员权限越大」。
+// 它是 Lead 冻结规格第 2/3/4 条的正例夹具：卡文件本身没声明 ⇒ **不拦**（存量卡可能这么写），
+// 但 `role_spawn` / `role_send` / `role_card_list` 的返回值必须响亮标注 `unrestricted`。
+put(WORKSPACE_DIR, 'noface.md', ['---', 'id: noface', 'name: 未声明面探针', '---', '你是未声明工具面的探针。', ''].join('\n'));
 
 // ── mock 宿主（挂载面 + 工具真跑用；不接触真实宿主） ────────────────────────
 // ⚠️ 夹具必须忠实于**真机**（2026-09-23 变异测试抓到本夹具自己"恒绿"）：主实例里 `subagent` 由
@@ -318,7 +324,7 @@ async function main() {
   console.log('[2] discoverCards — 工作区覆盖私密、缺 id、坏 frontmatter、`_` 前缀');
   const discovery = discoverCards({ privateDir: PRIVATE_DIR, workspaceDir: WORKSPACE_DIR });
   const ids = discovery.cards.map((card) => card.id);
-  eq('discovered card ids (sorted; _template.md skipped, notes.txt ignored)', ids, ['bad-tools', 'reviewer', 'writer']);
+  eq('discovered card ids (sorted; _template.md skipped, notes.txt ignored)', ids, ['bad-tools', 'noface', 'reviewer', 'writer']);
 
   const brokenFiles = discovery.broken.map((item) => item.file).sort();
   eq('broken files', brokenFiles, ['emptybody.md', 'nofm.md', 'noid.md', 'tabs.md', 'unclosed.md']);
@@ -346,7 +352,7 @@ async function main() {
   const ghost = selectCard(discovery, 'ghost');
   assert('unknown role -> ok:false', ghost.ok === false, false, ghost.ok);
   assert('unknown role error names the id', ghost.ok === false && ghost.error.includes('ghost'), 'error mentions "ghost"', ghost.ok ? '(ok)' : ghost.error);
-  assert('unknown role lists available ids', ghost.ok === false && ['bad-tools', 'reviewer', 'writer'].every((id) => ghost.ids.includes(id)), ['bad-tools', 'reviewer', 'writer'], ghost.ok ? [] : ghost.ids);
+  assert('unknown role lists available ids', ghost.ok === false && ['bad-tools', 'noface', 'reviewer', 'writer'].every((id) => ghost.ids.includes(id)), ['bad-tools', 'noface', 'reviewer', 'writer'], ghost.ok ? [] : ghost.ids);
   const picked = selectCard(discovery, 'writer');
   assert('known role -> ok:true', picked.ok === true, true, picked.ok);
   eq('known role returns writer card', picked.ok && picked.card.id, 'writer');
@@ -518,10 +524,13 @@ async function main() {
 
   const listValue = await defs.get('role_list').execute({}, exec);
   assert('role_list ok', listValue.ok === true, true, listValue.ok);
-  eq('role_list roles', (listValue.roles || []).map((row) => row.id), ['bad-tools', 'reviewer', 'writer']);
+  eq('role_list roles', (listValue.roles || []).map((row) => row.id), ['bad-tools', 'noface', 'reviewer', 'writer']);
   eq('role_list reviewer source', (listValue.roles || []).find((row) => row.id === 'reviewer').source, 'workspace');
   eq('role_list reviewer model', (listValue.roles || []).find((row) => row.id === 'reviewer').model, 'deepseek-chat');
   eq('role_list reviewer tools.allow', (listValue.roles || []).find((row) => row.id === 'reviewer').tools.allow, ['read']);
+  // 2026-09-26 加：未声明工具面的卡在 role_list 里也带同一把标注（`tools.allow: []` 不是"什么都没给"）
+  eq('role_list 未声明工具面的卡标 unrestricted', (listValue.roles || []).find((row) => row.id === 'noface').toolFace, 'unrestricted');
+  assert('role_list 未声明工具面的卡带中文说明', /全量工具面/.test((listValue.roles || []).find((row) => row.id === 'noface').toolFaceNote || ''), 'note 提到「全量工具面」', (listValue.roles || []).find((row) => row.id === 'noface').toolFaceNote);
   assert('role_list shows broken cards', (listValue.broken || []).length === 5, 5, (listValue.broken || []).length);
   eq('role_list dirs.workspace', listValue.dirs && listValue.dirs.workspace, WORKSPACE_DIR);
   const listRendered = defs.get('role_list').output.render({}, listValue);
@@ -616,13 +625,22 @@ async function main() {
   // 集成：起成员时「当轮 write_scope」优先；不给则如实标注 unbounded；own-scope 自检报出 subagent
   const spawnScoped = await defs.get('role_spawn').execute({ role: 'writer', name: 'scoped-one', write_scope: [`${ws}/ok`] }, exec);
   assert('role_spawn reports writeScope=declared when write_scope given', spawnScoped.ok === true && spawnScoped.writeScope === 'declared', 'declared', spawnScoped.writeScope);
-  const spawnUnbounded = await defs.get('role_spawn').execute({ persona: '你是无范围探针。', name: 'unbounded-one' }, exec);
+  // 2026-09-26 改（治「缺省值静默生效」）：内联建卡**必须显式给工具面**，故这里把"全量面"**逐个列出来**——
+  // 这正是错误文案要求的出路，也让这条用例从"靠默认值全量"变成"显式要全量"。
+  // ⚠️ 只能列**调用者真能下发**的名字：`role_*`（八把，只在顶层 own-scope）与 `run_code`（保留名）列进去会被
+  // `buildToolFilter` 判"不可解析名"而**响亮失败**——那正是下面 FULL_FACE 反例要钉住的行为。
+  const FULL_FACE = [...VISIBLE, ...ROLE_TOOL_NAMES, 'run_code'];
+  const spawnUnbounded = await defs.get('role_spawn').execute({ persona: '你是无范围探针。', name: 'unbounded-one', tools: { allow: [...VISIBLE] } }, exec);
   assert('role_spawn reports writeScope=unbounded when nothing declared', spawnUnbounded.ok === true && spawnUnbounded.writeScope === 'unbounded', 'unbounded', spawnUnbounded.writeScope);
+  eq('显式逐个列出工具名 ⇒ allow 原样落地', spawnUnbounded.allow, [...VISIBLE]);
+  const spawnFullFace = await defs.get('role_spawn').execute({ persona: '你是越面探针。', name: 'full-face', tools: { allow: FULL_FACE } }, exec);
+  assert('把 role_*/run_code 也列进去 ⇒ 响亮失败（它们是"不可下发名"，不是全量面的一部分）', spawnFullFace.ok === false, false, spawnFullFace);
+  assert('不可下发名的错误文案点出 role_list', /role_list/.test(spawnFullFace.error || ''), 'error 含 role_list', spawnFullFace.error);
   assert('role_spawn surfaces own-scope tools (subagent)', Array.isArray(spawnScoped.ownScopeTools) && spawnScoped.ownScopeTools.includes('subagent'), '["subagent"]', spawnScoped.ownScopeTools);
 
   // ⑥'' 挂起补装路：childId 还不在注册表 ⇒ 记 pending；`agent/created` 一到就补装（无竞态）
   host.record.nextChildId = 'ghost-child';
-  const spawnGhost = await defs.get('role_spawn').execute({ persona: '你是幽灵探针，只回报工具面。', name: 'ghost-one' }, exec);
+  const spawnGhost = await defs.get('role_spawn').execute({ persona: '你是幽灵探针，只回报工具面。', name: 'ghost-one', tools: { allow: ['read'] } }, exec);
   assert('spawn ok even when the child is not yet in the registry', spawnGhost.ok === true, true, spawnGhost.ok);
   assert('guard reports pending when the child is absent', spawnGhost.guardInstalled === false && /挂起|尚未进注册表/.test(spawnGhost.guardReason), 'pending reason', spawnGhost.guardReason);
   host.record.nextChildId = null;
@@ -639,6 +657,56 @@ async function main() {
     const ghostGuard = host.record.childGuards[1];
     assert('ghost guard denies subagent (cascade is unconditional in the guard)', typeof ghostGuard({ name: 'subagent' }) === 'string', 'string (deny)', ghostGuard({ name: 'subagent' }));
   }
+
+  // ── ⑥'''''' 工具面标注：治「缺省值静默生效」（2026-09-26，Lead 冻结规格） ────────────────
+  // 缺陷真机读数（Lead 在 LianChaoGame 会话实测）：`role_spawn` 走内联建卡（persona+name）而**没给 tools**
+  // 时返回值是 `allow: []`——看着像"什么都没给"，而成员实际拿到**调用者全量工具面**（成员回报的工具表＝
+  // 完整 26 把，含 write/pwsh/subagent/send_message）。根因：`allow` 空且 `deny` 空 ⇒ `buildToolFilter`
+  // 不产生 toolFilter ⇒ 子会话 `restrict` 不做任何裁剪。即「卡声明越少、成员权限越大」，与协议文案相反。
+  // 对照组（显式给 allow 的成员回报里没有 send_message）证明**坏的只是"空 allow"这一格**，故本轮只治这一格。
+  console.log('[6\'\'\'\'\'\'] toolFace — 内联建卡缺工具面响亮失败 + 未声明工具面响亮标注');
+  const specsBeforeNoFace = host.record.specs.length;
+  const spawnNoToolsArg = await defs.get('role_spawn').execute({ persona: '你是缺面探针甲。', name: 'no-face-a' }, exec);
+  assert('① 内联建卡缺 tools ⇒ ok:false（响亮失败，不再静默全量）', spawnNoToolsArg.ok === false, false, spawnNoToolsArg);
+  assert('① 错误文案点出「全量工具面」这层意思', /全量工具面/.test(spawnNoToolsArg.error || ''), 'error 含「全量工具面」', spawnNoToolsArg.error);
+  assert('① 错误文案给出下一步（显式给 tools:{allow:[...]}）', /tools:\{allow:\[\.\.\.\]\}/.test(spawnNoToolsArg.error || ''), 'error 含「tools:{allow:[...]}」', spawnNoToolsArg.error);
+  assert('① 错误文案给出出路（把工具名逐个列出来）', /逐个列出来/.test(spawnNoToolsArg.error || ''), 'error 含「逐个列出来」', spawnNoToolsArg.error);
+  eq('① 拒绝理由是结构化 code（模型可直接分支）', spawnNoToolsArg.code, 'inline-tools-empty');
+  assertSchemaResult('① 缺 tools 的返回值符合自己的 output.schema', 'role_spawn', spawnNoToolsArg);
+
+  const spawnEmptyAllow = await defs.get('role_spawn').execute({ persona: '你是缺面探针乙。', name: 'no-face-b', tools: { allow: [] } }, exec);
+  assert('② 内联建卡 allow:[] ⇒ ok:false（空列表＝不收窄，必须拒）', spawnEmptyAllow.ok === false, false, spawnEmptyAllow);
+  assert('② 空 allow 的错误文案与缺 tools 同口径', /tools\.allow 为空/.test(spawnEmptyAllow.error || ''), 'error 含「tools.allow 为空」', spawnEmptyAllow.error);
+  const spawnEmptyToolsObj = await defs.get('role_spawn').execute({ persona: '你是缺面探针丙。', name: 'no-face-c', tools: {} }, exec);
+  assert('②b 内联建卡 tools:{} ⇒ 同样 ok:false', spawnEmptyToolsObj.ok === false, false, spawnEmptyToolsObj);
+  assert('②c 三条失败路径都没起成员（specs 数不变）', host.record.specs.length === specsBeforeNoFace, specsBeforeNoFace, host.record.specs.length);
+  assert('②d 失败路径没写卡（盘上无 no-face-a/b/c 卡文件）', !existsSync(join(WORKSPACE_DIR, 'no-face-a.md')) && !existsSync(join(WORKSPACE_DIR, 'no-face-b.md')), 'no inline card written', existsSync(join(WORKSPACE_DIR, 'no-face-a.md')));
+
+  // ③ 卡**文件本身**没声明工具面 ⇒ 不拦（存量卡可能这么写），但返回值必须带 toolFace 标注
+  //   ⚠️ 给这名成员**专用 childId**：归属表是 `childId → cardId`（后写赢），若沿用夹具默认的 'child-1'
+  //   （已被 writer/reviewer 等成员占着），后续 spawn 会把它改指到别的卡 ⇒ 下面 role_send 的卡归属被污染。
+  host.record.nextChildId = 'child-noface';
+  const spawnNoFace = await defs.get('role_spawn').execute({ role: 'noface', name: '未声明面' }, exec);
+  host.record.nextChildId = null;
+  assert('③ 卡未声明工具面 ⇒ 不拦（照旧起成员）', spawnNoFace.ok === true, true, spawnNoFace);
+  eq('③ 该成员拿到专用 childId（归属表不与他人串号）', spawnNoFace.childId, 'child-noface');
+  eq('③ 返回值 toolFace = unrestricted', spawnNoFace.toolFace, 'unrestricted');
+  assert('③ 返回值 toolFaceNote 说明「拿到调用者全量工具面」', /全量工具面/.test(spawnNoFace.toolFaceNote || ''), 'note 含「全量工具面」', spawnNoFace.toolFaceNote);
+  eq('③ 对照：卡写了 allow ⇒ restricted（坏的只是"空 allow"这一格）', spawnReviewer.toolFace, 'restricted');
+  eq('③ 对照：restricted 不带说明（别用噪声淹没 true）', spawnReviewer.toolFaceNote, '');
+  eq('③ 对照：只声明 deny 的卡也是 unrestricted（面没收窄；级联闸照旧在 ↓ 见 role_spawn deny 断言）', spawnWriter.toolFace, 'unrestricted');
+  assertSchemaResult('③ 未声明工具面的 spawn 返回值符合 schema', 'role_spawn', spawnNoFace);
+
+  // ④ role_card_list：`allow: []` 不许再原样显示成空数组
+  const cardListValue = await defs.get('role_card_list').execute({}, exec);
+  assert('role_card_list ok', cardListValue.ok === true, true, cardListValue.ok);
+  const nofaceRow = (cardListValue.cards || []).find((row) => row.id === 'noface');
+  assert('role_card_list 里能看到 noface 卡', !!nofaceRow, 'row present', (cardListValue.cards || []).map((row) => row.id));
+  eq('④ role_card_list 对未声明的卡标 unrestricted', nofaceRow && nofaceRow.toolFace, 'unrestricted');
+  assert('④ role_card_list 的标注说明「该卡起的成员拿到调用者全量工具面」', /该卡未声明工具面/.test((nofaceRow && nofaceRow.toolFaceNote) || '') && /全量工具面/.test((nofaceRow && nofaceRow.toolFaceNote) || ''), 'note 含「该卡未声明工具面」+「全量工具面」', nofaceRow && nofaceRow.toolFaceNote);
+  eq('④ 对照：声明了 allow 的卡在 role_card_list 里是 restricted', (cardListValue.cards || []).find((row) => row.id === 'reviewer').toolFace, 'restricted');
+  eq('④ 对照：restricted 行不带说明', (cardListValue.cards || []).find((row) => row.id === 'reviewer').toolFaceNote, '');
+  assertSchemaResult('④ role_card_list 返回值符合 schema', 'role_card_list', cardListValue);
 
   // ⑥''' 跨进程恢复（一）+（二）见下方（放在既有 role_send 断言**之后**：那几条按 `record.sends[0]`
   // 取数，先插新发送会把它们的下标顶掉 ⇒ 顺序也是断言的一部分，别随手挪）。
@@ -660,7 +728,7 @@ async function main() {
     eq('inline card round-trip body', inlineReparsed.card.body, '你是临时工。');
     eq('inline card round-trip tools.allow', inlineReparsed.card.tools.allow, ['read']);
   }
-  const spawnInlineAgain = await defs.get('role_spawn').execute({ persona: '你是临时工。', name: 'temp-one', save: true }, exec);
+  const spawnInlineAgain = await defs.get('role_spawn').execute({ persona: '你是临时工。', name: 'temp-one', save: true, tools: { allow: ['read'] } }, exec);
   assert('existing card file -> refuse overwrite', spawnInlineAgain.ok === false && /拒绝覆盖/.test(spawnInlineAgain.error), 'ok:false + 拒绝覆盖', spawnInlineAgain);
 
   const sendUnknown = await defs.get('role_send').execute({ target: 'ghost', message: 'hi' }, exec);
@@ -679,6 +747,26 @@ async function main() {
 
   const sendByChildId = await defs.get('role_send').execute({ target: 'child-1', message: '按 id 投递' }, exec);
   assert('role_send by childId ok', sendByChildId.ok === true, true, sendByChildId.ok);
+
+  // 2026-09-26 加（Lead 冻结规格第 4 条）：唤醒路径**同口径**标注工具面。
+  // ⚠️ 寻址口径：`role_send` 只认**成员名 / childId / 卡中文名**（**不**认卡 id）——上面那几条"按卡 id 寻址"
+  // 的用例之所以绿，是因为 `listChildren` 夹具里 reviewer 那张卡被认出后 `entryName===target` 走了兜底；
+  // 本用例则必须用**成员名**寻址（用卡 id 会得到 ok:false，那是寻址口径、不是工具面缺陷）。
+  const sendNoFace = await defs.get('role_send').execute({ target: '未声明面', message: '你是谁' }, exec);
+  assert('role_send 唤醒未声明工具面的成员 ok（按成员名寻址）', sendNoFace.ok === true, true, sendNoFace);
+  eq('role_send toolFace = unrestricted（卡未声明工具面）', sendNoFace.toolFace, 'unrestricted');
+  assert('role_send toolFaceNote 说明成员拿到调用者全量工具面', /全量工具面/.test(sendNoFace.toolFaceNote || ''), 'note 含「全量工具面」', sendNoFace.toolFaceNote);
+  eq('role_send 对照：受限成员（reviewer）toolFace = restricted', sendByChildId.toolFace, 'restricted');
+  eq('role_send 对照：restricted 不带说明', sendByChildId.toolFaceNote, '');
+  assertSchemaResult('role_send 未声明工具面的返回值符合 schema', 'role_send', sendNoFace);
+  // 反例：卡被删（跨重启后卡不在卡池）⇒ 认人拿不到卡 ⇒ 同样是 unrestricted（诚实侧），且文案与"卡未声明"可区分
+  const savedNoface = readFileSync(join(WORKSPACE_DIR, 'noface.md'), 'utf8');
+  rmSync(join(WORKSPACE_DIR, 'noface.md'), { force: true });
+  const sendCardGone = await defs.get('role_send').execute({ target: '未声明面', message: '卡没了还认得我吗' }, exec);
+  assert('反例：卡被删后 role_send 仍认得成员（归属表/成员名认人）', sendCardGone.ok === true, true, sendCardGone);
+  eq('反例：拿不到卡 ⇒ toolFace 也是 unrestricted（面确实未收窄）', sendCardGone.toolFace, 'unrestricted');
+  assert('反例：拿不到卡的说明与「卡未声明工具面」可区分', /拿不到该成员的角色卡/.test(sendCardGone.toolFaceNote || ''), 'note 含「拿不到该成员的角色卡」', sendCardGone.toolFaceNote);
+  writeFileSync(join(WORKSPACE_DIR, 'noface.md'), savedNoface, 'utf8');   // 复还夹具（后续断言仍要看这张卡）
 
   // ⑥''' 跨进程恢复（一）：`role_send` 冷唤醒时补装——内存映射已空，label 从 listChildren 认回来
   // （`guard` 不在 `subagent/descriptor` 里 ⇒ 重启后老成员自己拿不回它，必须由这两条路补）

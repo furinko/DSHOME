@@ -27,8 +27,8 @@
 //
 // 导出纯函数（供 `scripts/verify-agent-roles.mjs` 真断言）：parseCard / discoverCards / selectCard /
 // buildToolFilter / composePersona / renderPolicyText / buildStartSpec / reportHint / roleLabel /
-// legacyRoleLabel / parseRoleLabel / normalizeTools / normalizeModel。fs 只出现在 discoverCards /
-// saveCardAtomic / writeMarker 里，测试传临时目录即可。
+// legacyRoleLabel / parseRoleLabel / normalizeTools / normalizeModel / toolFaceOfCard / inlineToolsError。
+// fs 只出现在 discoverCards / saveCardAtomic / writeMarker 里，测试传临时目录即可。
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -834,7 +834,7 @@ export function renderPolicyText() {
     '【角色卡管控者协议（dshome/agent-roles）】',
     '你可以把「角色卡」起成独立成员：每个成员有自己的系统提示词（卡正文）、自己的工具面（卡 frontmatter 的 tools）和自己的模型路由（卡 model）。',
     '· role_list：列出可用角色卡（私密目录 + 项目 .agent-roles；同 id 项目卡覆盖私密卡）与坏卡原因。',
-    '· role_spawn：role=<卡 id> 起一个 durable 成员；或 persona+name 内联建卡（save=true 才落盘，scope=workspace|private）。可选 tools/model 覆盖卡，task 作为首条任务消息。',
+    '· role_spawn：role=<卡 id> 起一个 durable 成员；或 persona+name 内联建卡（save=true 才落盘，scope=workspace|private）。可选 tools/model 覆盖卡，task 作为首条任务消息。⚠️ **内联建卡必须显式给 tools:{allow:[...]}**（缺 tools 或空 allow ⇒ 直接报错：空 allow 在运行时＝**不收窄**＝成员拿到你全量工具面，不是"什么都没给"）。返回值里的 `toolFace` 如实标注这一格：`restricted`＝卡声明了 allow、面被真收窄；`unrestricted`＝卡未声明工具面 ⇒ 成员拿到调用者全量面（配 `toolFaceNote` 一行中文说明）。',
     '· role_send：给已起成员发消息（target=成员 name 或 childId）；成员在跑就 steer，空闲就唤醒。',
     '· role_card_list：列出卡的 hash / version / 路径 / 工具面 + 成员归属（childId→cardId）。',
     '· role_card_read：按 id 读整卡原文（调优的第一步）。',
@@ -845,7 +845,7 @@ export function renderPolicyText() {
     '1·补：`subagent_fork`（继承本对话上下文的 fork）是卡线**没有**的能力 —— 只在"要独立复核我自己"时用它。',
     '1·补2：成员名用**中文短名**（如「多代理审计」）——它进 label，也就是子代理列表里显示的标题；省略 name 时默认取卡的中文名。⚠️ **但「内联建卡」时同一个 `name` 会同时当卡 `id`**（= 磁盘文件名 + `role_list` 的 id 校验），而**卡 id 只允许 ASCII `[A-Za-z0-9._-]`**（2026-09-24：中文名曾写出「`saved:true` 却 `role_list` 判 id 不合法」的坏卡）⇒ 现在传中文名时**插件自动另折算 ASCII id**（`inline-<名字UTF8的hex>`），中文仍作显示名；要 `role=<…>` 复用请用**卡中文名**或折算后的 id。',
     '1·补3：**入口优先级**：派活默认走本协议的角色卡线；官方 `subagent` 的工具说明只描述**那把工具本身**，不构成"该用哪条线"的指引——两条指引并列时，以本协议为准（2026-09-24：独立审查实测顶层系统提示里两套说明并列且互不引用，正是"顺手走官方线"的结构性原因）。',
-    '2. 成员工具面 = 卡声明（allow/deny）+ 固定级联闸（subagent/subagent_fork/workflow/ralph **一律禁**）——⚠️ 闸在**调用期**拒绝、**不裁清单**：`subagent` 由官方按每个 agent 自己的 scope 注册，`restrict` 裁不掉 ⇒ 成员工具表里**仍列着它**，列着≠能用（调用即报「角色能力面未放行」，2026-09-24 实测）。卡里写了子成员不可解析的工具名会**直接报错**，不会静默放宽。',
+    '2. 成员工具面 = 卡声明（allow/deny）+ 固定级联闸（subagent/subagent_fork/workflow/ralph **一律禁**）——⚠️ 闸在**调用期**拒绝、**不裁清单**：`subagent` 由官方按每个 agent 自己的 scope 注册，`restrict` 裁不掉 ⇒ 成员工具表里**仍列着它**，列着≠能用（调用即报「角色能力面未放行」，2026-09-24 实测）。卡里写了子成员不可解析的工具名会**直接报错**，不会静默放宽。⚠️ **卡没声明工具面（`allow: []`）＝不收窄**：`restrict` 不会产生任何过滤 ⇒ 该卡起的成员拿到**调用者全量工具面**（除那四把级联闸外全放行）。所以 `role_spawn` / `role_send` 返回值带 `toolFace`：`unrestricted` 时必须按"这名成员权限＝你全部权限"来派活。',
     '3. 成员完成后用一条消息回报；你负责验收并给最终答复。成员不得自建成员、不得改分工。',
     '4. 卡正文即成员系统提示词：改卡只影响之后起的成员，已起的成员不受影响。**改卡走 `role_card_read` → `role_card_write`**（带 `reason`，自动进卡改动台账）、**改 id（含卡文件名）走 `role_card_rename`**（同样带 `reason`、同样进台账）——不要用通用写工具直接改卡文件：那样没有乐观锁、没有原子写、也没有留痕。',
     '5. 同一把工具不能同时写进 allow 与 deny —— 那是自相矛盾的声明，role_spawn 会直接报错（不会静默按 deny 处理）。',
@@ -1074,6 +1074,17 @@ const TOOLS_SUB_SCHEMA = {
   },
 };
 
+/**
+ * 「这一格工具面到底意味着什么」的标注（2026-09-26 加）：`restricted` = 卡声明了 allow、面被真收窄；
+ * `unrestricted` = 卡未声明工具面 ⇒ **不收窄**、成员拿到调用者全量面（配 `toolFaceNote` 一行中文说明）。
+ * ⚠️ 只加这两把，**不改 allow/deny 本身的语义**（`role_list` 的 `tools.allow: []` 照旧原样给机器读；
+ * 标注是给人/模型看的第二把判据）。
+ */
+const TOOL_FACE_PROPS = {
+  toolFace: { type: 'string', enum: ['restricted', 'unrestricted'] },
+  toolFaceNote: { type: 'string' },
+};
+
 const ROLE_ROW_SCHEMA = {
   type: 'object',
   additionalProperties: true,
@@ -1089,6 +1100,7 @@ const ROLE_ROW_SCHEMA = {
     file: { type: 'string' },
     warnings: { type: 'array', items: { type: 'string' } },
     tools: TOOLS_SUB_SCHEMA,
+    ...TOOL_FACE_PROPS,
   },
 };
 
@@ -1148,7 +1160,7 @@ const CARD_LIST_SCHEMA = {
     ok: { type: 'boolean' },
     error: { type: 'string' },
     code: { type: 'string' },
-    cards: { type: 'array', items: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' }, name: { type: 'string' }, source: { type: 'string' }, path: { type: 'string' }, hash: { type: 'string' }, version: { type: 'string' }, bodyChars: { type: 'number' } } } },
+    cards: { type: 'array', items: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' }, name: { type: 'string' }, source: { type: 'string' }, path: { type: 'string' }, hash: { type: 'string' }, version: { type: 'string' }, bodyChars: { type: 'number' }, tools: TOOLS_SUB_SCHEMA, ...TOOL_FACE_PROPS } } },
     members: { type: 'array', items: { type: 'object', additionalProperties: true, required: ['childId'], properties: { childId: { type: 'string' }, cardId: { type: 'string' }, at: { type: 'string' } } } },
     dirs: { type: 'object', additionalProperties: true },
   },
@@ -1243,6 +1255,7 @@ const ROLE_SPAWN_SCHEMA = {
     unknown: { type: 'array', items: { type: 'string' } },
     available: { type: 'array', items: { type: 'string' } },
     broken: { type: 'array', items: BROKEN_ROW_SCHEMA },
+    ...TOOL_FACE_PROPS,
   },
 };
 
@@ -1260,12 +1273,70 @@ const ROLE_SEND_SCHEMA = {
     guardInstalled: { type: 'boolean' },
     guardReason: { type: 'string' },
     members: { type: 'array', items: { type: 'string' } },
+    ...TOOL_FACE_PROPS,
   },
 };
 
 /** 统一的模型可见渲染：整条 JSON（结构化错误也在里面）。 */
 function renderJson(_args, value) {
   return [{ type: 'text', text: JSON.stringify(value) }];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 工具面标注（2026-09-26 加）：治「卡声明越少、成员权限越大」的静默放宽
+//
+// 缺陷实测（Lead 在 LianChaoGame 会话亲手撞的）：`role_spawn` 走**内联建卡**（persona+name）而调用者
+// 没给 `tools` 时，返回值里是 `allow: []`——**看着像"什么都没给"，而成员实际拿到的是调用者全量工具面**
+// （成员自己回报的工具表＝完整 26 把，含 write/pwsh/subagent/send_message）。根因在 `buildToolFilter`：
+// `allow` 为空且 `deny` 为空 ⇒ **不产生 toolFilter** ⇒ 子会话 `restrict` 不做任何裁剪 ⇒ 全量继承。
+// 这与协议文案「成员工具面＝卡声明＋固定级联闸」正好相反，且**没有任何一处标注** ⇒ Lead 读到 `allow: []`
+// 只会以为"成员没工具"，实际是"成员什么都有"。
+//
+// 本段只做两件事，都不改工具面的**实际**收窄逻辑（那是 buildToolFilter 的事）：
+//   · `toolFace` / `toolFaceNote`：把"这一格是'未声明 ⇒ 全量'还是'已声明 ⇒ 受限'"显式写进返回值；
+//   · 内联建卡的**响亮失败**：没显式给 allow ⇒ 直接拒，别让默认值替调用者做"全量"这个决定。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 工具面标注文案（`role_spawn` / `role_send` / `role_list` / `role_card_list` 四处共用同一口径）。 */
+const TOOL_FACE_NOTE = '该卡未声明工具面（frontmatter 无 tools.allow）⇒ 不做任何收窄，成员拿到的是调用者全量工具面（只有固定级联闸 subagent/subagent_fork/workflow/ralph 在执行期被拒）。要收窄请给卡声明 tools:{allow:[...]}。';
+
+/** 内联建卡缺工具面时的下一步指引（错误文案必须自带出路，不能只报错）。 */
+const INLINE_TOOLS_HINT = '内联建卡必须显式声明工具面（这是**刻意的响亮失败**）：请显式给 tools:{allow:[...]}；确实要全量工具面就把你手里的工具名逐个列出来（别用空列表 —— 空 allow 会被运行时读成"不收窄"＝全量继承）。';
+
+/**
+ * 一张卡起的成员，工具面是**被收窄**还是**调用者全量**（＝本轮要治的那一格）。
+ *
+ * ⚠️ 判据只用 **`tools.allow` 是否非空**，不用"有没有 toolFilter"：`buildToolFilter` 的固定级联闸
+ * （`subagent`/`subagent_fork`/`workflow`/`ralph`，只要名字可下发就会进 deny）几乎总会产出一个 filter，
+ * 所以"有 filter"只说明**那四把被拒**，不说明成员的**面被裁过**。实测（本机）：
+ * `{allow:[],deny:[]}` 的卡 + 正常可见面 ⇒ `filter = {deny:[subagent_fork,workflow,ralph]}` ⇒ 成员手里
+ * 仍是**除级联四把之外的全部工具**（正是 Lead 实测的「成员拿到调用者全量工具面，含 write/pwsh」）。
+ * 所以：`allow` 非空 ⇒ 白名单真裁了面 ⇒ `restricted`；`allow` 为空（无论有没有写 deny）⇒ `unrestricted`
+ * ——只写了 deny 的卡会把那把工具去掉，但**面本身没收窄**，标注必须说这句话，不能拿 deny 冒充收窄。
+ * @param {{tools?:{allow?:unknown,deny?:unknown}}} card
+ * @returns {{toolFace:'restricted'|'unrestricted', toolFaceNote:string}}
+ */
+export function toolFaceOfCard(card) {
+  const allow = card && card.tools ? toNameList(card.tools.allow) : [];
+  if (allow.length > 0) return { toolFace: 'restricted', toolFaceNote: '' };
+  return { toolFace: 'unrestricted', toolFaceNote: TOOL_FACE_NOTE };
+}
+
+/**
+ * 内联建卡的**前置门**：没显式声明工具面（缺 `tools` / `allow` 空数组 / `tools:{}`）⇒ 返回中文错误文案。
+ *
+ * 为什么必须拦在**落盘与起成员之前**：内联卡若 `allow: []`，`serializeCard` 会把 `tools:` 整段丢掉
+ * ⇒ 落盘成一张"未声明工具面"的卡（与"本来就想声明空面"的意图不符，且下一个人读到它照样全量继承）；
+ * 更要紧的是**成员已经起来了、工具面是全量**，而返回值只有一句 `allow: []`。
+ * @param {{allow?:unknown}} normalized - `normalizeTools(input.tools, [])` 的归一化结果
+ * @returns {string} 错误文案；'' = 通过
+ */
+export function inlineToolsError(normalized) {
+  const allow = toNameList(normalized ? normalized.allow : null);
+  if (allow.length > 0) return '';
+  return '内联建卡的 tools.allow 为空（未给 tools / 给了空数组 / 给了 tools:{}）—— 若照此起成员，返回值会显示 allow: []，'
+    + '而成员实际拿到的是**调用者全量工具面**（空 allow 在运行时＝不收窄），这正是"卡声明越少、成员权限越大"的静默放宽。'
+    + INLINE_TOOLS_HINT;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1540,6 +1611,8 @@ export function makeRoleTools({ ctx, state }) {
               file: card.fileName || '',
               warnings: Array.isArray(card.warnings) ? card.warnings : [],
               tools: { allow: toNameList(card.tools ? card.tools.allow : null), deny: toNameList(card.tools ? card.tools.deny : null) },
+              // 2026-09-26 加：`tools.allow: []` 不再"原样显示成空数组"就完事（见 toolFaceOfCard 头注）
+              ...toolFaceOfCard(card),
             })),
             broken: briefBroken(discovery),
             dirs: { private: dirs.privateDir, workspace: dirs.workspaceDir },
@@ -1574,6 +1647,9 @@ export function makeRoleTools({ ctx, state }) {
               version: String((card.extra && card.extra.version) || ''),
               bodyChars: card.body.length,
               tools: { allow: toNameList(card.tools ? card.tools.allow : null), deny: toNameList(card.tools ? card.tools.deny : null) },
+              // 2026-09-26 加（Lead 点名的第 3 条）：`allow: []` **不许再原样显示成空数组**——
+              // 它看着像"什么都没给"，而照此卡起的成员拿到的是调用者全量工具面。故显式标注。
+              ...toolFaceOfCard(card),
             };
           });
           return { ok: true, cards, members: readMemberMap(), broken: briefBroken(discovery), dirs: { private: dirs.privateDir, workspace: dirs.workspaceDir } };
@@ -1970,6 +2046,12 @@ export function makeRoleTools({ ctx, state }) {
               return { ok: false, error: `name 不合法：${JSON.stringify(nameArg)}（允许中文/小写字母/数字与连字符，不能含 ":" 或空格）` };
             }
             const effToolsForCard = overrideTools ? { allow: overrideTools.allow, deny: overrideTools.deny } : { allow: [], deny: [] };
+            // 2026-09-26 新增**响亮失败**（Lead 冻结规格第 1 条）：内联建卡没显式给工具面 ⇒ 拒。
+            //   放在这里（而不是后面）的两个理由：① 在 `save` **落盘之前**——`serializeCard` 对空 allow 会把
+            //   `tools:` 整段丢掉 ⇒ 会留下"看着声明过、其实没声明"的坏卡；② 在 `startContinuable` **之前**
+            //   ——成员一旦起来就已经是调用者全量工具面了，事后再报错也收不回来。
+            const inlineToolsErrorText = inlineToolsError(overrideTools);
+            if (inlineToolsErrorText !== '') return { ok: false, code: 'inline-tools-empty', error: inlineToolsErrorText };
             // 卡 id 只允许 ASCII（`role_list` 的 id 校验 + 磁盘文件名）；而内联建卡的 `name` 会**同时当 id**
             //   ⇒ 中文名以前会写出「`saved:true` 但 `role_list` 判「id 不合法」」的**坏卡**（2026-09-24 实测）。
             //   折算规则：纯 ASCII 名原样用；含非 ASCII ⇒ `inline-<名字 UTF-8 的 hex>`（确定性、无新依赖、不截断）。
@@ -2087,6 +2169,9 @@ export function makeRoleTools({ ctx, state }) {
             guardInstalled: guard.installed === true,
             guardReason: guard.reason || '',
             writeScope: writePaths.length > 0 ? 'declared' : 'unbounded',
+            // 2026-09-26 加（Lead 冻结规格第 2 条）：卡文件本身没声明工具面 ⇒ **不拦**（存量卡可能这么写，
+            //   拦了会误伤），但**响亮回报**：成员拿到的是调用者全量工具面，`allow: []` 不是"什么都没给"。
+            ...toolFaceOfCard(effCard),
             ownScopeTools: Array.isArray(guard.ownScope) ? guard.ownScope : [],
             // 自注册工具里**实际已被执行期闸拒**的那些（`restrict` 裁不掉它们，但 guard 拦得住）——
             // 让"可见 ≠ 放行"在返回值里一眼可读（2026-09-24 加：Lead 曾据 ownScopeTools 误判成"闸没生效"）。
@@ -2130,6 +2215,15 @@ export function makeRoleTools({ ctx, state }) {
           if (guard.installed === false && !/非角色成员/.test(guard.reason || '')) {
             writeMarker(`guard(send): ${resolved.name} -> ${guard.reason} @ ${new Date().toISOString()}`);
           }
+          // 2026-09-26 加（Lead 冻结规格第 4 条）：唤醒路径**同口径**标注工具面。
+          //   两种情形都要标：① 卡未声明工具面 ② 拿不到卡（跨进程恢复时卡被删/改名 ⇒ 只装无条件级联闸）。
+          //   认人的 cardId 优先取归属表（`ensureMemberGuard` 内部同一口径），拿不到再退 label 解析出的卡 id。
+          const memberCardId = (() => {
+            try { const mapped = memberCardId(state, resolved.childId); if (mapped !== '') return mapped; } catch { /* 退 label */ }
+            const parsed = parseRoleLabel(resolved.label, knownCardsFor(state, agentCwd(agent)));
+            return parsed && parsed.cardId ? parsed.cardId : '';
+          })();
+          const memberFace = toolFaceForMember(state, agentCwd(agent), memberCardId);
           const messageId = await ctx.subagents.sendMessage(
             agent,
             resolved.childId,
@@ -2145,6 +2239,8 @@ export function makeRoleTools({ ctx, state }) {
             status: 'accepted',
             guardInstalled: guard.installed === true,
             guardReason: guard.reason || '',
+            toolFace: memberFace.toolFace,
+            toolFaceNote: memberFace.toolFaceNote,
           };
         } catch (error) {
           writeMarker(`send: failed ${describeError(error)} @ ${new Date().toISOString()}`);
@@ -2206,6 +2302,37 @@ function cardNameOf(knownCards, cardId) {
   if (id === '') return '';
   const hit = (Array.isArray(knownCards) ? knownCards : []).find((card) => card && String(card.id) === id);
   return hit && typeof hit.name === 'string' ? hit.name.trim() : '';
+}
+
+/**
+ * 查一张卡的工具面标注（`role_send` 唤醒路径用：**同口径**回填 `toolFace`）。
+ *
+ * 为什么 `role_send` 也要标注：能唤醒一个成员的调用者，必须同时知道"这个成员手里是全量面还是受限面"——
+ * 否则唤醒一个"卡未声明工具面"的老成员时，返回值只有 `guardInstalled:true`，读起来像是"闸已装好、面已收窄"。
+ * ⚠️ `guardInstalled:true` 只说明**执行期级联闸**装上了（`subagent`/`workflow`/`ralph` 调用即拒），
+ * **不代表工具面被收窄**：未声明工具面的卡，成员照样拿到调用者全量面（除那四把之外全放行）。
+ * ⚠️ 判据与 `role_spawn` **严格同口径**（都走 `toolFaceOfCard` ⇒ 只看 `tools.allow` 是否非空）：
+ * 卡只写了 deny、或干脆没写 tools ⇒ `unrestricted`（成员的**面没收窄**，只有固定级联闸 + 卡内 deny 生效）。
+ * 拿不到卡（跨进程恢复时卡被删/被改名）⇒ 同样 `unrestricted`（诚实侧：此时 `guardFilterForMember` 走 fallback
+ * 只装无条件级联闸，面是**不收窄**的，不能标成受限），但说明文案与"卡未声明"可区分。
+ * @returns {{toolFace:'restricted'|'unrestricted', toolFaceNote:string, cardFound:boolean}}
+ */
+function toolFaceForMember(state, cwd, cardId) {
+  const wanted = String(cardId ?? '');
+  if (wanted !== '') {
+    try {
+      const found = selectCard(discoverCards({
+        privateDir: join(state.home, ...PRIVATE_CARD_SEGMENTS),
+        workspaceDir: join(cwd || process.cwd(), WORKSPACE_CARD_DIRNAME),
+      }), wanted);
+      if (found.ok) return { ...toolFaceOfCard(found.card), cardFound: true };
+    } catch { /* 读卡失败 ⇒ 与"拿不到卡"同口径（按 fallback 面标注） */ }
+  }
+  return {
+    toolFace: 'unrestricted',
+    toolFaceNote: `拿不到该成员的角色卡（${wanted || '认不出卡 id'}）⇒ 只装了无条件级联闸、工具面**未收窄** ⇒ 成员手里是调用者全量工具面（除 subagent/subagent_fork/workflow/ralph 外全放行）。`,
+    cardFound: false,
+  };
 }
 
 /** label 左段（`:` 之前）——只用于诊断文本。 */
