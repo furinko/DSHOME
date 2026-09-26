@@ -168,6 +168,19 @@ function fmTopic(content) {
   const r = /(?:^|\n)\s*topic:\s*([^\n]+)/.exec(m[1]);
   return r ? String(r[1]).trim().replace(/^['"]|['"]$/g, '').toLowerCase() : '';
 }
+// 卡片「辨识名」（2026-09-26 重做）：面板卡名此前是 frontmatter name → 正文一级标题 → **L3 主题目录名**，
+// 于是同主题的记忆卡全叫「方法论」「外部参考」「dshome-mind」，用户实测「名字辨识度太低」
+// （活进程读数：292 节点里 237 个处在重名组，49 组；TRASH 213 节点里 185 重名）。
+// 现规则：非 L3/非 TRASH **一律沿用原标题链**（角色卡/L0/L1/L2 技能本来就不重名，零扰动）；
+// L3 记忆与项目记忆改取**文件名**（去 `YYYY-MM-DD_` 前缀）——文件名是作者自己起的一句话标题、天然唯一；
+// TRASH 快照是「同一份文档的历史版本」，正文标题全同，只能靠快照文件名区分 ⇒ 整条 basename 上场。
+// 长路径/主题分组不丢：悬停 `<title>` 与点开详情仍给 `rel` 全路径，搜索仍按 `rel` 命中主题名。
+function fileNameStem(rel) {
+  let base = path.basename(String(rel || '')).replace(/\.md$/i, '');
+  if (String(rel || '').startsWith('TRASH/')) return base; // 快照名整条保留（含 `…__` 段）
+  return base.replace(/^\d{4}-\d{2}-\d{2}_/, '');          // 活档擦掉日期前缀，留自起标题
+}
+
 function buildGraph(project) {
   const all = [];
   walkContentMd(mindFactoryDir(), 'factory', '', all);
@@ -197,15 +210,10 @@ function buildGraph(project) {
     // 项目归属（面板项目分区 2026-09-09）：L3/projects/<项目>/… → 项目 key；其它 → ''
     let projKey = '';
     if (seg[0] === 'L3' && seg[1] === 'projects' && seg[2]) projKey = seg[2];
-    // 记忆主题短名（记忆层重构 2026-09-09）：L3/common/<主题>/… → seg[2]；L3/projects/<项目>/知识/<主题>/… → 主题段
-    if (!label && seg[0] === 'L3') {
-      if (seg[1] === 'common' && seg[2]) label = seg[2];
-      else if (seg[1] === 'projects') {
-        const kIdx = seg.indexOf('知识');
-        if (kIdx >= 0 && seg[kIdx + 1]) label = seg[kIdx + 1];
-        else if (seg[2]) label = seg[2]; // 项目根下散档 → 项目短名
-      }
-    }
+    // 记忆层重构 2026-09-09 / 卡名重做 2026-09-26：L3（记忆 + 项目记忆 + 历史）改取文件名当卡名——
+    // 旧规则「主题目录名当卡名」让同主题的记忆卡全部同名（活进程实测 49 组重名、237 节点）。主题分组
+    // 不丢：悬停给 `rel` 全路径、搜索按 `rel` 命中主题名、同主题连线仍由 frontmatter `topic` 生成。
+    if ((!label && seg[0] === 'L3') || seg[0] === 'TRASH') label = fileNameStem(f.rel);
     if (!label) label = firstTitle(content);
     if (!label) label = path.basename(f.rel).replace(/\.md$/, '');
     const lay = layerOf(f.rel);
@@ -222,6 +230,34 @@ function buildGraph(project) {
     });
     byLabel.set(label.toLowerCase(), nodes[nodes.length - 1]);
     byLabel.set(path.basename(f.rel).replace(/\.md$/, '').toLowerCase(), nodes[nodes.length - 1]);
+  }
+  // 兜底去重（2026-09-26）：按上面的规则跑完若仍有同名卡（跨区同 rel、快照撞名等），**追加所属目录名**
+  // 让每张卡至少能被区分——回退到"只改可视 label"，不动 `byLabel`（它服务 related 连线，语义要保持原样）。
+  {
+    const groups = new Map();
+    for (const n of nodes) {
+      const k = n.label;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(n);
+    }
+    for (const [, list] of groups) {
+      if (list.length < 2) continue;
+      for (const n of list) {
+        const seg = n.rel.split('/');
+        const parent = seg.length >= 2 ? seg[seg.length - 2] : '';
+        if (parent && !n.label.includes('· ' + parent)) n.label = `${n.label} · ${parent}`;
+      }
+      // 跨区同名同 rel（出厂 + 私有各一份，如 L1/Learn.md）光加目录还不够 ⇒ 再贴区名
+      const still = new Map();
+      for (const n of list) {
+        if (!still.has(n.label)) still.set(n.label, []);
+        still.get(n.label).push(n);
+      }
+      for (const [, same] of still) {
+        if (same.length < 2) continue;
+        for (const n of same) n.label = `${n.label} · ${n.zone === 'private' ? '私有' : '出厂'}`;
+      }
+    }
   }
   const edges = [];
   const seen = new Set();
@@ -1175,8 +1211,12 @@ function makeMindRoutes() {
 }
 
 // ── 经 inject webServer 的子插件激活（仅 web profile）───────────────────────
+// 尾两行＝测试出口（2026-09-26）：把**纯函数**借给 `scripts/verify-mind-panel-labels.mjs` 门禁。
+// 本文件被 require 时不会自己起服务（只有宿主 apply 才注册路由）⇒ 对生产零影响。
 module.exports = {
   name: 'dshome-mind',
+  fileNameStem,
+  buildGraph,
   apply(ctx) {
     const routesPlugin = {
       name: 'dshome-mind-api',

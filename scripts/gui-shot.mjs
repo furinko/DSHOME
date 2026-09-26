@@ -46,19 +46,20 @@ const VIEW_H = 900;
 
 function usage() {
   console.log('用法: node scripts/gui-shot.mjs <url> [--out <png>] [--wait <ms>] [--click <按钮文本>] [--after-click <ms>]');
-  console.log('                                  [--probe] [--timeout <ms>]');
+  console.log('                                  [--probe] [--eval <js表达式>] [--timeout <ms>]');
   console.log('  <url>              http(s):// 活页面地址（静态页/一次性渲染请用 shot.mjs —— 虚拟时间）');
   console.log('  --out <png>        输出 PNG（默认 %TEMP%\\dshome-gui-shot\\shot-<时间戳>.png）');
   console.log('  --wait <ms>        导航后真实等待（默认 8000）');
   console.log('  --click <文本>     点第一个「文本包含该字符串」的 <button>；找不到 ⇒ 非 0 退出（不出图）');
   console.log('  --after-click <ms> 点击后等待（默认 1500）');
   console.log('  --probe            额外打印 DOM 摘要 JSON（url/title/composer/buttons）');
+  console.log('  --eval <js表达式>   在点击之后、截图之前注入求值并把结果打成 `EVAL: …`（要读"渲染后的 DOM 真值"用它；表达式里抛错=响亮失败不出图）');
   console.log('  --timeout <ms>     整体超时（默认 30000）');
   console.log('  浏览器发现顺序: env DSHOME_GUI_SHOT_BROWSER → Chrome 常见安装位 → Edge → PATH');
 }
 
 function parseArgs(list) {
-  const o = { url: null, out: null, wait: 8000, click: null, afterClick: 1500, probe: false, timeout: 30000 };
+  const o = { url: null, out: null, wait: 8000, click: null, afterClick: 1500, probe: false, timeout: 30000, eval: null };
   for (let i = 0; i < list.length; i++) {
     const a = list[i];
     if (a === '--out') o.out = list[++i];
@@ -66,6 +67,7 @@ function parseArgs(list) {
     else if (a === '--click') o.click = list[++i];
     else if (a === '--after-click') o.afterClick = num(list[++i], 1500);
     else if (a === '--probe') o.probe = true;
+    else if (a === '--eval') o.eval = list[++i];
     else if (a === '--timeout') o.timeout = num(list[++i], 30000);
     else if (a === '--help' || a === '-h') o.help = true;
     else if (!o.url) o.url = a;
@@ -327,6 +329,19 @@ try {
   if (o.probe) {
     const r = await send('Runtime.evaluate', { expression: PROBE_EXPR, returnByValue: true });
     console.log(`[gui-shot] DOM 摘要: ${JSON.stringify(r && r.result && r.result.value)}`);
+  }
+
+  // 2026-09-26 加 `--eval`：点是 UI 的一种驱动，**读数**是另一种。面板/图表类修复要拿到的往往
+  // 不是"画面像不像"，而是**渲染后的 DOM 真值**（例：图谱里每张卡的实际卡名）。eval 在点击之后、
+  // 截图之前跑；**异常不算通过**（响亮失败，不出图——静默给张"看起来没事"的图比失败更坏）。
+  if (o.eval) {
+    // ⚠️ 表达式可能返回 Promise（`--eval "(async()=>{…})()"`）——**必须显式 await 再解包**：
+    // 直接返回 Promise 会被 CDP 序列化成 `{}`（实测 2026-09-26：页面明明点了按钮，读数却是空对象）。
+    const expr = `(async () => { try { const v = await (${o.eval}); return { ok: true, value: v }; } catch (e) { return { ok: false, error: String(e && e.message || e) }; } })()`;
+    const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
+    const v = r && r.result && r.result.value;
+    if (!v || !v.ok) throw new Error(`--eval 执行失败：${(v && v.error) || '空结果'}`);
+    console.log(`[gui-shot] EVAL: ${JSON.stringify(v.value)}`);
   }
 
   const shot = await send('Page.captureScreenshot', { format: 'png' });
