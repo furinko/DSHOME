@@ -16,8 +16,26 @@ const { Context } = require(join(repoRoot, 'profiles', 'node_modules', '@deepsee
 const recallMod = await import(pathToFileURL(join(repoRoot, 'packages', 'dshome', 'lib', 'host', 'mind-recall.js')).href);
 
 // 构造顶层 agent 伪对象（delegationDepth=0），模拟官方 agentEvents 注入的 agent 载荷
+// 2026-09-27 修（v3.2 换轴后本 itest 变 2/5 红）：桩原先**只有 `header`**，缺真 Session 恒有的两样能力——
+//   真 agent 的 `session` 是 Session 实例：`get surface()` 是**无条件 getter**
+//   （dsh-session/lib/index.js:993）、`eventAt(seq)` 是方法（同文件 :1096）；官方
+//   `dsh-agent-instructions:1212` 也无条件访问 `agent.session.surface.nodes`。
+//   而 v3.2 判据走「surface.replaceGeneration 代次快路径 + surface 在场复核」⇒ 假桩缺这两样即被判
+//   "能力不可用"（按规格：报一次 + 不注入）⇒ 场景1/5 红。
+//   **修桩，而不是改生产判据**：为了让一个不完整的假桩变绿去弱化生产判据，是本末倒置
+//   （本仓血债同族：改坏了比较的一方，断言照样绿）。
+//   空 surface（nodes: []）恰好模拟"上下文里还没有召回块"⇒ 走注入路径，与本 itest 的意图一致。
 function fakeAgent(id, depth = 0) {
-  return { id, session: { id: 'session-' + id, header: { id: 'session-' + id, delegationDepth: depth } } };
+  const sid = 'session-' + id;
+  return {
+    id,
+    session: {
+      id: sid,
+      header: { id: sid, delegationDepth: depth },
+      surface: { replaceGeneration: 0, nodes: [] }, // 真 Session 的无条件 getter 投影
+      eventAt: () => undefined,                     // 真 Session 方法；空 surface 下不会被命中
+    },
+  };
 }
 function contentTextOf(m) {
   if (!m) return '';

@@ -61,6 +61,45 @@ const REQUIRED = ['mind-inject', 'mind-guard', 'mind-recall', 'mind-connect', 'm
  *  反例 A 把 `isMindConnected` 改恒 false → `mind-inject` 的守卫**永远早退**（合法路径、不抛错），
  *  于是 R0 每会话都不注入，而"真跑 handler"也照样绿。**只有断言"效果发生了"才抓得到。**
  *  这里只对**行为最确定**的插件下断言（构造参数已知、结果唯一）；其余插件保持"不抛错 + 已注册"级。 */
+/** 注入消息判据（与插件内的 isR0Present / isRecallPresent 同一把尺子：plugin source + form 双钉，
+ *  不看文本——文本判据会被摘要/引用误伤）。 */
+const pluginSrc = (plugin, form) => (m) => !!(m && m.source && m.source.kind === 'plugin' && m.source.plugin === plugin && m.source.form === form);
+const isR0Msg = pluginSrc('dshome-mind-inject', 'instructions');
+const isR1Msg = pluginSrc('dshome-mind-recall', 'recall');
+/** 取 handler **返回值**里的 messages（断言只看返回值——见 runHandlers 头注的血债）。 */
+const retMessages = (r) => (r?.ret && Array.isArray(r.ret.messages)) ? r.ret.messages : [];
+/** 消息文本抽取（content 可能是 string 或 blocks）。 */
+const msgText = (m) => {
+  const c = m?.content;
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.map((p) => (typeof p === 'string' ? p : (p && p.text) || '')).join('\n');
+  return '';
+};
+
+/** ── 会话桩（2026-09-26 v3.2 换轴后必需）────────────────────────────────────────
+ *  在场判据已从 `decision.messages` 换到 **surface 代次**，故桩必须真提供
+ *  `agent.session.surface = { replaceGeneration, nodes }` 与 `agent.session.eventAt(seq)`
+ *  （真 Session 上：`surface.replaceGeneration` 只在压缩 replace 时 +1，`eventAt(seq)` 读日志）。
+ *  ⚠️ 探针 messages 一律给空数组：判据若还看 messages（v3.1 的死代码路径），场景 4/负例会立刻变红。 */
+function makeSessionProbe({ id = 'verify-probe', gen = 0, nodes = [], events = [], depth = 0 } = {}) {
+  const log = new Map(events);
+  return {
+    id,
+    header: { id, delegationDepth: depth, cwd: repoRoot },
+    surface: { replaceGeneration: gen, nodes: [...nodes] },
+    eventAt: (seq) => log.get(seq),
+    /** 测试用：切换到下一代的 surface（模拟压缩 replace 把注入换出去 / 换回来）。 */
+    setSurface(nextGen, nextNodes) { this.surface.replaceGeneration = nextGen; this.surface.nodes = [...nextNodes]; },
+    putEvent(seq, ev) { log.set(seq, ev); },
+  };
+}
+/** 造一条「本插件注入过的 user/message」事件（与真会话日志同形：`data` 即消息本体，带 source）。 */
+const injectedEvent = (seq, plugin, form) => ({
+  seq,
+  type: 'user/message',
+  data: { role: 'user', content: [{ type: 'text', text: `probe ${form} injection` }], source: { kind: 'plugin', plugin, form } },
+});
+
 const EXPECT = {
   'mind-inject': {
     // 2026-09-11 加**顺序契约**（补 ③，源自 openhanako 考古）：原来只断言"注入了"，
@@ -90,8 +129,191 @@ const EXPECT = {
       const iAgents = text.indexOf('# AGENTS.md');
       return iSoul >= 0 && iAgents >= 0 && iSoul < iAgents;
     },
+    // 2026-09-26 加：多场景断言（「压缩后 R0 注入失效」修复的行为面）。**v3.2 换轴后重写**：
+    //   旧版三场景（v3.1）被复核证明抓不住 —— 变异测试「删 event.type 守卫 / delete→clear() /
+    //   isR0Present 恒 false / 复核改看形参」四项断言全绿。故现在的场景必须打在三根轴上：
+    //   ① surface 代次（gen）② surface 在场复核（eventAt）③ 每会话状态（Map，不得跨会话串）。
+    run: async ({ record, runHandlers, fireSessionEvent, fireEvent }) => {
+      const out = [];
+      const A = makeSessionProbe({ id: 'verify-probe', gen: 0, nodes: [] }); // 主会话
+      const run = (session, s, extra) => runHandlers({ ev: 'agent/pre-step', step: s, messages: [], agent: { session }, ...(extra ?? {}) });
+      // 场景 1：gen=0、surface 空（历史里没有 R0）→ 必须注入（首注，不带 repair 标记）。
+      const r1 = await run(A, 1);
+      const m1 = retMessages(r1.at(-1)).filter(isR0Msg);
+      out.push({ name: '场景1 gen=0/surface 空 → 必须注入', ok: m1.length === 1, detail: `注入 ${m1.length} 条，期望 1` });
+      // 场景 2：同代次（state 已记 gen=0）→ 必须不注入（代次快速路径，零扫描）。
+      const r2 = await run(A, 2);
+      const n2 = retMessages(r2.at(-1)).filter(isR0Msg).length;
+      out.push({ name: '场景2 同代次 → 必须不注入（快速路径）', ok: n2 === 0, detail: `又注入 ${n2} 条，期望 0` });
+      // 场景 3：代次 0→1（压缩 replace 把注入换出去了）→ 必须补注入，且带 inject#repair。
+      A.setSurface(1, []);
+      const r3 = await run(A, 3);
+      const m3 = retMessages(r3.at(-1)).filter(isR0Msg);
+      out.push({ name: '场景3 代次 0→1（注入被压缩换出）→ 必须补注入', ok: m3.length === 1, detail: `补注入 ${m3.length} 条，期望 1` });
+      const tagged = m3.some((m) => msgText(m).includes('inject#repair'));
+      out.push({ name: '场景3 补注带 inject#repair 标记', ok: m3.length === 1 && tagged, detail: tagged ? '' : '补注 payload 未带 inject#repair' });
+      // 场景 4【关键负例·问题 2 的反例轴】：代次**不变**、surface 里注入**仍在**（模拟 commit 前失败的
+      //   压缩：官方同样 append 带 error 的 compaction/end，但 surface 未收缩）→ 必须**不**注入。
+      //   这一条同时枪毙两种旧判据：按 compaction 事件摘标记（会重注一遍 ~11KB）与查 decision.messages
+      //   （探针 messages 恒空 ⇒ 恒判「不在场」⇒ 也会重注）。
+      A.putEvent(20, injectedEvent(20, 'dshome-mind-inject', 'instructions'));
+      A.setSurface(1, [20]);
+      const compactFired = await fireSessionEvent(A, { type: 'compaction/end', data: { error: 'probe: commit-failed' } });
+      const r4 = await run(A, 4);
+      const n4 = retMessages(r4.at(-1)).filter(isR0Msg).length;
+      out.push({
+        name: '场景4 代次不变+注入仍在（失败压缩）→ 必须不注入',
+        ok: n4 === 0,
+        detail: `又注入 ${n4} 条，期望 0（compaction/end 订阅者 ${compactFired} 个：v3.2 起本插件不再按事件摘标记）`,
+      });
+      // 场景 5：**双会话隔离** —— B 会话必须照常注入，且它的 `gen` **故意取 A 当时已记下的代次（1）**：
+      //   这样「把 key 写成常量单键（如 'singleton'）」的实现会让 B 命中 A 的快路径而漏注 ⇒ 变异必红
+      //   （第三轮复核 F1）；正确实现下 key 不同 ⇒ B 状态为空 ⇒ 走 surface 复核 ⇒ 正常注入。
+      const B = makeSessionProbe({ id: 'verify-probe-b', gen: 1, nodes: [] });
+      const r5 = await run(B, 1);
+      const n5 = retMessages(r5.at(-1)).filter(isR0Msg).length;
+      out.push({ name: '场景5 另一会话（gen 与 A 相同）仍须注入（会话隔离）', ok: n5 === 1, detail: `注入 ${n5} 条，期望 1（A 已记 gen=1；key 若被写成单键/共用 ⇒ 这里会漏注）` });
+      // 场景 6：`session/disposed` 清状态 —— 销毁 A 后同代次仍须重新复核并补注入（surface 已空）。
+      A.setSurface(1, []);
+      const disposedFired = await fireEvent('session/disposed', A);
+      const r6 = await run(A, 5);
+      const n6 = retMessages(r6.at(-1)).filter(isR0Msg).length;
+      out.push({
+        name: '场景6 session/disposed 清状态 → 同代次须重新复核并补注入',
+        ok: disposedFired > 0 && n6 === 1,
+        detail: `session/disposed 订阅者 ${disposedFired} 个（期望 >0）；补注入 ${n6} 条，期望 1`,
+      });
+      // 场景 7【surface 复核分支】：**换代次但注入仍在 surface**（压缩把别的东西换出去、R0 被保留）
+      //   → 必须靠扫 surface 判「在场」而**不**注入（官方 dsh-agent-instructions 的同款分支）。
+      //   该分支只在「状态里没记本代次」时才走到（新会话 / 状态刚被清）；少了它，
+      //   「在场判据改恒 false」的变异测试会全绿 = 假绿面。
+      const C = makeSessionProbe({ id: 'verify-probe-c', gen: 3, nodes: [30], events: [[30, injectedEvent(30, 'dshome-mind-inject', 'instructions')]] });
+      const r7 = await run(C, 1);
+      const n7 = retMessages(r7.at(-1)).filter(isR0Msg).length;
+      out.push({ name: '场景7 换代次但 R0 仍在 surface → 必须不注入（复核分支）', ok: n7 === 0, detail: `又注入 ${n7} 条，期望 0（判据漏看 surface 时会变 1）` });
+      // 场景 8【落地校验】：模拟 `insertAfterClaimed` **静默不落地**（`decision.messages` 非数组，
+      //   见 mind-insert.js:23）⇒ 必须 (a) 留 `inject#failed` 证、(b) **不记代次**：同代次下一步
+      //   仍会重试并成功注入。少了 (b)，一次没落地的注入会把该代次「钉死」，到下次换代次前永不再试。
+      const D = makeSessionProbe({ id: 'verify-probe-d', gen: 0, nodes: [] });
+      await run(D, 1, { decision: { messages: null } });
+      const failedLogged = (() => { try { return readFileSync(join(MARKET_DIR, 'mind-inject-marker.txt'), 'utf8').includes('inject#failed'); } catch { return false; } })();
+      const r8 = await run(D, 2);
+      const n8 = retMessages(r8.at(-1)).filter(isR0Msg).length;
+      out.push({
+        name: '场景8 注入未落地 ⇒ 不记代次（+ inject#failed 留痕）',
+        ok: failedLogged && n8 === 1,
+        detail: `marker 含 inject#failed=${failedLogged}（期望 true）；同代次重试注入 ${n8} 条，期望 1（误记为已处理时会变 0）`,
+      });
+      // 场景 9【失败面】：agent 桩**没有** `session.surface`（真 agent 恒有——Session 的 getter，
+      //   见 dsh-session:993/1096；这里是拿畸形桩验失败面）⇒ 必须 (a) 留 `error: surface unavailable`
+      //   证、(b) 该步**不注入**、(c) surface 恢复后**仍能正常注入**（只是一步跳过，不是永久停摆）。
+      //   少了它：把 `warnSurfaceBroken(...)` 调用删掉（变哑）无任何断言会红（第三轮复核 F3）。
+      const F = { id: 'verify-probe-f', header: { id: 'verify-probe-f', delegationDepth: 0, cwd: repoRoot } }; // 无 surface / 无 eventAt
+      const r9a = await run(F, 1);
+      const n9a = retMessages(r9a.at(-1)).filter(isR0Msg).length;
+      const brokenLogged = (() => { try { return readFileSync(join(MARKET_DIR, 'mind-inject-marker.txt'), 'utf8').includes('error: surface unavailable'); } catch { return false; } })();
+      out.push({
+        name: '场景9 surface 缺失 ⇒ 响亮留痕 + 不注入',
+        ok: brokenLogged && n9a === 0,
+        detail: `marker 含 error: surface unavailable=${brokenLogged}（期望 true）；该步注入 ${n9a} 条，期望 0（失败面变哑时会变 1）`,
+      });
+      F.surface = { replaceGeneration: 0, nodes: [] }; // 恢复成完好桩
+      F.eventAt = () => undefined;
+      const r9b = await run(F, 2);
+      const n9b = retMessages(r9b.at(-1)).filter(isR0Msg).length;
+      out.push({ name: '场景9 surface 恢复后仍能注入（不是永久停摆）', ok: n9b === 1, detail: `恢复后注入 ${n9b} 条，期望 1` });
+      // 既有「SOUL 先于 AGENTS」顺序契约断言继续作用于**场景 1（首注）**的结果——与旧默认单场景同一读数。
+      //   ⚠️ 必须放在所有场景**之后**：runHandlers 每跑一次都会刷新 record.lastDecision。
+      record.lastDecision = r1.at(-1)?.ret;
+      return out;
+    },
+  },
+  'mind-recall': {
+    // 2026-09-26 加：R1（上工召回）与 R0 同病灶、同修法——注入消息 form='recall'。
+    desc: '上工召回应被注入一条 source.form=recall 的消息；压缩换代后必须补注入',
+    run: async ({ record, runHandlers, fireSessionEvent, fireEvent }) => {
+      const out = [];
+      const asked = [{ role: 'user', content: '验证探针：压缩后召回自愈' }];
+      const A = makeSessionProbe({ id: 'verify-probe', gen: 0, nodes: [] });
+      const run = (session, s, extra) => runHandlers({ ev: 'agent/pre-step', step: s, messages: asked, agent: { session }, ...(extra ?? {}) });
+      const n = (r) => retMessages(r.at(-1)).filter(isR1Msg).length;
+      // 场景 1：gen=0、surface 空 → 必须注入（会真跑一次 mind-prime）。
+      const r1 = await run(A, 1);
+      out.push({ name: '场景1 gen=0/surface 空 → 必须注入', ok: n(r1) === 1, detail: `注入 ${n(r1)} 条，期望 1` });
+      // 场景 2：同代次 → 不注入，**且不得再跑 mind-prime**（快速路径在 execFileSync 之前）。
+      const r2 = await run(A, 2);
+      out.push({ name: '场景2 同代次 → 必须不注入（不重跑 mind-prime）', ok: n(r2) === 0, detail: `又注入 ${n(r2)} 条，期望 0` });
+      // 场景 3：代次 0→1 → 补注入（会再跑一次 mind-prime，可接受）+ 带 inject#repair。
+      A.setSurface(1, []);
+      const r3 = await run(A, 3);
+      const m3 = retMessages(r3.at(-1)).filter(isR1Msg);
+      out.push({ name: '场景3 代次 0→1 → 必须补注入', ok: m3.length === 1, detail: `补注入 ${m3.length} 条，期望 1` });
+      out.push({ name: '场景3 补注带 inject#repair 标记', ok: m3.length === 1 && m3.some((m) => msgText(m).includes('inject#repair')), detail: '补注 payload 未带 inject#repair' });
+      // 场景 4【关键负例】：代次不变 + surface 里召回仍在 + 派发 compaction/end（失败压缩）→ 必须不注入。
+      A.putEvent(21, injectedEvent(21, 'dshome-mind-recall', 'recall'));
+      A.setSurface(1, [21]);
+      await fireSessionEvent(A, { type: 'compaction/end', data: { error: 'probe: commit-failed' } });
+      const r4 = await run(A, 4);
+      out.push({ name: '场景4 代次不变+召回仍在（失败压缩）→ 必须不注入', ok: n(r4) === 0, detail: `又注入 ${n(r4)} 条，期望 0` });
+      // 场景 5：双会话隔离 —— B 会话必须照常注入，`gen` **故意取 A 当时已记下的代次（1）**：
+      //   key 若被写成常量单键 ⇒ B 命中 A 的快路径而漏注 ⇒ 变异必红（第三轮复核 F1）。
+      const B = makeSessionProbe({ id: 'verify-probe-b', gen: 1, nodes: [] });
+      const r5 = await run(B, 1);
+      out.push({ name: '场景5 另一会话（gen 与 A 相同）仍须注入（会话隔离）', ok: n(r5) === 1, detail: `注入 ${n(r5)} 条，期望 1（A 已记 gen=1；key 共用时会漏注）` });
+      // 场景 6：session/disposed 清状态后同代次须重新复核并补注入。
+      A.setSurface(1, []);
+      const disposedFired = await fireEvent('session/disposed', A);
+      const r6 = await run(A, 5);
+      out.push({
+        name: '场景6 session/disposed 清状态 → 同代次须重新复核并补注入',
+        ok: disposedFired > 0 && n(r6) === 1,
+        detail: `session/disposed 订阅者 ${disposedFired} 个（期望 >0）；补注入 ${n(r6)} 条，期望 1`,
+      });
+      // 场景 7：**没跑 mind-prime 的提前返回不得记代次** —— delegationDepth>0（子代理跳过）后，
+      //   同一会话以 depth=0 再跑必须仍能召回（旧实现把 add 放在跳过之前 ⇒ 被静默挡住）。
+      const subA = makeSessionProbe({ id: 'verify-probe-sub', gen: 0, nodes: [], depth: 1 });
+      const r7a = await run(subA, 1);
+      subA.header.delegationDepth = 0;
+      const r7b = await run(subA, 1);
+      out.push({
+        name: '场景7 跳过的会话不得被当作「本代次已处理」',
+        ok: n(r7a) === 0 && n(r7b) === 1,
+        detail: `depth=1 注入 ${n(r7a)} 条（期望 0）；随后 depth=0 注入 ${n(r7b)} 条（期望 1 —— 被误标时会变 0）`,
+      });
+      // 场景 8【surface 复核分支】：换代次但召回仍在 surface → 必须不注入（同 mind-inject 场景 7）。
+      const C = makeSessionProbe({ id: 'verify-probe-c', gen: 3, nodes: [31], events: [[31, injectedEvent(31, 'dshome-mind-recall', 'recall')]] });
+      const r8 = await run(C, 1);
+      out.push({ name: '场景8 换代次但召回仍在 surface → 必须不注入（复核分支）', ok: n(r8) === 0, detail: `又注入 ${n(r8)} 条，期望 0（判据漏看 surface 时会变 1）` });
+      // 场景 9【落地校验】：模拟 `insertAfterClaimed` 静默不落地 ⇒ 必须留 `recall#failed` 证 +
+      //   **不记代次**（同代次下一步仍会重试并注入；否则这一次白搭的 mind-prime 会把代次钉死）。
+      const D = makeSessionProbe({ id: 'verify-probe-d', gen: 0, nodes: [] });
+      await run(D, 1, { decision: { messages: null } });
+      const failedLogged = (() => { try { return readFileSync(join(MARKET_DIR, 'mind-recall-marker.txt'), 'utf8').includes('recall#failed'); } catch { return false; } })();
+      const r9 = await run(D, 2);
+      out.push({
+        name: '场景9 召回未落地 ⇒ 不记代次（+ recall#failed 留痕）',
+        ok: failedLogged && n(r9) === 1,
+        detail: `marker 含 recall#failed=${failedLogged}（期望 true）；同代次重试注入 ${n(r9)} 条，期望 1（误记为已处理时会变 0）`,
+      });
+      // 场景 10【失败面】：同 mind-inject 场景 9 —— 桩缺 `session.surface` ⇒ 响亮留痕 + 不注入，
+      //   恢复后仍能召回（失败面不许变哑、也不许永久停摆）。
+      const F = { id: 'verify-probe-f', header: { id: 'verify-probe-f', delegationDepth: 0, cwd: repoRoot } }; // 无 surface / 无 eventAt
+      const r10a = await run(F, 1);
+      const brokenLogged = (() => { try { return readFileSync(join(MARKET_DIR, 'mind-recall-marker.txt'), 'utf8').includes('error: surface unavailable'); } catch { return false; } })();
+      out.push({
+        name: '场景10 surface 缺失 ⇒ 响亮留痕 + 不注入',
+        ok: brokenLogged && n(r10a) === 0,
+        detail: `marker 含 error: surface unavailable=${brokenLogged}（期望 true）；该步注入 ${n(r10a)} 条，期望 0（失败面变哑时会变 1）`,
+      });
+      F.surface = { replaceGeneration: 0, nodes: [] };
+      F.eventAt = () => undefined;
+      const r10b = await run(F, 2);
+      out.push({ name: '场景10 surface 恢复后仍能注入（不是永久停摆）', ok: n(r10b) === 1, detail: `恢复后注入 ${n(r10b)} 条，期望 1` });
+      return out;
+    },
   },
 };
+
 
 /** 挂载失败的判据：日志里出现这些字样即视为「初始化失败」。 */
 const FAIL_RE = /初始化失败|挂载失败|apply failed|is not defined|not a function|未捕获|Cannot read/i;
@@ -182,6 +404,57 @@ function fmt(args) {
     if (a && typeof a === 'object') { try { return JSON.stringify(a).slice(0, 120); } catch { return String(a); } }
     return String(a);
   }).join(' ').slice(0, 200);
+}
+
+/** ── handler 执行器（2026-09-26 抽成可复用，为「压缩后补注入」多场景断言做准备）──────────
+ *  旧版把 handler 真跑写死在主循环里、**每个 handler 只跑一次**、固定
+ *  `decision={kind:'enter',messages:[]}` + `step:1` —— 这不足以验「压缩吃掉注入后能否回补」：
+ *  那条路径要**同一会话连续跑多次** pre-step（step 1 → 2 → 压缩 → 3），并且要能派发
+ *  `session/event`。故抽成 `runHandlers(record, scenario)`：
+ *    · scenario.ev 未给 = 跑该插件记录的**全部** handler（= 旧版默认单场景行为，逐字不变）；
+ *    · scenario.ev 给 = 只跑该事件的 handler（多场景用，避免把 `session/event` 订阅者
+ *      当成 pre-step handler 调用——那种误调用本身就会造出假红/假绿）。
+ *  ⚠️ 断言必须看 **handler 的返回值**：它返回的是**新对象**，不是就地改传入的 decision
+ *     （血债：首版断言看的是传进去的那个对象 ⇒ mind-inject 明明注入了也被判「未注入」）。 */
+async function runHandlers(record, scenario = {}) {
+  const results = [];
+  for (const { ev, handler } of record.handlers) {
+    if (scenario.ev !== undefined && ev !== scenario.ev) continue;
+    try {
+      const decision = { kind: 'enter', messages: [], ...(scenario.decision ?? {}) };
+      const ret = await handler(
+        {
+          agent: scenario.agent ?? { session: { header: { id: 'verify-probe', delegationDepth: 0, cwd: repoRoot } } },
+          messages: scenario.messages ?? [],
+          step: scenario.step ?? 1,
+          signal: undefined,
+        },
+        async () => decision,
+      );
+      const settled = (ret && typeof ret === 'object') ? ret : decision;
+      results.push({ ev, ret: settled });
+      record.lastDecision = settled;
+    } catch (e) {
+      record.logs.push(['warn', `handler[${ev}] 抛错: ${(e && e.constructor && e.constructor.name) || 'Error'}: ${e && e.message}`]);
+    }
+  }
+  return results;
+}
+
+/** 派发一个宿主事件，只喂给该插件自己订阅的同名 handler。
+ *  返回**真被调用的订阅者个数** —— 订阅被删掉/接错线时它是 0，断言据此变红（不许假绿）。 */
+async function fireEvent(record, name, ...args) {
+  let fired = 0;
+  for (const { ev, handler } of record.handlers) {
+    if (ev !== name) continue;
+    fired += 1;
+    await handler(...args);
+  }
+  return fired;
+}
+/** `session/event` 派发的薄封装（v3.2 起两个插件都不再订阅它——保留派发以便断言「不再按事件摘标记」）。 */
+async function fireSessionEvent(record, session, event) {
+  return fireEvent(record, 'session/event', session, event);
 }
 
 let failed = 0;
@@ -289,36 +562,35 @@ for (const name of PLUGINS) {
   // ③ apply 阶段
   try { await mod.apply(makeCtx(record)); } catch (e) { thrown = e; }
 
-  // ④ handler 阶段：**真跑一次** —— C2 的反例 A（把 isMindConnected 改恒 false，注入永远早退）
+  // ④ handler 阶段：**真跑** —— C2 的反例 A（把 isMindConnected 改恒 false，注入永远早退）
   //    只有这一步才抓得到：原版 mock 把 handler 丢掉，那个坏守卫从未被执行过一次。
-  for (const { ev, handler } of record.handlers) {
+  //    2026-09-26：抽成 runHandlers(scenario)；EXPECT 带 `run` 的插件走多场景（压缩后自愈），
+  //    不带的照旧走「默认单场景」——**默认路径行为逐字不变**。
+  const exp = EXPECT[name];
+  let expectFail = '';
+  let scenarioInfo = '';
+  if (exp?.run) {
     try {
-      const decision = { kind: 'enter', messages: [] };
-      // ⚠️ 断言必须看 **handler 的返回值**——它可能返回一个**新对象**而非就地改传入的 decision。
-      //    首版断言看的是我传进去的那个对象 → `mind-inject` 明明注入了也被判"未注入"（**断言自身写错**，
-      //    又一次"改了比较的一方、忘了另一方"）。
-      const ret = await handler(
-        {
-          agent: { session: { header: { id: 'verify-probe', delegationDepth: 0, cwd: repoRoot } } },
-          messages: [], step: 1, signal: undefined,
-        },
-        async () => decision,
-      );
-      record.lastDecision = (ret && typeof ret === 'object') ? ret : decision;
+      const scenarios = await exp.run({ record, runHandlers: (s) => runHandlers(record, s), fireSessionEvent: (session, event) => fireSessionEvent(record, session, event), fireEvent: (name, ...args) => fireEvent(record, name, ...args) });
+      const badScenarios = (scenarios || []).filter((s) => !s.ok);
+      scenarioInfo = `；多场景断言 ${(scenarios || []).length} 项${badScenarios.length ? `（失败 ${badScenarios.length}）` : '全通过'}`;
+      if (badScenarios.length) expectFail = badScenarios.map((s) => `${s.name}${s.detail ? `（${s.detail}）` : ''}`).join('；');
     } catch (e) {
-      record.logs.push(['warn', `handler[${ev}] 抛错: ${(e && e.constructor && e.constructor.name) || 'Error'}: ${e && e.message}`]);
+      expectFail = `多场景断言自身抛错: ${(e && e.constructor && e.constructor.name) || 'Error'}: ${e && e.message}`;
     }
+  } else {
+    await runHandlers(record, {});
   }
   restoreMarkers(markerSnap);
 
   const warns = record.logs.filter(([lv]) => lv === 'warn' || lv === 'error');
   const bad = warns.filter(([, m]) => FAIL_RE.test(m));
   // 行为断言（C2 反例 A：守卫早退**不抛错**，"没抛错"证明不了行为发生过）—— 见表 EXPECT
-  let expectFail = '';
-  const exp = EXPECT[name];
-  if (exp) {
-    try { if (!exp.check(record)) expectFail = exp.desc; }
-    catch (e) { expectFail = `${exp.desc}（断言自身抛错: ${e && e.message}）`; }
+  if (exp?.check) {
+    let checkFail = '';
+    try { if (!exp.check(record)) checkFail = exp.desc; }
+    catch (e) { checkFail = `${exp.desc}（断言自身抛错: ${e && e.message}）`; }
+    if (checkFail) expectFail = expectFail ? `${expectFail}；${checkFail}` : checkFail;
   }
   // 判定分级（2026-09-11）：核心心智插件（REQUIRED）要求"注册了钩子 +（有断言时）行为断言通过"；
   // 其余 host 插件（core/shell/desktop/notify/…）只要求"不抛错"——它们可能依赖 Electron/宿主环境、
@@ -326,7 +598,7 @@ for (const name of PLUGINS) {
   const strict = REQUIRED.includes(name);
   const ok = !thrown && bad.length === 0 && !expectFail && (!strict || record.registered.length > 0);
   if (ok) {
-    console.log(`  ✅ ${name}: apply 正常（注册 ${record.registered.join(', ')}；handler 真跑 ${record.handlers.length} 个${exp ? ' + 行为断言通过' : ''}）`);
+    console.log(`  ✅ ${name}: apply 正常（注册 ${record.registered.join(', ')}；handler 真跑 ${record.handlers.length} 个${exp ? ' + 行为断言通过' : ''}${scenarioInfo}）`);
   } else {
     failed++;
     console.log(`  ❌ ${name}: 挂载异常`);
@@ -525,6 +797,61 @@ async function probeToggleRoundTrip() {
   return { checked, failures };
 }
 
+// ── recall「每代次至多一次 spawn」成本不变式探针（2026-09-26 加 · 第三轮复核 F2）──────────
+// 复核的变异实测：把代次快路径挪到 `execFileSync` **之后**、或删掉「空召回 / 抛错也记代次」
+//   ⇒ mind-recall 的 10 项行为断言**全绿**，而 spawn 数 1→3（每步一个同步子进程，阻塞事件循环）。
+// 为什么行为断言看不见：**spawn 次数不在 handler 返回值里**（注入条数两种实现都一样）。
+// ⇒ 只能在「真子进程 + 计数」这一面取证：假 `DSH_HOME` 夹具（`<tmp>/mind` + `<tmp>/scripts/mind-prime.mjs`
+//   计数假脚本）＋真 apply 一个 mind-recall 实例，跑 3 步数计数文件行数。真仓库零触碰
+//   （DSH_HOME 全程钉在夹具根，plugin 的 marker 也写进夹具），跑完删夹具、还原 env。
+async function probeRecallSpawnBudget() {
+  const failures = [];
+  const home = mkdtempSync(join(tmpdir(), 'dshome-verify-spawn-'));
+  const oldHome = process.env.DSH_HOME;
+  let checked = 0;
+  try {
+    mkdirSync(join(home, 'mind'), { recursive: true });
+    mkdirSync(join(home, 'scripts'), { recursive: true });
+    // 假 mind-prime：每次被 spawn 就 +1 行；`DSHOME_VERIFY_PRIME_FAIL=1` 时模拟抛错（exit 1）；
+    // 默认输出**不含 ■** ⇒ 走「空召回」降级路径。
+    writeFileSync(join(home, 'scripts', 'mind-prime.mjs'), [
+      "import { appendFileSync } from 'node:fs';",
+      "import { fileURLToPath } from 'node:url';",
+      "import { dirname, join } from 'node:path';",
+      "appendFileSync(join(dirname(fileURLToPath(import.meta.url)), 'spawns.log'), 'spawn\\n');",
+      "if (process.env.DSHOME_VERIFY_PRIME_FAIL === '1') process.exit(1);",
+      "console.log('（探针：空召回，无分节）');",
+    ].join('\n'), 'utf8');
+    process.env.DSH_HOME = home;
+    const recallMod = await import(pathToFileURL(join(HOST_DIR, 'mind-recall.js')).href);
+    const record = { logs: [], registered: [], handlers: [] };
+    await recallMod.apply(makeCtx(record));
+    const spawns = () => { try { return readFileSync(join(home, 'scripts', 'spawns.log'), 'utf8').trim().split('\n').filter(Boolean).length; } catch { return 0; } };
+    const session = (id) => ({ id, header: { id, delegationDepth: 0, cwd: home }, surface: { replaceGeneration: 0, nodes: [] }, eventAt: () => undefined });
+    const step = (s, n) => runHandlers(record, { ev: 'agent/pre-step', step: n, messages: [{ role: 'user', content: '探针' }], agent: { session: s } });
+    // ① 空召回（无 ■ 分节）：**跑过 mind-prime 就要记代次** ⇒ 3 步只该 spawn 1 次。
+    const A = session('verify-spawn-empty');
+    for (const n of [1, 2, 3]) await step(A, n);
+    const emptySpawns = spawns();
+    checked += 1;
+    if (emptySpawns !== 1) failures.push(`空召回会话连跑 3 步 spawn ${emptySpawns} 次（期望 1 —— 空召回不记代次时会是 3，即每步一个同步子进程）`);
+    // ② 抛错（mind-prime exit 1）：同样只该 spawn 1 次（抛错也要记代次）。
+    process.env.DSHOME_VERIFY_PRIME_FAIL = '1';
+    const B = session('verify-spawn-fail');
+    for (const n of [1, 2, 3]) await step(B, n);
+    const failSpawns = spawns() - emptySpawns;
+    checked += 1;
+    if (failSpawns !== 1) failures.push(`抛错会话连跑 3 步新增 spawn ${failSpawns} 次（期望 1 —— 抛错不记代次时会是 3）`);
+  } catch (e) {
+    failures.push(`探针自身异常：${e?.message ?? e}`);
+  } finally {
+    if (oldHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = oldHome;
+    delete process.env.DSHOME_VERIFY_PRIME_FAIL;
+    rmSync(home, { recursive: true, force: true });
+  }
+  return { checked, failures };
+}
+
 const probe = probePackageExports();
 if (probe.failures.length === 0) {
   console.log(`  ✅ 包路径解析：${probe.checked} 个 dshome/* 子路径全部可解析（package.json exports 齐全）`);
@@ -554,7 +881,14 @@ if (trip.failures.length === 0) {
   for (const f of trip.failures) console.log(`  ❌ ${f}`);
 }
 
-const totalFailed = failed + probe.failures.length + svc.failures.length + prot.failures.length + trip.failures.length + gateSelfFailures.length;
+const spawnBudget = await probeRecallSpawnBudget();
+if (spawnBudget.failures.length === 0) {
+  console.log(`  ✅ recall spawn 成本不变式：${spawnBudget.checked} 例（空召回 / 抛错）连跑 3 步各只 spawn 1 次（隔离 DSH_HOME 夹具 + 计数假 mind-prime）`);
+} else {
+  for (const f of spawnBudget.failures) console.log(`  ❌ ${f}`);
+}
+
+const totalFailed = failed + probe.failures.length + svc.failures.length + prot.failures.length + trip.failures.length + spawnBudget.failures.length + gateSelfFailures.length;
 for (const f of gateSelfFailures) console.log(`  ❌ 门禁自检失败：${f}`);
-console.log(`[verify-host-plugins] ${totalFailed === 0 ? '✅ 全部通过' : `❌ ${totalFailed} 项异常（挂载异常 ${failed} + 包解析失败 ${probe.failures.length} + 服务访问失配 ${svc.failures.length} + 保护语义 ${prot.failures.length} + 启停写回 ${trip.failures.length} + 门禁自检 ${gateSelfFailures.length}）`}（退出码 ${totalFailed === 0 ? 0 : 1}）`);
+console.log(`[verify-host-plugins] ${totalFailed === 0 ? '✅ 全部通过' : `❌ ${totalFailed} 项异常（挂载异常 ${failed} + 包解析失败 ${probe.failures.length} + 服务访问失配 ${svc.failures.length} + 保护语义 ${prot.failures.length} + 启停写回 ${trip.failures.length} + recall spawn 成本 ${spawnBudget.failures.length} + 门禁自检 ${gateSelfFailures.length}）`}（退出码 ${totalFailed === 0 ? 0 : 1}）`);
 process.exit(totalFailed === 0 ? 0 : 1);
