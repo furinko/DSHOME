@@ -20,7 +20,8 @@
     "./package.json": "./package.json",
     "./mind-skill-loader": "./lib/host/mind-skill-loader.js",
     "./mind-compaction-log": "./lib/host/mind-compaction-log.js",
-    "./agent-roles": "./lib/host/agent-roles.js"
+    "./agent-roles": "./lib/host/agent-roles.js",
+    "./session-budget": "./lib/host/session-budget.js"
   },
   "dsh": {
     "bundle": {

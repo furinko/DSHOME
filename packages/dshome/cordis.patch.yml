@@ -73,6 +73,13 @@
     # 释放量口径 = start/end 两次 tokenMeter.measure 差值；取不到记 unknown（#14）。只追加、fail-open。
     - id: dshome-mind-compaction-log
       name: dshome/mind-compaction-log
+    # dshome-session-budget（host）：会话预算哨兵——在"刚交付完 / 已过高水位"两档时机提醒换新会话省钱
+    # （上下文越长每次请求越贵：实测 21–50 轮 0.0171 元 → 400+ 轮 0.0307 元）。只在 turn/end 评估、
+    # 绝不打断回合；T1（15 万）须本回合出现过 deliverables/presented 才提示，否则只认 T2（30 万）；
+    # 每会话每水位一次、上限 3 次。两条通道：系统通知（notify 端口）+ 下一次 agent/pre-step 注入。
+    # 留痕 mind-private\tasks\evolution\session-budget-log.md（独立文件、只追加）；取不到 tokenMeter 不提示。
+    - id: dshome-session-budget
+      name: dshome/session-budget
     # dshome-agent-roles（host）：自建角色 agent 接缝——角色卡=独立系统提示词 + per-role 工具面/模型路由；
     # 三把工具（role_list/role_spawn/role_send）+ 管控者协议段装进**顶层 agent 的精确 scope**
     # （不是宿主平面全局），toolFilter/persona 靠 DSH 原生子代理接缝落地（照官方
