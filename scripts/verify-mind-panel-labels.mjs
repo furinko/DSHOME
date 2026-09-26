@@ -176,6 +176,13 @@ if (process.argv.includes('--expect-mutant')) {
 
 // ── 夹具（临时 DSH_HOME，真仓库零触碰）─────────────────────────────────────
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-label-gate-'));
+// ⚠️ 夹具期必须把 `DSH_HOME` **钉在夹具根**（2026-09-27 每日自维护修假红）：
+//   被测模块的 `repoRoot()` 是**调用期**读 `process.env.DSH_HOME`，而 `loadEntry()` 的 `finally`
+//   只保证"加载期"指向夹具、返回时就把 env 还原了 ⇒ 还原后 `buildGraph()` 落到真 `DSH_HOME`
+//   （那个根下有 `mind/`）⇒ 夹具断言全空、真仓库的卡混进来（实测：`DSH_HOME=E:\DSHOME` 下跑 =
+//   FAIL 8/17；清空 `DSH_HOME` 跑 = PASS 17/17）。env 的作用域＝**整个夹具块**（加载 + 断言都在这段里）。
+const fixturePrevHome = process.env.DSH_HOME;
+process.env.DSH_HOME = tmp;
 try {
   makeFixture(tmp);
   addFixtureFiles(tmp);
@@ -218,6 +225,7 @@ try {
       g.nodes.some((n) => n.rel.includes('L3/common/某主题/')), true, g.nodes.map((n) => n.rel).slice(0, 3));
   }
 } finally {
+  if (fixturePrevHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = fixturePrevHome;
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* 清理失败不影响判定 */ }
 }
 
