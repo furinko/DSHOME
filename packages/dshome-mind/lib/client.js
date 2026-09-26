@@ -30,6 +30,10 @@ window.__ModuleLoader__.load({
       ".dshome-mind-search:focus{border-color:var(--dsw-alias-brand-primary,#4D6BFE);box-shadow:0 0 0 3px rgba(77,107,254,.14)}",
       ".dshome-mind-legend{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--dsw-alias-label-tertiary,#6b7a99)}",
       ".dshome-mind-legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:3px;vertical-align:-1px}",
+      // 窄面板（≤1400px）：把图例整块收起（图例只解释颜色，悬停卡片仍有全路径可查）。
+      // 2026-09-26：随「隐藏快照」开关一起加的；开关已按主人要求整条撤掉，这一条**保留**——
+      // 它治的是"工具条被挤到第二行"那个独立毛病，与开关无关。
+      "@media (max-width:1400px){.dshome-mind-legend{display:none!important}}",
       ".dshome-mind-zoom{display:inline-flex;align-items:center;gap:2px}",
       ".dshome-mind-zoom button{width:22px;height:22px;border-radius:6px;border:1px solid var(--dsw-alias-border-l2,#d3dcea);background:var(--dsw-alias-bg-base,#f7f9fc);color:var(--dsw-alias-label-secondary,#4a5a78);cursor:pointer;font-size:13px;line-height:1}",
       ".dshome-mind-zoom button:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(77,107,254,.08));color:var(--dsw-alias-brand-primary,#4D6BFE)}",
@@ -84,7 +88,9 @@ window.__ModuleLoader__.load({
       ".dshome-mind-cron-preview{font-size:11px;color:var(--dsw-alias-state-warn-primary,#b8860b);margin:0 0 12px 68px}",
       ".dshome-mind-cron-foot{display:flex;justify-content:flex-end;margin-top:2px}",
       // ── 项目切换（面板项目分区 2026-09-09：全部 / DSHOME / 其它项目 / …）──────
-      // 项目多时在一行内横向滚动（可收缩 + max-width + overflow-x），不挤搜索框/图例/缩放
+      // 项目多时在一行内横向滚动（可收缩 + max-width + overflow-x），不挤搜索框/图例/缩放。
+      // 2026-09-26 收紧上限 42%→30%：实测 42% 时它是工具条里最贪的一块（项目钮多起来能吃到
+      // 300px+），把搜索框与开关一起挤到没地方 —— 现在它先让位（内部滚动，还能滚到别的项目）。
       ".dshome-mind-pj{display:inline-flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;max-width:42%;overflow-x:auto;white-space:nowrap;scrollbar-width:thin}",
       ".dshome-mind-pj::-webkit-scrollbar{height:5px}",
       ".dshome-mind-pj::-webkit-scrollbar-thumb{background:rgba(0,0,0,.16);border-radius:3px}",
@@ -96,13 +102,36 @@ window.__ModuleLoader__.load({
       ".dshome-mind-pj button.on{background:var(--dsw-alias-brand-primary,#4D6BFE);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18)}",
     ].join("");
 
-    function ensureStyle() {
+    function ensureStyle0() {
       if (document.getElementById("dshome-mind-style")) return;
       var s = document.createElement("style");
       s.id = "dshome-mind-style";
       s.textContent = STYLE;
       document.head.appendChild(s);
     }
+    // ── 样式**常驻守卫**（2026-09-26 加）──────────────────────────────────────
+    // 病史：主人报「短语按钮 / 插队图标会掉外观和布局」。上一版把注入改成"以 DOM 为真源"只覆盖了
+    //   **HMR 后模块状态重置**那一类；但 ensureStyle 仍只在 apply 那一刻跑一次 —— 之后若 <style>
+    //   节点被**别人删掉/整批替换**（上游重挂界面、安全模式、别的插件清 head），**没人再补**，
+    //   元素退回裸样式（外观 + 布局一起掉），刷新才恢复。现在：head 一有变动就查一次，缺了就补。
+    function guardStyle() {
+      try {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        var G = window.__dshomeStyleGuard || (window.__dshomeStyleGuard = {});
+        if (G['mind']) return;
+        G['mind'] = true;
+        var sel = "#dshome-mind-style";
+        var check = function () { try { if (!document.querySelector(sel)) ensureStyle0(); } catch (e) { /* 忽略 */ } };
+        check();
+        if (typeof MutationObserver === 'function' && document.head) new MutationObserver(check).observe(document.head, { childList: true });
+        window.addEventListener('focus', check);
+        document.addEventListener('visibilitychange', check);
+      } catch (e) { /* 守卫失败不阻断插件本身 */ }
+    }
+
+    /** 幂等入口：样式在位 + 守卫挂起（守卫内部同样调 ensureStyle0 补写）。 */
+    function ensureStyle() { ensureStyle0(); guardStyle(); }
+
 
     function el(tag, cls, html) {
       var e = document.createElement(tag);

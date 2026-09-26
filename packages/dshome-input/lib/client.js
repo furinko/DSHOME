@@ -128,7 +128,7 @@ window.__ModuleLoader__.load({
       ".dshome-input-sep{width:1px;height:14px;background:var(--dsw-alias-border-l2,#2a3a5c);margin:0 2px;flex:none}",
     ].join("");
 
-    function ensureStyles() {
+    function ensureStyle0() {
       try {
         if (typeof document === "undefined" || !document.head) return;
         if (document.querySelector("style[data-dshome-input]")) return;
@@ -140,6 +140,29 @@ window.__ModuleLoader__.load({
         console.warn("dshome-input: style inject failed", error);
       }
     }
+    // ── 样式**常驻守卫**（2026-09-26 加）──────────────────────────────────────
+    // 病史：主人报「短语按钮 / 插队图标会掉外观和布局」。上一版把注入改成"以 DOM 为真源"只覆盖了
+    //   **HMR 后模块状态重置**那一类；但 ensureStyle 仍只在 apply 那一刻跑一次 —— 之后若 <style>
+    //   节点被**别人删掉/整批替换**（上游重挂界面、安全模式、别的插件清 head），**没人再补**，
+    //   元素退回裸样式（外观 + 布局一起掉），刷新才恢复。现在：head 一有变动就查一次，缺了就补。
+    function guardStyle() {
+      try {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        var G = window.__dshomeStyleGuard || (window.__dshomeStyleGuard = {});
+        if (G['input']) return;
+        G['input'] = true;
+        var sel = "style[data-dshome-input='1']";
+        var check = function () { try { if (!document.querySelector(sel)) ensureStyle0(); } catch (e) { /* 忽略 */ } };
+        check();
+        if (typeof MutationObserver === 'function' && document.head) new MutationObserver(check).observe(document.head, { childList: true });
+        window.addEventListener('focus', check);
+        document.addEventListener('visibilitychange', check);
+      } catch (e) { /* 守卫失败不阻断插件本身 */ }
+    }
+
+    /** 幂等入口：样式在位 + 守卫挂起（守卫内部同样调 ensureStyle0 补写）。 */
+    function ensureStyles() { ensureStyle0(); guardStyle(); }
+
 
     /** 官方输入框（ComposerContentEditable 的语义属性；真机核实全页唯一）。 */
     const COMPOSER_SELECTOR = "[data-composer-input]";

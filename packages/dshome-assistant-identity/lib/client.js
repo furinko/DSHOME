@@ -63,10 +63,10 @@ window.__ModuleLoader__.load({
       ".dshome-identity-avatar img{width:100%;height:100%;object-fit:cover;display:block}",
       ".dshome-identity-name{font-size:15px;font-weight:600;color:var(--dsw-alias-label-secondary,#4a5a78);max-width:min(60vw,480px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
     ].join("");
-    var styleInjected = false;
-    function ensureStyle() {
-      if (styleInjected) return;
-      styleInjected = true;
+    function ensureStyle0() {
+      // 以 **DOM 为真源**（2026-09-26 统一纪律）：只看内存 flag 会在客户端热更新后失效——
+      // 模块状态重置、`<style>` 节点可能已不在 DOM，flag 却说"注入过" ⇒ 元素裸渲染、看着像丢渲染。
+      if (document.querySelector("style[data-plugin='dshome-assistant-identity']")) return;
       try {
         var tag = document.createElement("style");
         tag.setAttribute("data-plugin", "dshome-assistant-identity");
@@ -74,6 +74,29 @@ window.__ModuleLoader__.load({
         document.head.appendChild(tag);
       } catch (e) { console.warn("dshome-assistant-identity: style failed", e); }
     }
+    // ── 样式**常驻守卫**（2026-09-26 加）──────────────────────────────────────
+    // 病史：主人报「短语按钮 / 插队图标会掉外观和布局」。上一版把注入改成"以 DOM 为真源"只覆盖了
+    //   **HMR 后模块状态重置**那一类；但 ensureStyle 仍只在 apply 那一刻跑一次 —— 之后若 <style>
+    //   节点被**别人删掉/整批替换**（上游重挂界面、安全模式、别的插件清 head），**没人再补**，
+    //   元素退回裸样式（外观 + 布局一起掉），刷新才恢复。现在：head 一有变动就查一次，缺了就补。
+    function guardStyle() {
+      try {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        var G = window.__dshomeStyleGuard || (window.__dshomeStyleGuard = {});
+        if (G['assistant-identity']) return;
+        G['assistant-identity'] = true;
+        var sel = "style[data-plugin='dshome-assistant-identity']";
+        var check = function () { try { if (!document.querySelector(sel)) ensureStyle0(); } catch (e) { /* 忽略 */ } };
+        check();
+        if (typeof MutationObserver === 'function' && document.head) new MutationObserver(check).observe(document.head, { childList: true });
+        window.addEventListener('focus', check);
+        document.addEventListener('visibilitychange', check);
+      } catch (e) { /* 守卫失败不阻断插件本身 */ }
+    }
+
+    /** 幂等入口：样式在位 + 守卫挂起（守卫内部同样调 ensureStyle0 补写）。 */
+    function ensureStyle() { ensureStyle0(); guardStyle(); }
+
 
     // ── 对话区注入器 ───────────────────────────────────────────────────────
     var ROW_SELECTOR = '[data-chat-flow-kind="assistant-step"]';

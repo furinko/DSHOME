@@ -80,7 +80,6 @@ window.__ModuleLoader__.load({
     var filters = { q: "", cat: "全部", state: "全部" };
     var root, panel, listEl, searchEl, catSel, stateSel, countEl, toastEl;
     var mounted = false;
-    var styleInjected = false; // STYLE 只注入一次；入口按钮启动即渲染，样式必须在激活时就位
 
     function el(tag, cls, text) {
       var n = document.createElement(tag);
@@ -88,15 +87,40 @@ window.__ModuleLoader__.load({
       if (text !== undefined) n.textContent = text;
       return n;
     }
-    // 设计系统样式注入：幂等。必须在入口按钮首次渲染前就位（apply 时调用），
+    // 设计系统样式注入：**以 DOM 为真源**（幂等）。必须在入口按钮首次渲染前就位（apply 时调用），
     // 否则 sidebar 里的按钮会以裸样式渲染（无 inline-flex / 圆角 / 渐变图标块）。
-    function ensureStyle() {
-      if (styleInjected) return;
-      styleInjected = true;
+    // 病史（2026-09-26）：原写法只看内存 flag `styleInjected` ⇒ **客户端热更新后失效**（模块状态重置、
+    // `<style>` 节点可能已不在 DOM 里，flag 却说"注入过"）⇒ 入口按钮裸渲染，看着像"丢渲染"。
+    function ensureStyle0() {
+      if (document.querySelector("style[data-dshome-plugin='dshome-plugin-center']")) return;
       var css = el("style");
+      css.setAttribute("data-dshome-plugin", "dshome-plugin-center");
       css.textContent = STYLE;
       document.head.appendChild(css);
     }
+    // ── 样式**常驻守卫**（2026-09-26 加）──────────────────────────────────────
+    // 病史：主人报「短语按钮 / 插队图标会掉外观和布局」。上一版把注入改成"以 DOM 为真源"只覆盖了
+    //   **HMR 后模块状态重置**那一类；但 ensureStyle 仍只在 apply 那一刻跑一次 —— 之后若 <style>
+    //   节点被**别人删掉/整批替换**（上游重挂界面、安全模式、别的插件清 head），**没人再补**，
+    //   元素退回裸样式（外观 + 布局一起掉），刷新才恢复。现在：head 一有变动就查一次，缺了就补。
+    function guardStyle() {
+      try {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        var G = window.__dshomeStyleGuard || (window.__dshomeStyleGuard = {});
+        if (G['plugin-center']) return;
+        G['plugin-center'] = true;
+        var sel = "style[data-dshome-plugin='dshome-plugin-center']";
+        var check = function () { try { if (!document.querySelector(sel)) ensureStyle0(); } catch (e) { /* 忽略 */ } };
+        check();
+        if (typeof MutationObserver === 'function' && document.head) new MutationObserver(check).observe(document.head, { childList: true });
+        window.addEventListener('focus', check);
+        document.addEventListener('visibilitychange', check);
+      } catch (e) { /* 守卫失败不阻断插件本身 */ }
+    }
+
+    /** 幂等入口：样式在位 + 守卫挂起（守卫内部同样调 ensureStyle0 补写）。 */
+    function ensureStyle() { ensureStyle0(); guardStyle(); }
+
     function svg(pathD, size) {
       var ns = "http://www.w3.org/2000/svg";
       var s = document.createElementNS(ns, "svg");

@@ -110,16 +110,40 @@ window.__ModuleLoader__.load({
       ".dshome-qp-toast-err{color:var(--dsw-alias-state-error-primary,#e5484d)}",
     ].join("");
 
-    var styleInjected = false;
-
-    /** 样式只注入一次：入口按钮启动即渲染，样式必须先于首帧就位（同 plugin-center 的纪律）。 */
-    function ensureStyles() {
-      if (styleInjected) return;
-      styleInjected = true;
+    /** 样式注入：**以 DOM 为真源**（`querySelector` 找不到才注入），不再只看内存 flag。
+     *  病史（2026-09-26）：原写法是"先看内存标志位、看过就 return"，在**客户端热更新（HMR）后失效**——
+     *  模块状态被重置、而 `<style>` 节点可能已随旧模块/文档生命周期消失，于是"标志位说注入过、
+     *  DOM 里其实没有"⇒ 入口按钮以裸样式渲染（看着像"丢渲染"）。同 dshome-input / dshome-mind 的纪律。 */
+    function ensureStyle0() {
+      if (document.querySelector("style[data-dshome-plugin='dshome-quick-phrases']")) return;
       var css = document.createElement("style");
+      css.setAttribute("data-dshome-plugin", "dshome-quick-phrases");
       css.textContent = STYLE;
       document.head.appendChild(css);
     }
+    // ── 样式**常驻守卫**（2026-09-26 加）──────────────────────────────────────
+    // 病史：主人报「短语按钮 / 插队图标会掉外观和布局」。上一版把注入改成"以 DOM 为真源"只覆盖了
+    //   **HMR 后模块状态重置**那一类；但 ensureStyle 仍只在 apply 那一刻跑一次 —— 之后若 <style>
+    //   节点被**别人删掉/整批替换**（上游重挂界面、安全模式、别的插件清 head），**没人再补**，
+    //   元素退回裸样式（外观 + 布局一起掉），刷新才恢复。现在：head 一有变动就查一次，缺了就补。
+    function guardStyle() {
+      try {
+        if (typeof window === 'undefined' || typeof document === 'undefined') return;
+        var G = window.__dshomeStyleGuard || (window.__dshomeStyleGuard = {});
+        if (G['quick-phrases']) return;
+        G['quick-phrases'] = true;
+        var sel = "style[data-dshome-plugin='dshome-quick-phrases']";
+        var check = function () { try { if (!document.querySelector(sel)) ensureStyle0(); } catch (e) { /* 忽略 */ } };
+        check();
+        if (typeof MutationObserver === 'function' && document.head) new MutationObserver(check).observe(document.head, { childList: true });
+        window.addEventListener('focus', check);
+        document.addEventListener('visibilitychange', check);
+      } catch (e) { /* 守卫失败不阻断插件本身 */ }
+    }
+
+    /** 幂等入口：样式在位 + 守卫挂起（守卫内部同样调 ensureStyle0 补写）。 */
+    function ensureStyles() { ensureStyle0(); guardStyle(); }
+
 
     function el(tag, cls, text) {
       var node = document.createElement(tag);

@@ -82,11 +82,13 @@ function rawCall(routePath, request) {
  * `listEl.textContent = ""` 清不掉旧行，断言会看到幽灵节点。
  */
 function makeClientSandbox() {
-  const node = (tag) => {
+  const styles = []; // 样式节点台账：`head.appendChild(style)` 会登记进来，供 querySelector 查
+  const node = (tag, initialChildren) => {
     const n = {
-      tagName: tag, className: '', style: {}, children: [], value: '', disabled: false, _text: '',
-      appendChild(child) { n.children.push(child); return child; },
-      setAttribute() {}, focus() {},
+      tagName: tag, className: '', style: {}, children: initialChildren || [], value: '', disabled: false, _text: '', attrs: {},
+      appendChild(child) { n.children.push(child); if (tag === 'head' && child && child.tagName === 'style') styles.push(child); return child; },
+      setAttribute(k, v) { n.attrs[k] = String(v); },
+      focus() {},
     };
     Object.defineProperty(n, 'textContent', {
       get() { return n._text; },
@@ -101,9 +103,15 @@ function makeClientSandbox() {
   globalThis.document = {
     createElement: node,
     createElementNS: (_ns, tag) => node(tag),
-    head: node('head'),
+    head: node('head', styles),
     body: node('body'),
     addEventListener: (type, fn) => { listeners.push({ type, fn }); },
+    // 2026-09-26 补：样式注入改成「以 DOM 为真源」后，桩必须能查 —— 只按属性匹配我们自己的标记。
+    querySelector: (sel) => {
+      const m = /^style\[data-dshome-plugin='([^']+)'\]$/.exec(String(sel));
+      if (!m) return null;
+      return styles.find((s) => s.attrs && s.attrs['data-dshome-plugin'] === m[1]) || null;
+    },
   };
   globalThis.fetch = (url, options) => {
     fetchCalls.push(String(url) + (options && options.method ? ' ' + options.method : ''));
