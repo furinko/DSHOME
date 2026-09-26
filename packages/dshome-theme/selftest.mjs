@@ -932,5 +932,88 @@ check("恢复后重新显示", box.style.display === "block", String(box.style.d
     `读了 ${rectReads} 次 / 块数 ${scroller.blocks.length}`);
 }
 
+/* ---------------- 通用设置 · 「通知」开关行（真加载 + 组件函数真调用）---------------- */
+{
+  // 为什么要再 apply 一次：上面那个极简 ctx（只有 get）会让通知行的注册路径整条走不到
+  // （只留一条 warn）⇒ 那一段等于没测。这里给足 ctx.slots / ctx.inject / settingsScope。
+  const fakeScope = {
+    snapshot: {
+      status: "ready",
+      value: { enabled: true, notifyOnTurnCompletion: true, notifyOnApproval: true, notifyOnUserQuestion: true },
+      base: undefined, user: undefined, revision: 1, writable: true, mode: "host",
+    },
+    listeners: [],
+    writes: [],
+    bindSpec: null,
+    getSnapshot() { return this.snapshot; },
+    subscribe(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter((f) => f !== fn); }; },
+    set(field, value) { this.writes.push([field, value]); return Promise.resolve(); },
+    unset(field) { this.writes.push([field, null]); return Promise.resolve(); },
+  };
+
+  const registrations = [];
+  const runInject = (fn) => {
+    const result = fn();
+    if (result && typeof result.next === "function") { let step = result.next(); while (!step.done) step = result.next(step.value); }
+    return result;
+  };
+  const fakeSlots = {
+    inject: (name, fn) => { runInject(fn); return () => {}; },
+    register: (options, component) => { registrations.push({ options, component }); return () => {}; },
+  };
+  const scopeCtx = { settingsScope: { bind: (spec) => { fakeScope.bindSpec = spec; return fakeScope; } } };
+  const ctx2 = {
+    get: () => undefined,
+    inject: (names, cb) => { if (names.includes("settingsScope")) cb(scopeCtx); },
+    slots: fakeSlots,
+  };
+  // mock react 要**形似真 hooks**（useState 返回 [值, 设置器]）：组件函数才能被直接调用取元素树。
+  const fakeReact = { useState: (init) => [typeof init === "function" ? init() : init, () => {}], useEffect: () => {} };
+  const fakeRequire2 = (name) => name === "react" ? fakeReact
+    : name === "react/jsx-runtime" ? { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: "Fragment" }
+      : new Proxy({}, { get: () => () => ({}) });
+
+  const mod2 = win.__def.factory(fakeRequire2);
+  let notifyThrew = null;
+  try { mod2.apply(ctx2); } catch (error) { notifyThrew = error; }
+  check("通知行：apply 不抛", notifyThrew === null, notifyThrew === null ? "" : String(notifyThrew));
+  check("通知行：绑定命名空间 = dshome（写错命名空间 ⇒ 设置静默不生效）",
+    fakeScope.bindSpec?.namespace === "dshome", JSON.stringify(fakeScope.bindSpec));
+  const card = registrations.find((r) => r.options?.id === "dshome-notify-settings");
+  check("通知行：注册进 settings.general.item（通用设置区）",
+    card?.options?.name === "settings.general.item", JSON.stringify(card?.options ?? null));
+
+  const collect = (node, out = []) => {
+    if (node === null || node === undefined || typeof node !== "object") return out;
+    if (Array.isArray(node)) { for (const child of node) collect(child, out); return out; }
+    if (node.props?.role === "switch") out.push(node);
+    collect(node.props?.children, out);
+    return out;
+  };
+  const tree = card.component();
+  const text = JSON.stringify(tree);
+  const switches = collect(tree);
+  check("通知行：四项开关都在（总开关 + 三个分项）", switches.length === 4, `找到 ${switches.length}`);
+  for (const label of ["系统通知", "回合完成时提醒", "需要我确认时提醒", "有问题等我回答时提醒"]) {
+    check(`通知行文案含「${label}」`, text.includes(label));
+  }
+
+  fakeScope.writes.length = 0;
+  switches[2].props.onClick();
+  check("通知行：点「需要我确认时提醒」写回 notifyOnApproval=false（字段名写错=静默失效）",
+    JSON.stringify(fakeScope.writes) === JSON.stringify([["notifyOnApproval", false]]), JSON.stringify(fakeScope.writes));
+
+  fakeScope.snapshot = { ...fakeScope.snapshot, value: { ...fakeScope.snapshot.value, enabled: false } };
+  const offSwitches = collect(card.component());
+  check("反例·总开关关 ⇒ 三个分项禁用、总开关仍可点",
+    offSwitches[0].props.disabled !== true && offSwitches.slice(1).every((s) => s.props.disabled === true),
+    offSwitches.map((s) => (s.props.disabled === true ? "禁" : "可")).join(","));
+
+  fakeScope.snapshot = { ...fakeScope.snapshot, status: "unavailable", value: undefined };
+  const unavailableTree = card.component();
+  check("反例·命名空间不可用 ⇒ 出「当前不可用」文案、不出开关",
+    JSON.stringify(unavailableTree).includes("当前不可用") && collect(unavailableTree).length === 0);
+}
+
 console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

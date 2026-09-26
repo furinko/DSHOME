@@ -42,6 +42,7 @@ window.__ModuleLoader__.load({
     var module = { exports: {} };
     var exports = module.exports;
     Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+    let react = require("react");
     let react_jsx_runtime = require("react/jsx-runtime");
     let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
@@ -91,6 +92,117 @@ window.__ModuleLoader__.load({
 
     /** 所需服务：UI 槽注册表（官方品牌同款）。 */
     const inject = ["slots"];
+
+    // ── 通用设置 · 「通知」开关组（设置命名空间 `dshome`）─────────────────────────
+    // 为什么在这儿：`cordis.patch.yml` 与本包描述一直宣称"通知开关在设置里"，但此前
+    // **没有任何客户端卡片认领 `dshome` 命名空间** ⇒ 开关在界面上根本看不到（能力在、入口没露）。
+    // host 侧 schema 由 `dshome/notify` 注册（enabled / notifyOnTurnCompletion /
+    // notifyOnApproval / notifyOnUserQuestion），本行只是把它的入口露出来。
+    // 依赖 `settingsScope` 走**动态 inject**（不是写进上面的 inject 数组）：该服务缺失时
+    // 只少这一行，品牌皮肤与缩略导航照常——硬依赖会让整包不加载。
+    /** 绑定后的设置 scope（apply 时绑；未就绪则保持 null ⇒ 组件渲染"不可用"文案）。 */
+    var notifyScope = null;
+
+    /** 通知栏的四项：`sub` = 受总开关管辖的分项。 */
+    var NOTIFY_FIELDS = [
+      { field: "enabled", label: "系统通知", hint: "总开关；关掉后下列提醒全部静音。" },
+      { field: "notifyOnTurnCompletion", label: "回合完成时提醒", hint: "你发起的回合处理完毕时弹一条系统通知。", sub: true },
+      { field: "notifyOnApproval", label: "需要我确认时提醒", hint: "出现确认弹窗（危险操作 / 沙箱放行）时弹通知。", sub: true },
+      { field: "notifyOnUserQuestion", label: "有问题等我回答时提醒", hint: "模型提问、等你在选项里挑时弹通知。", sub: true },
+    ];
+
+    /** 设置行的外壳（与 dshome-assistant-identity 的通用设置行同款，视觉一致）。 */
+    function notifyRowShell(title, children) {
+      return react_jsx_runtime.jsx("div", {
+        style: { borderBottom: "1px solid var(--dsw-alias-border-l2)", flexDirection: "column", gap: 8, padding: "16px 0", display: "flex" },
+        children: [
+          react_jsx_runtime.jsx("div", { style: { color: "var(--dsw-alias-label-primary)", fontSize: 14, fontWeight: 400, lineHeight: "22px" }, children: title }),
+          children,
+        ],
+      });
+    }
+
+    /** 开关控件（原生 button + role=switch：键盘可聚焦、读屏可识别，不引第三方组件）。 */
+    function NotifyToggle(props) {
+      var on = props.on === true;
+      var disabled = props.disabled === true;
+      return react_jsx_runtime.jsx("button", {
+        type: "button",
+        role: "switch",
+        "aria-checked": on ? "true" : "false",
+        "aria-label": props.label,
+        disabled: disabled,
+        onClick: disabled ? void 0 : props.onToggle,
+        style: {
+          flex: "0 0 auto", width: 40, height: 22, padding: 0, borderRadius: 11, position: "relative",
+          border: "1px solid var(--dsw-alias-border-l2)",
+          background: on ? "var(--dsw-alias-brand-primary,#4D6BFE)" : "var(--dsw-alias-bg-layer-3,#d5dbe6)",
+          cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1,
+          transition: "background .15s",
+        },
+        children: react_jsx_runtime.jsx("span", {
+          style: {
+            position: "absolute", top: 2, left: on ? 20 : 2, width: 16, height: 16, display: "block",
+            borderRadius: "50%", background: "#fff", transition: "left .15s",
+          },
+        }),
+      });
+    }
+
+    /** 「通知」行：读 scope 快照渲染，写回走 scope.set（host 侧同一命名空间）。 */
+    function NotifySettingsRow() {
+      var state = react.useState(function () { return notifyScope ? notifyScope.getSnapshot() : null; });
+      var snap = state[0];
+      var setSnap = state[1];
+      react.useEffect(function () {
+        if (!notifyScope) return void 0;
+        setSnap(notifyScope.getSnapshot());
+        return notifyScope.subscribe(function () { setSnap(notifyScope.getSnapshot()); });
+      }, []);
+      var status = snap ? snap.status : "loading";
+      var value = (snap && snap.value) || {};
+      var writable = snap ? snap.writable === true : false;
+      // schema 默认全 true ⇒ 字段缺席即"开"（只有显式 false 才算关）。
+      var master = value.enabled !== false;
+      var setField = function (field, next) {
+        if (!notifyScope || !writable) return;
+        var pending = notifyScope.set(field, next);
+        if (pending && typeof pending.catch === "function") {
+          pending.catch(function (error) { console.warn("dshome-theme: notify setting write failed", error); });
+        }
+      };
+      var body = status === "unavailable"
+        ? react_jsx_runtime.jsx("div", {
+            style: { color: "var(--dsw-alias-label-tertiary,#6b7a99)", fontSize: 12, lineHeight: "18px" },
+            children: "当前不可用：Host 未提供 `dshome` 设置命名空间（通知仍按默认值工作）。",
+          })
+        : react_jsx_runtime.jsx("div", {
+            style: { flexDirection: "column", gap: 14, display: "flex" },
+            children: NOTIFY_FIELDS.map(function (item) {
+              var on = value[item.field] !== false;
+              return react_jsx_runtime.jsx("div", {
+                key: item.field,
+                style: { alignItems: "center", gap: 12, display: "flex" },
+                children: [
+                  react_jsx_runtime.jsx("div", {
+                    style: { flex: 1, minWidth: 0 },
+                    children: [
+                      react_jsx_runtime.jsx("div", { style: { color: "var(--dsw-alias-label-primary)", fontSize: 13.5, lineHeight: "20px" }, children: item.label }),
+                      react_jsx_runtime.jsx("div", { style: { color: "var(--dsw-alias-label-tertiary,#6b7a99)", fontSize: 11.5, lineHeight: "17px" }, children: item.hint }),
+                    ],
+                  }),
+                  NotifyToggle({
+                    on: on,
+                    disabled: !writable || (item.sub === true && !master),
+                    label: item.label,
+                    onToggle: function () { setField(item.field, !on); },
+                  }),
+                ],
+              });
+            }),
+          });
+      return notifyRowShell("通知", body);
+    }
 
     /** DSHOME 侧 CSS 覆盖（稳定属性选择器，升级/重装免疫）：
      *  ① input-traffic 插队 dock 限宽；
@@ -1179,6 +1291,26 @@ window.__ModuleLoader__.load({
         })));
       } catch (error) {
         console.warn("dshome-theme: brand slot registration failed", error);
+      }
+      // 3) 通用设置 · 「通知」开关组
+      //    `settingsScope` 走动态 inject：服务后到位也不会漏（apply 时一次性 ctx.get 可能还没就绪），
+      //    而失败/缺失只少这一行、不影响品牌槽与缩略导航（降级纪律同本文件其余环节）。
+      try {
+        var bindNotifySettings = function (scopeCtx) {
+          try {
+            notifyScope = scopeCtx.settingsScope.bind({ namespace: "dshome" });
+            ctx.slots.inject("settings.general.item", function () {
+              return ctx.slots.register({ name: "settings.general.item", id: "dshome-notify-settings", order: 43 }, NotifySettingsRow);
+            });
+          } catch (error) {
+            console.warn("dshome-theme: notify settings row failed", error);
+          }
+        };
+        if (typeof ctx.inject === "function") ctx.inject(["settingsScope"], bindNotifySettings);
+        else if (ctx.get("settingsScope")) bindNotifySettings(ctx);
+        else console.warn("dshome-theme: settingsScope unavailable — 通知开关未挂载（通知按默认值工作）");
+      } catch (error) {
+        console.warn("dshome-theme: notify settings bind failed", error);
       }
     }
 

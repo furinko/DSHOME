@@ -17,7 +17,7 @@ const DESC_CN = {
   'dshome/shell': 'Electron 薄壳：窗口 / 托盘 / 后端守护与自动重启',
   'dshome-theme': 'DSHOME 品牌皮肤与设置 UI（通知开关、插件管理分区）',
   'dshome-palette': 'Ctrl+K 命令面板（会话标题 / 打开 / 收藏）',
-  'dshome/notify': '回合级系统通知（可在设置开关）',
+  'dshome/notify': '系统通知：回合完成 / 后台任务 / 等你确认或回答',
   'dshome/plugin-manager': '插件列表与启停（写 profile patch，重启生效）',
   'dshome/desktop': '桌面服务兼容层（接口与 dshmarket 不匹配，已禁用）',
   'dshome-plugin-center': '插件管理中心（本面板）',

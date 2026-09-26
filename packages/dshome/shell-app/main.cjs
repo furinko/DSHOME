@@ -924,7 +924,13 @@ function startNotifyListener() {
       req.on('end', () => {
         try {
           const { title, body: text } = JSON.parse(body || '{}');
-          if (Notification.isSupported()) new Notification({ title: title ?? 'DSHOME', body: text ?? '' }).show();
+          if (Notification.isSupported()) {
+            const n = new Notification({ title: title ?? 'DSHOME', body: text ?? '' });
+            // 点通知跳回窗口：通知可能在窗口最小化/被遮挡时送达（"等你确认"类尤其如此），
+            // 点一下就该看到那个弹窗——与在线状态通知（applyBackendState）同款处理。
+            n.on('click', showWindow);
+            n.show();
+          }
           res.writeHead(204); res.end();
         } catch { res.writeHead(400); res.end(); }
       });

@@ -17,7 +17,8 @@
     # dshome-palette（主线 A）：Ctrl+K 命令面板。
     - id: dshome-palette
       name: dshome-palette
-    # dshome-notify（主线 A 第 2 步）：回合级通知，开关在「设置 → 通知」。
+    # dshome-notify（主线 A 第 2 步）：系统通知——回合完成 / 后台任务 / 等你确认或回答。
+    # 四个开关由 dshome-theme 的客户端半区露在「设置 → 通用 → 通知」（host 侧 schema 在本插件）。
     - id: dshome-notify
       name: dshome/notify
     # dshome-plugin-manager（block 1）：已装插件 列表 + 启/停。

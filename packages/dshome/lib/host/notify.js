@@ -1,12 +1,16 @@
 // dshome/notify — DSHOME 回合级通知 host 插件（主线 A 第 2 步）。
 //
-// 职责：当"当前前台回合"结束（completed/失败）或后台任务结束，往 Electron 薄壳的
-// 本地通知监听（DSHOME_NOTIFY_PORT，默认 32123，POST /notify {title, body}）发送
-// 一条系统通知；是否发送由设置命名空间 `dshome` 的 `enabled` / `notifyOnTurnCompletion`
-// 决定（DSHOME 设置 → 通知 开关）。
+// 职责：往 Electron 薄壳的本地通知监听（DSHOME_NOTIFY_PORT，默认 32123，
+// POST /notify {title, body}）发送系统通知，覆盖三类"值得抬头看一眼"的时刻：
+//   ① 回合结束（completed / 失败）② 后台任务结束 ③ **有东西在等你操作**——
+//      审批确认弹窗（`approval/asked`）与模型提问（`ask_user_question`）。
+// 是否发送由设置命名空间 `dshome` 的 `enabled`（总开关）+ 各分项开关决定
+// （DSHOME 设置 → 通知）。
 //
 // 事件源接缝：`sessions.on("session/event", ...)` 的 turn/start、user/message、turn/end
-// （来自官方 dsh-plugin-desktop 的 notifications 插件，被 DSH Desktop 2.0.3 验证）。
+// （来自官方 dsh-plugin-desktop 的 notifications 插件，被 DSH Desktop 2.0.3 验证）；
+// ③ 复用同一条会话事件流：`approval/asked`（官方 dsh-user-approval 在请求批准时追加，
+// 带 toolName / reason）与 `tool/call`（name === 'ask_user_question'）。
 //
 // 护栏（设计见历史文档，已归档）：每个服务挂载独立 try/catch，失败只记日志，
 // 绝不阻断 profile 启动；通知投递失败静默忽略。
@@ -35,9 +39,15 @@ export const NotifySettingsSchema = z ? z.object({
   enabled: z.boolean().default(true),
   // 回合完成时提醒（仅在总开关开启时生效）
   notifyOnTurnCompletion: z.boolean().default(true),
+  // 需要你确认时提醒（审批/危险操作确认弹窗：approval/asked）
+  notifyOnApproval: z.boolean().default(true),
+  // 有提问等你回答时提醒（模型调 ask_user_question）
+  notifyOnUserQuestion: z.boolean().default(true),
 }) : null;
 
-const DEFAULT_SETTINGS = NotifySettingsSchema ? NotifySettingsSchema({}) : { enabled: true, notifyOnTurnCompletion: true };
+const DEFAULT_SETTINGS = NotifySettingsSchema
+  ? NotifySettingsSchema({})
+  : { enabled: true, notifyOnTurnCompletion: true, notifyOnApproval: true, notifyOnUserQuestion: true };
 
 /** 壳内通知监听端口（与 shell.js 的 NOTIFY_PORT 默认一致）。 */
 const NOTIFY_PORT = Number(process.env.DSHOME_NOTIFY_PORT || 32123);
@@ -48,22 +58,59 @@ const COPY = {
   'turn-failed': { title: 'DSHOME 回合失败', body: '一个由你发起的回合未能完成，请查看详情。' },
   'job-completed': { title: 'DSHOME 后台任务完成', body: '有一个后台任务已结束。' },
   'job-failed': { title: 'DSHOME 后台任务失败', body: '有一个后台任务未能完成，请查看详情。' },
+  'approval-asked': { title: 'DSHOME 需要你确认', body: '有一个操作在等你确认后才会继续。' },
+  'user-question': { title: 'DSHOME 有个问题等你回答', body: '模型在等你选择或补充信息。' },
 };
 
-/** 投递一条通知到壳；失败静默。 */
-async function deliver(key) {
+/** 同类提醒的最小间隔：并发会话各提醒一次，但同一会话别连发刷屏。 */
+const ATTENTION_THROTTLE_MS = 5000;
+/** key（`<场景>:<会话 id>`）→ 上次投递时刻。 */
+const lastAttentionAt = new Map();
+
+/** 把任意文本压成一行并截断，免得把长命令整条塞进通知气泡。 */
+function oneLine(text, max = 120) {
+  const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (flat.length === 0) return '';
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/** 从 `ask_user_question` 的 arguments（JSON 字符串）里取第一条问题做摘要；解析失败/无问题返回空串。 */
+function questionSummary(raw) {
+  try {
+    const parsed = JSON.parse(raw ?? '');
+    const first = Array.isArray(parsed?.questions) ? parsed.questions[0] : void 0;
+    if (first === void 0 || first === null) return '';
+    return oneLine(first?.header || first?.question, 80);
+  } catch {
+    return '';
+  }
+}
+
+/** 投递一条通知到壳；失败静默。`detail` 可覆盖文案（用于带上"在等什么"的上下文）。 */
+async function deliver(key, detail) {
   if (!NOTIFY_PORT) return;
   const entry = COPY[key];
   if (!entry) return;
+  const payload = detail ? { title: detail.title ?? entry.title, body: detail.body ?? entry.body } : entry;
   try {
     await fetch(`http://127.0.0.1:${NOTIFY_PORT}/notify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(entry),
+      body: JSON.stringify(payload),
     });
   } catch (error) {
     // 通知投递是尽力而为：壳未起/端口未监听都只静默忽略。
   }
+}
+
+/** 带节流的"等你操作"提醒：同一会话同一场景 5s 内只发一条。 */
+function deliverAttention(key, sessionId, detail) {
+  const throttleKey = `${key}:${sessionId}`;
+  const now = Date.now();
+  if (now - (lastAttentionAt.get(throttleKey) ?? 0) < ATTENTION_THROTTLE_MS) return;
+  lastAttentionAt.set(throttleKey, now);
+  // 防泄漏：Map 只随会话数增长，陈旧条目在会话销毁时清（见下 stopDisposed）。
+  void deliver(key, detail);
 }
 
 /**
@@ -101,6 +148,45 @@ function trackTurn(settings, openTurns, session, event) {
 }
 
 /**
+ * "等你操作"提醒：审批确认弹窗与模型提问。
+ *
+ * 判据（写清边界，免得后来者以为它覆盖了"所有等待"）：
+ *   · `approval/asked` = 官方 dsh-user-approval 在请求批准时追加的审计事件，也是 GUI
+ *     弹「确认」框的同源信号（`toolName` 是请求批准的工具，`reason` 是人类可读缘由）。
+ *     **不按会话来源过滤**：子会话/成员会话里的确认框同样要人点，漏报比多报更糟；
+ *     刷屏交给 deliverAttention 的同会话节流兜。
+ *   · `tool/call` 且 name === 'ask_user_question' = 模型要你在选项里挑或补充信息
+ *     （官方 dsh-tool-ask-user 内部 await ctx.userQuestions.ask，直到你作答才继续）。
+ *     **按会话来源过滤掉 `subagent`**：子代理不是 live runtime root，ask() 会直接抛
+ *     DELEGATED_CALLER 而根本弹不出窗，报了就是假警报。
+ *
+ * @param {ReturnType<typeof NotifySettingsSchema>} settings - 当前设置快照。
+ * @param {object} session - 会话头。
+ * @param {object} event - session/event 载荷。
+ */
+function trackAttention(settings, session, event) {
+  if (!settings.enabled) return;
+  const sessionId = String(session.header?.id ?? '');
+  if (event.type === 'approval/asked') {
+    if (!settings.notifyOnApproval) return;
+    const tool = oneLine(event.data?.toolName, 40) || '未知工具';
+    const reason = oneLine(event.data?.reason);
+    deliverAttention('approval-asked', sessionId, {
+      body: reason ? `工具「${tool}」请求确认：${reason}` : `工具「${tool}」在等你确认后才会继续。`,
+    });
+    return;
+  }
+  if (event.type === 'tool/call' && event.data?.name === 'ask_user_question') {
+    if (!settings.notifyOnUserQuestion) return;
+    if (session.header?.origin === 'subagent') return;
+    const summary = questionSummary(event.data?.arguments);
+    deliverAttention('user-question', sessionId, {
+      body: summary || COPY['user-question'].body,
+    });
+  }
+}
+
+/**
  * 主机插件主体：注册设置命名空间 + 订阅回合/后台任务事件。
  * @param {import('@deepseek-ai/cordis').Context} ctx - host context。
  */
@@ -130,16 +216,23 @@ export function apply(ctx) {
     ctx.logger?.('dshome').warn('dshome-notify settings disabled: %O', error);
   }
 
-  // 2) 订阅"会话事件"以跟踪用户回合完成/失败。
+  // 2) 订阅"会话事件"：跟踪用户回合完成/失败，以及"等你操作"（确认弹窗 / 模型提问）。
   try {
     ctx.inject(['sessions'], (sessionsCtx) => {
       sessionsCtx.effect(() => {
         const openTurns = new Map();
         const stopEvents = sessionsCtx.on('session/event', (session, event) => {
           trackTurn(settings, openTurns, session, event);
+          trackAttention(settings, session, event);
         });
         const stopDisposed = sessionsCtx.on('session/disposed', (session) => {
-          openTurns.delete(String(session.header.id));
+          const id = String(session.header?.id ?? '');
+          openTurns.delete(id);
+          // 顺手清掉本会话的节流条目（key 形如 `<场景>:<会话 id>`），别让 Map 随会话数长存。
+          const suffix = `:${id}`;
+          for (const key of [...lastAttentionAt.keys()]) {
+            if (key.endsWith(suffix)) lastAttentionAt.delete(key);
+          }
         });
         return () => {
           stopDisposed();
@@ -164,5 +257,5 @@ export function apply(ctx) {
     ctx.logger?.('dshome').warn('dshome-notify jobs disabled: %O', error);
   }
 
-  ctx.logger?.('dshome').info('dshome-notify ready: turn-level notifications on port %d', NOTIFY_PORT);
+  ctx.logger?.('dshome').info('dshome-notify ready: turn/job/approval/question notifications on port %d', NOTIFY_PORT);
 }
