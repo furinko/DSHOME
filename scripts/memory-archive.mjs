@@ -129,9 +129,27 @@ function groupOf(rel) {
   if ((rest[0] === 'projects' || rest[0] === 'common') && rest[1]) return rest[1];
   return rest[1] || rest[0] || 'misc';
 }
-const day = new Date().toISOString().slice(0, 10);
+// ⚠️ 日期口径＝**本地自然日**（与 `evolve-log snap-prune` 的窗口口径一致，见 `Memory §十一`）。
+//   原来用 `toISOString().slice(0,10)` ＝ **UTC 日** ⇒ 本地 00:00–08:00 之间归档会落到"昨天的目录"、
+//   与裁剪口径错位（2026-09-27 每日自维护发现——与备份名缺陷同族：都是"口径没对齐"）。
+const day = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 const destDir = join(HISTORY, `${day}_${groupOf(target.rel)}`, basename(target.rel, '.md'));
 mkdirSync(destDir, { recursive: true });
+
+// 指针块文本：`--apply` 与 `--dry-run-insert` **共用这一份** ⇒ 预览的就是真要落的。
+// ⚠️ 2026-09-27 修：原来 dry-run 打印的是**要搬走的原文前 2 行**、却标着「搬运后原处会变成」
+//    ⇒ 文案与实际相反（当日每日自维护我据此一度误判"没有指针块"）。预览必须是**stub 本身**。
+function stubFor(p, dayStr) {
+  const relHistory = relative(L3, p.dest).split(sep).join('/');
+  return [
+    `## ${p.s.title}`,
+    '',
+    `> 📦 **原文已归档（指针化 · ${dayStr}）**：\`L3/${relHistory}\``,
+    `> 为什么：该小节 ${p.s.kb.toFixed(1)} KB / ${p.s.lines} 行，超出单篇配额 ${QUOTA_KB} KB，而检索按 ~60 字分块 ⇒ 片数过多会挤掉别的主题。`,
+    `> 怎么取回：原地读上面那个文件（内容零丢失）；要还原到正文用 \`node scripts/memory-archive.mjs --restore\`（待建）或手工粘回。`,
+    '',
+  ].join('\n');
+}
 
 // 先落 history（原文逐字节保存；**不重建**，避免改字），再改源文件
 const plan = [];
@@ -143,7 +161,7 @@ for (const s of picked) {
 }
 if (DRY_INSERT) {
   console.log('[memory-archive] 搬运后原处会变成（不落盘）：');
-  for (const p of plan) console.log(`  ── 「${p.s.title}」 → ${relative(repoRoot, p.dest)}\n${p.body.split('\n').slice(0, 2).map((l) => '     ' + l).join('\n')}`);
+  for (const p of plan) console.log(`  ── 「${p.s.title}」 → ${relative(repoRoot, p.dest)}\n${stubFor(p, day).split('\n').map((l) => '     ' + l).join('\n')}`);
   process.exit(0);
 }
 let moved = 0;
@@ -163,21 +181,15 @@ for (const p of plan) {
   writeFileSync(p.dest, p.body + '\n', 'utf8');
 }
 // 源文件：整文件备份 → 用小节指针替换 → 原子写
-const backup = `${target.abs}.bak-before-archive`;
+// ⚠️ 备份名**必须带时间戳**（`Memory §十一` 口径：`<文件>.bak-before-archive-<时间戳>`）：
+//   原名固定 ⇒ 同一文件同日第二次归档会**覆盖掉第一份备份**（2026-09-27 每日自维护读码抓到的
+//   缺陷；`stamp` 在上一行早已算好，只差没接上）。门禁 `verify-memory-archive` 同步改成前缀匹配。
+const backup = `${target.abs}.bak-before-archive-${stamp}`;
 writeFileSync(backup, target.text, 'utf8');
 let newText = target.text;
 for (const p of plan) {
   if (!existsSync(p.dest)) continue;
-  const relHistory = relative(L3, p.dest).split(sep).join('/');
-  const stub = [
-    `## ${p.s.title}`,
-    '',
-    `> 📦 **原文已归档（指针化 · ${day}）**：\`L3/${relHistory}\``,
-    `> 为什么：该小节 ${p.s.kb.toFixed(1)} KB / ${p.s.lines} 行，超出单篇配额 ${QUOTA_KB} KB，而检索按 ~60 字分块 ⇒ 片数过多会挤掉别的主题。`,
-    `> 怎么取回：原地读上面那个文件（内容零丢失）；要还原到正文用 \`node scripts/memory-archive.mjs --restore\`（待建）或手工粘回。`,
-    '',
-  ].join('\n');
-  newText = newText.replace(p.body, stub);
+  newText = newText.replace(p.body, stubFor(p, day));
   moved++;
 }
 const tmp = `${target.abs}.tmp`;

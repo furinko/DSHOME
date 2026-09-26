@@ -60,6 +60,17 @@ const walkFiles = (d) => { const out = []; (function w(x) { let it; try { it = r
 
 console.log('[verify-memory-archive] 指针化执行件 · 行为核验');
 
+/** 改前备份：名字**带时间戳**（`Memory §十一` 口径）⇒ 只能按前缀找，不许按固定名找。
+ *  ⚠️ 2026-09-27：执行件修掉"同名覆盖"缺陷后，`existsSync('<file>.bak-before-archive')` 这条
+ *  断言会**恒假**（即便真有备份也返回 false）⇒ 那是新的假绿面；故此处按前缀找 + 另加一条钉时间戳。 */
+function backupsIn(home, big) {
+  return walkFiles(join(home, 'mind-private', 'L3')).filter((x) => x.startsWith(`${big}.bak-before-archive`));
+}
+
+/** 本地自然日 `YYYY-MM-DD`（**必须与执行件的落点口径一致**：执行件 2026-09-27 从 UTC 日改成
+ *  本地日；此处若仍用 `toISOString()`，跨 UTC/本地日界时"同名已存在"夹具会落空 ⇒ 用例失效）。 */
+function localDay() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+
 // ── 1) 默认只读 ─────────────────────────────────────────────────────────────
 {
   const f = fixture();
@@ -68,7 +79,7 @@ console.log('[verify-memory-archive] 指针化执行件 · 行为核验');
   let j = null; try { j = JSON.parse(r.out); } catch { /* 见下 */ }
   assert('默认＝只列候选，退出 0', r.code === 0, 0, r.code);
   assert('只读：源文件逐字节未变', readFileSync(f.big, 'utf8') === before, '未变', '变了');
-  assert('只读：不建 history、不建备份', !existsSync(join(f.home, 'mind-private', 'L3', 'history')) && !existsSync(`${f.big}.bak-before-archive`), '都没有', '有残留');
+  assert('只读：不建 history、不建备份', !existsSync(join(f.home, 'mind-private', 'L3', 'history')) && backupsIn(f.home, f.big).length === 0, '都没有', backupsIn(f.home, f.big));
   assert('--json 可解析且列出超配额文件与小节', !!j && j.mode === 'list' && j.oversized.length === 1 && j.oversized[0].sections.length >= 2, '1 个超配额文件 / ≥2 小节', j && j.oversized.map((o) => o.rel));
   assert('未超配额的文件不在候选里', j && !j.oversized.some((o) => /小档/.test(o.rel)), '小档不在候选', j && j.oversized.map((o) => o.rel));
   rmSync(f.home, { recursive: true, force: true });
@@ -99,14 +110,16 @@ console.log('[verify-memory-archive] 指针化执行件 · 行为核验');
   assert('原处留下指针（含 history 路径与"为什么"）', /📦/.test(after) && /L3\/history\//.test(after) && /为什么/.test(after), '指针块存在', after.slice(after.indexOf('## 进度状态'), after.indexOf('## 进度状态') + 80));
   assert('源文件体积显著下降（该小节体量被搬走）', statSync(f.big).size < Buffer.byteLength(f.text, 'utf8') * 0.6, '< 原来的 60%', statSync(f.big).size);
   assert('另一个小节未被误动', after.includes('## 下一步（待办）') && /待办 39/.test(after), '待办小节仍在', '丢了');
-  assert('改前备份存在（可回滚）', existsSync(`${f.big}.bak-before-archive`) && readFileSync(`${f.big}.bak-before-archive`, 'utf8') === f.text, '备份 == 改前原文', '备份缺失或不一致');
+  const baks = backupsIn(f.home, f.big);
+  assert('改前备份存在（可回滚）', baks.length === 1 && readFileSync(baks[0], 'utf8') === f.text, '1 个备份 == 改前原文', { n: baks.length, same: baks.length === 1 && readFileSync(baks[0], 'utf8') === f.text });
+  assert('备份名带时间戳（同名不再互相覆盖 · 2026-09-27 修）', baks.length === 1 && /\.bak-before-archive-\d{4}-\d{2}-\d{2}T/.test(baks[0]), '含 ISO 时间戳', baks.map((p) => p.slice(f.home.length)));
   rmSync(f.home, { recursive: true, force: true });
 }
 
 // ── 6) history 已存在同名 ⇒ 跳过、不覆盖 ────────────────────────────────────
 {
   const f = fixture();
-  const histDir = join(f.home, 'mind-private', 'L3', 'history', `${new Date().toISOString().slice(0, 10)}_P1`, 'project');
+  const histDir = join(f.home, 'mind-private', 'L3', 'history', `${localDay()}_P1`, 'project');
   mkdirSync(histDir, { recursive: true });
   writeFileSync(join(histDir, '进度状态.md'), '既有归档：不许覆盖', 'utf8');
   const before = readFileSync(join(histDir, '进度状态.md'), 'utf8');
