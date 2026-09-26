@@ -227,7 +227,13 @@ export function describe(moduleName, overlay) {
 }
 
 // 核心 / 必备插件：这些是 DSHOME 本体或应用骨架，禁止停用（停用会破坏 DSHOME）。
-const PROTECTED_MODULES = new Set([
+// ⚠️ 2026-09-26 修（「自制插件全是锁」）：**本名单是唯一真相，不要再用名字前缀兜底**。
+//   原实现 = `moduleName.startsWith('dshome') || …has(moduleName)`，而 classify() 判「自制」用的
+//   正是同一条 `startsWith('dshome')` ⇒ 分类键与保护键共用前缀，自制栏 21 条 100% 被判核心，
+//   🔒 全挂、开关全灰（实测 /api/dshome/plugins：自制 21/21 protected=true、下载 6/6 false）。
+//   前缀兜底还让本名单里那 6 条 `dshome/*` 变成死代码（永远走不到 has()）。
+//   新增要保护的插件 = 往本名单加精确 moduleName（snapshot 里 entry.options.name）。
+export const PROTECTED_MODULES = new Set([
   'dshome/core', 'dshome/shell', 'dshome-theme', 'dshome-palette', 'dshome/notify', 'dshome/plugin-manager',
   '@deepseek-ai/dsh-host-webserver', '@deepseek-ai/dsh-web-app', '@deepseek-ai/dsh-client-connection',
   '@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-runtime', '@deepseek-ai/dsh-cordis-host-runner',
@@ -237,8 +243,12 @@ const PROTECTED_MODULES = new Set([
   'cordis:include',
 ]);
 
+/** 是否核心（运行中禁停用）。
+ *  2026-09-26 修：删掉 `startsWith('dshome')` 宽前缀——它与 classify() 的「自制」判据同键，
+ *  把整族 DSHOME 插件（含 dshome-mind / dshome-quick-phrases 等可停用的功能件）全划成核心。
+ *  现在只有 `cordis:include`（框架骨架）+ 白名单命中才算核心。 */
 export function isProtected(moduleName) {
-  return moduleName.startsWith('dshome') || moduleName.startsWith('cordis:include') || PROTECTED_MODULES.has(moduleName);
+  return moduleName.startsWith('cordis:include') || PROTECTED_MODULES.has(moduleName);
 }
 
 export function classify(m) {
@@ -263,7 +273,17 @@ export async function writeToggle(id, enabled) {
   // 载荷里的 entryId 形如 `include:dshome-core`；patch 行的 id 是 `dshome-core`。
   const coreId = String(id).replace(/^include:/, '');
   const nl = raw.includes('\r\n') ? '\r\n' : '\n';
+  // 2026-09-26 修（写回无损）：原实现恒以 `out.join(nl) + nl` 收尾 ⇒ **已有末尾换行**的文件
+  // 每启停一次就多一个空行（实跑 6/6 例红：中间态行数 8/期望 7），无末尾换行的文件还会被
+  // 强行补一个换行。现在按"读进来时末尾有没有换行"原样还原。
+  const hadTrailingNL = raw.endsWith('\n');
   const lines = raw.split(/\r?\n/);
+  if (hadTrailingNL) lines.pop(); // split 的末尾空串不是一行，末尾换行单独还原
+  /** 写回：内容清空后回退成 `[]`（合法空数组，原实现在这里写出 0 字节文件）；末尾换行按原状态还原。 */
+  const writeOut = (arr) => {
+    const body = arr.join(nl);
+    return writeFile(file, body.trim() === '' ? '[]' : body + (hadTrailingNL ? nl : ''), 'utf8');
+  };
   const out = [];
   let found = false;
   for (let i = 0; i < lines.length; i++) {
@@ -274,7 +294,16 @@ export async function writeToggle(id, enabled) {
       const next = lines[i + 1] ?? '';
       if (enabled) {
         // 启用：跳过紧跟的 `  disabled: true` 行（若存在）
-        if (/^\s+disabled:\s*true\b/.test(next)) i++;
+        if (/^\s+disabled:\s*true\b/.test(next)) {
+          // 2026-09-26 修（增删对称）：若该条目**除这行 disabled 外再无任何非空行**，说明整条
+          // 就是「停用一个不在 patch 里的插件」时追加出来的壳 ⇒ 整块删除、回到"不存在"。
+          // 原实现只删 disabled 行，把 `- id: X` 空壳永久留在文件里（停用→启用一轮即残留，
+          // 下次重启还会被当成一条 patch 条目加载）——真机实测就是这么留下一行的。
+          let end = i + 2;
+          while (end < lines.length && !/^- id: /.test(lines[end])) end += 1;
+          if (lines.slice(i + 2, end).every((l) => l.trim() === '')) { i = end - 1; continue; }
+          i += 1; // 条目还有其它字段：只摘 disabled，保留 `- id:` 行
+        }
         out.push(line);
       } else {
         // 停用：保留原行；若下一行已是 disabled 则不重复
@@ -289,10 +318,10 @@ export async function writeToggle(id, enabled) {
     if (enabled) return { ok: true, message: '已启用（重启生效）' };
     const tail = raw.trim();
     const base = (tail === '[]' || tail === '') ? '' : raw.replace(/\s+$/, '') + nl;
-    await writeFile(file, `${base}- id: ${coreId}${nl}  disabled: true`, 'utf8');
+    await writeFile(file, `${base}- id: ${coreId}${nl}  disabled: true${hadTrailingNL ? nl : ''}`, 'utf8');
     return { ok: true, message: '已停用（重启生效）' };
   }
-  await writeFile(file, out.join(nl) + nl, 'utf8');
+  await writeOut(out);
   return { ok: true, message: enabled ? '已启用（重启生效）' : '已停用（重启生效）' };
 }
 

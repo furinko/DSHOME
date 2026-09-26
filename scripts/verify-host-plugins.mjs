@@ -21,8 +21,10 @@
 // marker，但顶层没导入 → ReferenceError → 被该函数自己的空 `catch { /* 忽略 */ }` 吞掉
 // → **marker 保护从未生效过**。同型 bug（未定义标识符 + 空 catch 吞掉）正是本脚本存在的
 // 唯一理由，却长在它自己身上。node --check 同样查不出（语法合法）。
-import { existsSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -423,6 +425,106 @@ function probeContextServiceAccess() {
   return { scanned, accesses, failures };
 }
 
+// ── 插件保护语义探针（2026-09-26 加 · 「自制插件全是锁」事故）──────────────────
+// 事故：isProtected 用 `startsWith('dshome')` 宽前缀兜底，而 classify() 判「自制」用的是**同一条前缀**
+//   ⇒ 分类键与保护键同键：自制栏每一条都被判核心，UI 全挂 🔒、开关全灰（活进程实测读数：
+//   自制 21/21 protected=true、下载 6/6 false）。前缀兜底还让白名单里 6 条 `dshome/*` 成死代码。
+// 三条断言把语义钉死：
+//   ① 真加载 plugin-store.js（不是读文本）+ classify 面不变；
+//   ② 白名单每条都必须真命中 —— 防"名字写错、白名单条目不生效却无人发现"；
+//   ③ **前缀回归探针**：白名单外的 dshome 名必须 false —— 谁把 startsWith('dshome') 加回来，本项立刻红。
+async function probePluginProtection() {
+  const failures = [];
+  let mod;
+  try { mod = await import(pathToFileURL(join(HOST_DIR, 'plugin-store.js')).href); }
+  catch (e) { return { checked: 0, failures: [`plugin-store.js 真加载失败：${e?.message ?? e}`] }; }
+  const { isProtected, classify, PROTECTED_MODULES } = mod;
+  if (typeof isProtected !== 'function' || typeof classify !== 'function' || !(PROTECTED_MODULES instanceof Set)) {
+    return { checked: 0, failures: ['plugin-store.js 未导出 isProtected/classify/PROTECTED_MODULES（探针无法取证）'] };
+  }
+  let checked = 0;
+  // ① 白名单每条必须真命中
+  for (const name of PROTECTED_MODULES) {
+    checked += 1;
+    if (isProtected(name) !== true) failures.push(`白名单条目永不命中：${name}（名字与 snapshot 的 entry.options.name 不一致？）`);
+  }
+  // ② 分类面不变 + 前缀回归探针（反例）
+  const UNPROTECTED_SELF = ['dshome-mind', 'dshome/agent-roles', 'dshome-quick-phrases', 'dshome-plugin-center', 'dshome-input', 'dshome-prefix-regression-probe'];
+  for (const name of UNPROTECTED_SELF) {
+    checked += 1;
+    if (isProtected(name)) failures.push(`白名单外的 dshome 名被判核心：${name}（前缀兜底回归了？保护面应收敛到 PROTECTED_MODULES）`);
+  }
+  checked += 3;
+  if (classify('dshome-mind') !== '自制') failures.push(`classify 面被改动：dshome-mind → ${classify('dshome-mind')}（应仍为「自制」）`);
+  if (classify('@deepseek-ai/dsh-host-webserver') !== '内置') failures.push(`classify 面被改动：@deepseek-ai/dsh-host-webserver → ${classify('@deepseek-ai/dsh-host-webserver')}`);
+  if (classify('dsh-better-sidebar') !== '下载') failures.push(`classify 面被改动：dsh-better-sidebar → ${classify('dsh-better-sidebar')}`);
+  return { checked, failures };
+}
+
+// ── writeToggle 往返无损探针（2026-09-26 加 · 真机真触发撞出的「孤儿条目」事故）────────
+// 事故（修 isProtected 那轮把插件真停用一次时撞出，随后 git checkout 复原）：停用一个**不在
+//   cordis.patch.yml 里**的插件时，writeToggle 会追加 `- id: X` + `disabled: true`，而"启用"只删
+//   disabled 行、把 `- id: X` 空壳**永久留在文件里**（下次重启会被当成一条 patch 条目加载）；
+//   同处恒以 `out.join(nl) + nl` 收尾 ⇒ 已有末尾换行的文件每启停一次多一个空行；内容清空时写出
+//   0 字节文件（原 `[]` 丢失）。修复前实测 **6/6 例红**、修复后 6/6 全绿（判据见下）。
+// 判据：**隔离 DSH_HOME**（绝不碰真 profile）真调用 writeToggle，断言一轮往返后与原始**字节一致**。
+async function probeToggleRoundTrip() {
+  const failures = [];
+  const mod = await import(pathToFileURL(join(HOST_DIR, 'plugin-store.js')).href);
+  const sha = (s) => createHash('sha256').update(s).digest('hex').slice(0, 12);
+  const countLines = (s) => { const p = s.split(/\r?\n/); if (p[p.length - 1] === '') p.pop(); return p.length; };
+  const BASE = [
+    '- id: llm-deepseek',
+    '  name: llm-deepseek',
+    '  config:',
+    '    apiKeyEnv: DEEPSEEK_API_KEY',
+    '- id: dshome-palette',
+    '  name: palette',
+  ].join('\n');
+  const cases = [
+    { name: '既有条目+末尾换行', raw: BASE + '\n', id: 'dshome-palette', kind: 'roundtrip', mid: 7 },
+    { name: 'yml 里没有该条目（追加型停用）', raw: BASE + '\n', id: 'dshome-quick-phrases', kind: 'roundtrip', mid: 8 },
+    { name: '既有条目+无末尾换行', raw: BASE, id: 'dshome-palette', kind: 'roundtrip', mid: 7 },
+    { name: 'CRLF 文件', raw: BASE.replace(/\n/g, '\r\n') + '\r\n', id: 'dshome-palette', kind: 'roundtrip', mid: 7 },
+    { name: '空数组 []', raw: '[]', id: 'dshome-x', kind: 'roundtrip', mid: 2 },
+    { name: '孤儿条目清理（块内只有 disabled）', raw: BASE + '\n- id: dshome-orphan\n  disabled: true\n', id: 'dshome-orphan', kind: 'orphan', mid: 8 },
+  ];
+  const oldHome = process.env.DSH_HOME;
+  const oldProfile = process.env.DSH_PROFILE;
+  const home = mkdtempSync(join(tmpdir(), 'dshome-verify-tog-'));
+  let checked = 0;
+  try {
+    for (const c of cases) {
+      const dir = join(home, 'profiles', 'test');
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, 'cordis.patch.yml');
+      writeFileSync(file, c.raw, 'utf8');
+      process.env.DSH_HOME = home;
+      process.env.DSH_PROFILE = 'test';
+      await mod.writeToggle(c.id, false);
+      const disabled = readFileSync(file, 'utf8');
+      await mod.writeToggle(c.id, true);
+      const after = readFileSync(file, 'utf8');
+      checked += 1;
+      if (!disabled.includes('disabled: true')) failures.push(`${c.name}：停用没写入 disabled: true`);
+      if (countLines(disabled) !== c.mid) failures.push(`${c.name}：中间态行数 ${countLines(disabled)}（期望 ${c.mid} —— 多出来的是空行/孤儿行）`);
+      if (c.kind === 'roundtrip') {
+        if (after !== c.raw) failures.push(`${c.name}：往返后字节不一致（${sha(c.raw)} → ${sha(after)}）`);
+      } else {
+        if (after.includes(c.id)) failures.push(`${c.name}：孤儿条目未清理，文件里仍有 ${c.id}`);
+        else if (after !== BASE + '\n') failures.push(`${c.name}：清理后未回到基线（${sha(BASE + '\n')} → ${sha(after)}）`);
+      }
+    }
+  } catch (e) {
+    failures.push(`探针自身异常：${e?.message ?? e}`);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    if (oldHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = oldHome;
+    if (oldProfile === undefined) delete process.env.DSH_PROFILE; else process.env.DSH_PROFILE = oldProfile;
+  }
+  return { checked, failures };
+}
+
 const probe = probePackageExports();
 if (probe.failures.length === 0) {
   console.log(`  ✅ 包路径解析：${probe.checked} 个 dshome/* 子路径全部可解析（package.json exports 齐全）`);
@@ -438,7 +540,21 @@ if (svc.failures.length === 0) {
   for (const f of svc.failures) console.log(`  ❌ ${f}`);
 }
 
-const totalFailed = failed + probe.failures.length + svc.failures.length + gateSelfFailures.length;
+const prot = await probePluginProtection();
+if (prot.failures.length === 0) {
+  console.log(`  ✅ 插件保护语义：${prot.checked} 条断言通过（白名单唯一真相 / 白名单条目真命中 / dshome 前缀回归探针 / classify 面不变）`);
+} else {
+  for (const f of prot.failures) console.log(`  ❌ ${f}`);
+}
+
+const trip = await probeToggleRoundTrip();
+if (trip.failures.length === 0) {
+  console.log(`  ✅ 启停写回无损：${trip.checked} 例往返（隔离 DSH_HOME）字节一致（既有条目 / 追加型 / 无末尾换行 / CRLF / [] / 孤儿清理）`);
+} else {
+  for (const f of trip.failures) console.log(`  ❌ ${f}`);
+}
+
+const totalFailed = failed + probe.failures.length + svc.failures.length + prot.failures.length + trip.failures.length + gateSelfFailures.length;
 for (const f of gateSelfFailures) console.log(`  ❌ 门禁自检失败：${f}`);
-console.log(`[verify-host-plugins] ${totalFailed === 0 ? '✅ 全部通过' : `❌ ${totalFailed} 项异常（挂载异常 ${failed} + 包解析失败 ${probe.failures.length} + 服务访问失配 ${svc.failures.length} + 门禁自检 ${gateSelfFailures.length}）`}（退出码 ${totalFailed === 0 ? 0 : 1}）`);
+console.log(`[verify-host-plugins] ${totalFailed === 0 ? '✅ 全部通过' : `❌ ${totalFailed} 项异常（挂载异常 ${failed} + 包解析失败 ${probe.failures.length} + 服务访问失配 ${svc.failures.length} + 保护语义 ${prot.failures.length} + 启停写回 ${trip.failures.length} + 门禁自检 ${gateSelfFailures.length}）`}（退出码 ${totalFailed === 0 ? 0 : 1}）`);
 process.exit(totalFailed === 0 ? 0 : 1);
