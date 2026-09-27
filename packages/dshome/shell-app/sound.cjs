@@ -117,7 +117,7 @@ function listSounds() {
  *   ③ 非 preview + sound 非法 ⇒ **回退音 + 204**：用户把字段写错，不能让"提醒"变成静音的假绿。
  *
  * @param {{title?: unknown, body?: unknown, sound?: unknown, preview?: unknown}} payload
- * @returns {{status: number, kind: string, notify: boolean, play: string, fallback: boolean, resolved: string}}
+ * @returns {{status: number, kind: string, notify: boolean, play: string, fallback: boolean, resolved: string, silent: boolean}}
  *   kind: preview（只播音）/ notify（弹通知±播音）/ invalid（preview 但值非法 ⇒ 400）。
  *   play 为空串 = 不播音；fallback=true = play 是系统默认音脚本。
  */
@@ -131,20 +131,20 @@ function buildNotifyResponse(payload) {
   if (raw.preview === true) {
     // 试听：只播音、不弹通知（title/body 忽略）。
     if (resolved.ok) {
-      return { status: 204, kind: 'preview', notify: false, play: buildPlayScript(resolved.path), fallback: false, resolved: resolved.path };
+      return { status: 204, kind: 'preview', notify: false, play: buildPlayScript(resolved.path), fallback: false, resolved: resolved.path, silent: false };
     }
     if (!wanted) {
       // ①「（默认，跟随系统）」这一项：播系统默认音（听得见），并明确告知这是回退音。
-      return { status: 204, kind: 'preview', notify: false, play: systemDefaultPlayScript(), fallback: true, resolved: 'default-system' };
+      return { status: 204, kind: 'preview', notify: false, play: systemDefaultPlayScript(), fallback: true, resolved: 'default-system', silent: false };
     }
     // ② 值非法：响亮 400（resolved 带原因：not-wav / missing），调用方记日志。
-    return { status: 400, kind: 'invalid', notify: false, play: '', fallback: false, resolved: resolved.reason };
+    return { status: 400, kind: 'invalid', notify: false, play: '', fallback: false, resolved: resolved.reason, silent: false };
   }
   // ③ 通知投递：不可播但有值 ⇒ 回退音，绝不静默。缺省/空串 ⇒ 不额外播音（只听系统通知自带的音）。
   const play = resolved.ok ? buildPlayScript(resolved.path) : (wanted ? systemDefaultPlayScript() : '');
   const fallback = !resolved.ok && wanted;
   return {
-    status: 204, kind: 'notify', notify: true, play, fallback,
+    status: 204, kind: 'notify', notify: true, play, fallback, silent: play !== '',
     resolved: resolved.ok ? resolved.path : (wanted ? resolved.reason : 'no-sound-value'),
   };
 }

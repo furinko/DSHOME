@@ -967,7 +967,7 @@ function startNotifyListener() {
           try {
             const { title, body: text } = payload;
             if (Notification.isSupported()) {
-              const n = new Notification({ title: title ?? 'DSHOME', body: text ?? '' });
+              const n = new Notification({ title: title ?? 'DSHOME', body: text ?? '', silent: decision.silent === true });
               // 点通知跳回窗口：通知可能在窗口最小化/被遮挡时送达（"等你确认"类尤其如此），
               // 点一下就该看到那个弹窗——与在线状态通知（applyBackendState）同款处理。
               n.on('click', showWindow);

@@ -198,6 +198,27 @@ check('H4 preview + 不可播音但给了值 ⇒ 400 响亮失败（v1.2 ②：�
     && d.play === '' && d.resolved === 'not-wav'; })(), JSON.stringify(sound.buildNotifyResponse({ preview: true, sound: 'x.mp3' })));
 check('H4b preview + 文件不存在 ⇒ 400 且原因=missing（与「非 wav」可区分，客户端能给出对的提示）',
   (() => { const d = sound.buildNotifyResponse({ preview: true, sound: 'NoSuchSound.wav' }); return d.status === 400 && d.resolved === 'missing'; })());
+// 契约 v3（2026-09-27 主人实测『和系统提示音重叠了』）：有我们自己的音 ⇒ 让 Windows 别播 toast 自带的那声；
+// 无音可播（音色=空串）⇒ 保留系统音——契约里『空串＝只听系统自带的音』的语义，别把这条也掐了。
+check('H8 有我们自己的音 ⇒ silent=true（掐掉 toast 自带的那声，避免两声重叠）',
+  (() => { const d = sound.buildNotifyResponse({ title: 't', body: 'b', sound: GOOD_NAME });
+    return d.notify === true && d.play !== '' && d.silent === true; })(),
+  JSON.stringify(sound.buildNotifyResponse({ title: 't', body: 'b', sound: GOOD_NAME })));
+check('H8b 无音可播（缺省 / 空串）⇒ silent=false（保留系统通知音，别把这条也掐了）',
+  (() => { const a = sound.buildNotifyResponse({ title: 't', body: 'b' });
+    const b = sound.buildNotifyResponse({ title: 't', body: 'b', sound: '' });
+    return a.silent === false && b.silent === false; })());
+check('H8c 不可播的非法值 ⇒ 走回退音 ⇒ silent=true（有音就要掐系统音）',
+  (() => { const d = sound.buildNotifyResponse({ title: 't', body: 'b', sound: 'x.mp3' });
+    return d.play !== '' && d.silent === true; })());
+check('H8d preview 三分支 ⇒ silent 恒 false（preview 不弹通知，谈不上掐系统音）',
+  (() => { const a = sound.buildNotifyResponse({ preview: true, sound: GOOD_NAME });
+    const b = sound.buildNotifyResponse({ preview: true });
+    const c = sound.buildNotifyResponse({ preview: true, sound: 'x.mp3' });
+    return a.silent === false && b.silent === false && c.silent === false; })());
+check('H8e main.cjs 真把 decision.silent 透给 Notification（接线存在，防『判据在、没接上』）',
+  readFileSync(new URL('../packages/dshome/shell-app/main.cjs', import.meta.url), 'utf8')
+    .includes('silent: decision.silent === true'));
 check('H5 非 preview + 缺 sound ⇒ 弹通知、不播音（旧客户端向后兼容）',
   (() => { const d = sound.buildNotifyResponse({ title: 't', body: 'b' }); return d.status === 204 && d.notify === true && d.play === '' && d.fallback === false; })());
 check('H6 非 preview + 空串 sound ⇒ 弹通知、不播音',
@@ -1304,10 +1325,16 @@ if (process.argv.includes('--mutate')) {
       '`' + String.raw`$p = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('` + '$' + `{payload}'));`,
       '`' + String.raw`$p = '` + '$' + `{String(absPath ?? '')}';`],
     ['M4 preview 缺音时静默 204（假绿：有声无音、用户听不到）', SOUND_FILE,
-      "play: systemDefaultPlayScript(), fallback: true, resolved: 'default-system' };",
-      "play: '', fallback: false, resolved: 'default-system' };"],
+      "play: systemDefaultPlayScript(), fallback: true, resolved: 'default-system', silent: false };",
+      "play: '', fallback: false, resolved: 'default-system', silent: false };"],
     // windowsHide 的接线圈就在 sound.cjs（main.cjs 只调 playScript）⇒ 改坏点必须落在真正生效的那行。
     ['M5 execFile 去掉 windowsHide（每条通知闪黑框）', SOUND_FILE, 'windowsHide: true,', ''],
+    ['M26 silent 恒 false（系统音与我们重叠 —— 主人实测的缺陷本体）', SOUND_FILE,
+      "play, fallback, silent: play !== '',", "play, fallback, silent: false,"],
+    ['M27 silent 恒 true（音色空串时把系统音也掐了 = 彻底静音）', SOUND_FILE,
+      "play, fallback, silent: play !== '',", "play, fallback, silent: true,"],
+    ['M28 main.cjs 不透传 silent（接线断，壳照旧两声）', MAIN_FILE,
+      'silent: decision.silent === true', ''],
     ['M6 壳不引用 sound.cjs（判据没接上）', MAIN_FILE, "require('./sound.cjs')", "require('./nope.cjs')"],
     // M7 打 **schema** 默认值，M9 打**兜底对象**默认值：两个真值源各自有独立反例。
     ['M7 schema 默认音色被换掉（契约默认值漂移）', NOTIFY_FILE,
@@ -1318,11 +1345,11 @@ if (process.argv.includes('--mutate')) {
       "soundTurnCompletion: 'Windows Ding.wav'"],
     // v1.2 三分支的反例：任一条被写回旧行为都要红。
     ['M10 preview 缺音被写成 400（设置页「默认」项试听不了）', SOUND_FILE,
-      "      return { status: 204, kind: 'preview', notify: false, play: systemDefaultPlayScript(), fallback: true, resolved: 'default-system' };",
-      String.raw`      return { status: 400, kind: 'invalid', notify: false, play: '', fallback: false, resolved: resolved.reason };`],
+      "      return { status: 204, kind: 'preview', notify: false, play: systemDefaultPlayScript(), fallback: true, resolved: 'default-system', silent: false };",
+      String.raw`      return { status: 400, kind: 'invalid', notify: false, play: '', fallback: false, resolved: resolved.reason, silent: false };`],
     ['M11 preview 非法值被写成 204 + 回退音（掩盖用户填错）', SOUND_FILE,
-      String.raw`    return { status: 400, kind: 'invalid', notify: false, play: '', fallback: false, resolved: resolved.reason };`,
-      String.raw`    return { status: 204, kind: 'preview', notify: false, play: systemDefaultPlayScript(), fallback: true, resolved: resolved.reason };`],
+      String.raw`    return { status: 400, kind: 'invalid', notify: false, play: '', fallback: false, resolved: resolved.reason, silent: false };`,
+      String.raw`    return { status: 204, kind: 'preview', notify: false, play: systemDefaultPlayScript(), fallback: true, resolved: resolved.reason, silent: false };`],
     ['M12 非 preview 非法值改成静默不播（提醒变静音=假绿）', SOUND_FILE,
       "const play = resolved.ok ? buildPlayScript(resolved.path) : (wanted ? systemDefaultPlayScript() : '');",
       "const play = resolved.ok ? buildPlayScript(resolved.path) : '';"],
