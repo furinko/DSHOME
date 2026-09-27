@@ -967,8 +967,12 @@ check("恢复后重新显示", box.style.display === "block", String(box.style.d
     inject: (names, cb) => { if (names.includes("settingsScope")) cb(scopeCtx); },
     slots: fakeSlots,
   };
-  // mock react 要**形似真 hooks**（useState 返回 [值, 设置器]）：组件函数才能被直接调用取元素树。
-  const fakeReact = { useState: (init) => [typeof init === "function" ? init() : init, () => {}], useEffect: () => {} };
+  // mock react 要**形似真 hooks**（useState 返回 [值, 设置器]；useRef 返回 {current}）：组件函数才能被直接调用取元素树。
+  const fakeReact = {
+    useState: (init) => [typeof init === "function" ? init() : init, () => {}],
+    useEffect: () => {},
+    useRef: (init) => ({ current: typeof init === "function" ? init() : init }),
+  };
   const fakeRequire2 = (name) => name === "react" ? fakeReact
     : name === "react/jsx-runtime" ? { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: "Fragment" }
       : new Proxy({}, { get: () => () => ({}) });
@@ -993,26 +997,440 @@ check("恢复后重新显示", box.style.display === "block", String(box.style.d
   const tree = card.component();
   const text = JSON.stringify(tree);
   const switches = collect(tree);
-  check("通知行：四项开关都在（总开关 + 三个分项）", switches.length === 4, `找到 ${switches.length}`);
-  for (const label of ["系统通知", "回合完成时提醒", "需要我确认时提醒", "有问题等我回答时提醒"]) {
+  check("通知行：五项开关都在（总开关 + 四个分项，v2 新增后台/成员任务）", switches.length === 5, `找到 ${switches.length}`);
+  for (const label of ["系统通知", "回合完成时提醒", "后台/成员任务完成时提醒", "需要我确认时提醒", "有问题等我回答时提醒"]) {
     check(`通知行文案含「${label}」`, text.includes(label));
   }
 
   fakeScope.writes.length = 0;
-  switches[2].props.onClick();
+  switches[3].props.onClick();          // 0=总开关 1=回合 2=后台/成员 3=确认 4=提问
   check("通知行：点「需要我确认时提醒」写回 notifyOnApproval=false（字段名写错=静默失效）",
     JSON.stringify(fakeScope.writes) === JSON.stringify([["notifyOnApproval", false]]), JSON.stringify(fakeScope.writes));
 
-  fakeScope.snapshot = { ...fakeScope.snapshot, value: { ...fakeScope.snapshot.value, enabled: false } };
+  // v2 新增行：与「回合完成时提醒」是并列两类，各写各的字段
+  fakeScope.writes.length = 0;
+  switches[2].props.onClick();
+  check("通知行：点「后台/成员任务完成时提醒」写回 notifyOnBackground=false（字段名写错=静默失效）",
+    JSON.stringify(fakeScope.writes) === JSON.stringify([["notifyOnBackground", false]]), JSON.stringify(fakeScope.writes));
+
+  fakeScope.snapshot = { ...fakeScope.snapshot, value: { ...fakeScope.snapshot.value, enabled: false, notifyOnBackground: true } };
   const offSwitches = collect(card.component());
-  check("反例·总开关关 ⇒ 三个分项禁用、总开关仍可点",
-    offSwitches[0].props.disabled !== true && offSwitches.slice(1).every((s) => s.props.disabled === true),
-    offSwitches.map((s) => (s.props.disabled === true ? "禁" : "可")).join(","));
+  check("反例·总开关关 ⇒ 四个分项禁用、总开关仍可点",
+    offSwitches.length === 5 && offSwitches[0].props.disabled !== true && offSwitches.slice(1).every((s) => s.props.disabled === true),
+    `${offSwitches.length} 个 / ` + offSwitches.map((s) => (s.props.disabled === true ? "禁" : "可")).join(","));
 
   fakeScope.snapshot = { ...fakeScope.snapshot, status: "unavailable", value: undefined };
   const unavailableTree = card.component();
   check("反例·命名空间不可用 ⇒ 出「当前不可用」文案、不出开关",
     JSON.stringify(unavailableTree).includes("当前不可用") && collect(unavailableTree).length === 0);
+}
+
+/* ---------------- 通用设置 · 通知行「音色下拉 + 试听」（契约 v1）----------------
+ * 为什么另起一套 hook 假件：音色候选是**挂载时 fetch** 的，上面那套 no-op 的 useEffect 等于没测
+ * （组件永远停在 loading 分支）。这一套 useState 跨渲染保值、useEffect 只收集（由用例决定何时"挂载"），
+ * fetch 从 vm 的 sandbox 注入 —— 产品代码里没有任何 test-only 出口。 */
+{
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  /** 一套「真能跑」的通知行夹具：返回渲染入口 + 写回记录。 */
+  const makeHarness = (fetchImpl) => {
+    const states = [];
+    const refs = [];
+    let cursor = 0;
+    let effects = [];
+    const fakeReact3 = {
+      useState(init) {
+        const at = cursor;
+        cursor += 1;
+        if (!(at in states)) states[at] = typeof init === "function" ? init() : init;
+        return [states[at], (next) => { states[at] = typeof next === "function" ? next(states[at]) : next; }];
+      },
+      // useRef 要**跨渲染稳定**（真 react 就是这样）：试听读的正是这个同步镜像
+      useRef(init) {
+        const at = cursor;
+        cursor += 1;
+        if (!(at in refs)) refs[at] = { current: typeof init === "function" ? init() : init };
+        return refs[at];
+      },
+      useEffect(fn) { effects.push(fn); },
+    };
+    const fakeRequire3 = (name) => name === "react" ? fakeReact3
+      : name === "react/jsx-runtime" ? { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: "Fragment" }
+        : new Proxy({}, { get: () => () => ({}) });
+    const writes = [];
+    const scope = {
+      snapshot: {
+        status: "ready",
+        value: {
+          enabled: true, notifyOnTurnCompletion: true, soundTurnCompletion: "",
+          notifyOnApproval: true, soundApproval: "Windows Notify Calendar.wav",
+          notifyOnUserQuestion: true, soundUserQuestion: "",
+        },
+        base: undefined, user: undefined, revision: 1, writable: true, mode: "host",
+      },
+      getSnapshot() { return this.snapshot; },
+      subscribe() { return () => {}; },
+      set(field, value) { writes.push([field, value]); return Promise.resolve(); },
+      unset() { return Promise.resolve(); },
+    };
+    const regs = [];
+    const runInject = (fn) => { const r = fn(); if (r && typeof r.next === "function") { let s = r.next(); while (!s.done) s = r.next(s.value); } return r; };
+    const ctx3 = {
+      get: () => undefined,
+      inject: (names, cb) => { if (names.includes("settingsScope")) cb({ settingsScope: { bind: () => scope } }); },
+      slots: { inject: (n, fn) => { runInject(fn); return () => {}; }, register: (o, c) => { regs.push({ options: o, component: c }); return () => {}; } },
+    };
+    sandbox.fetch = fetchImpl;
+    win.__def.factory(fakeRequire3).apply(ctx3);
+    const card = regs.find((r) => r.options?.id === "dshome-notify-settings");
+    return {
+      writes, scope, card,
+      /** 模拟 scope 变更：把组件里那份快照换掉（真实里由 subscribe 回调 → setSnap 做）。 */
+      setValue(value) {
+        scope.snapshot = { ...scope.snapshot, value };
+        if (states.length > 0) states[0] = scope.snapshot;
+      },
+      /** 一次渲染：跑 component() 并把本次收集到的 effect 交回（由调用方决定何时真"挂载"）。 */
+      render() { cursor = 0; effects = []; const tree = card.component(); return { tree, effects }; },
+    };
+  };
+
+  const collectNodes = (node, hit, out = []) => {
+    if (node === null || node === undefined || typeof node !== "object") return out;
+    if (Array.isArray(node)) { for (const child of node) collectNodes(child, hit, out); return out; }
+    if (hit(node)) out.push(node);
+    collectNodes(node.props?.children, hit, out);
+    return out;
+  };
+  const byType = (tree, type) => collectNodes(tree, (n) => n.type === type);
+  const byAria = (tree, type, aria) => collectNodes(tree, (n) => n.type === type && n.props?.["aria-label"] === aria);
+  const previewButtons = (tree) => collectNodes(tree, (n) => n.type === "button" && typeof n.props?.["aria-label"] === "string" && n.props["aria-label"].startsWith("试听："));
+  const okFetch = (payload) => {
+    const calls = [];
+    return { calls, fn: (url, init) => { calls.push({ url, init }); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(payload) }); } };
+  };
+  const failFetch = () => {
+    const calls = [];
+    return { calls, fn: (url, init) => { calls.push({ url, init }); return Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:32123")); } };
+  };
+  /** 挂载（跑 effect）+ 让 fetch 的 promise 链落地 + 重渲染 = 真实的 effect → setState → 重渲染。 */
+  const mount = async (h) => {
+    const first = h.render();
+    for (const fn of first.effects) fn();
+    await tick();
+    await tick();
+    return h.render().tree;
+  };
+
+  /* 常用清单夹具（照本机真实规模）：8 个常用 + 62 个其它 = 70 项；
+     而且**故意把 8 个常用按倒序夹在中间**——候选必须按清单顺序重排，照抄 /sounds 顺序就必红。 */
+  const COMMON8 = [
+    "Windows Notify System Generic.wav", "Windows Notify Calendar.wav", "Windows Notify Email.wav",
+    "Windows Notify Messaging.wav", "Windows Notify.wav", "notify.wav", "chimes.wav", "ding.wav",
+  ];
+  const FILLER62 = Array.from({ length: 62 }, (_, i) => `Alarm${String(i + 1).padStart(2, "0")}.wav`);
+  const SOUNDS_70 = [...FILLER62.slice(0, 31), ...[...COMMON8].reverse(), ...FILLER62.slice(31)];
+  const optionValuesOf = (tree, aria) => {
+    const row = aria === undefined ? byType(tree, "select")[0] : byAria(tree, "select", aria)[0];
+    return row === undefined ? null : row.props.children.map((o) => o.props.value);
+  };
+
+  /* A) 正常路径：候选真进下拉；四个下拉/按钮齐；分组映射逐条钉死 */
+  const okMock = okFetch({ dir: "C:\\Windows\\Media", sounds: SOUNDS_70 });
+  const hA = makeHarness(okMock.fn);
+  const treeA = await mount(hA);
+  check("音色：候选列表走 GET http://127.0.0.1:32123/sounds（挂载时取一次）",
+    okMock.calls.length === 1 && okMock.calls[0].url === "http://127.0.0.1:32123/sounds", JSON.stringify(okMock.calls.map((c) => c.url)));
+  const selectsA = byType(treeA, "select");
+  check("音色：四个下拉 + 四个「试听」按钮都在（v2 加了后台/成员任务那一行）",
+    selectsA.length === 4 && previewButtons(treeA).length === 4, `select=${selectsA.length} preview=${previewButtons(treeA).length}`);
+  // 70 项 ⇒ 下拉恰好 8 个常用，且**顺序 = 清单顺序**（/sounds 是倒序混在中间的）；首项「默认」、末项「自定义路径…」
+  check("常用清单：/sounds 给 70 项 ⇒ 下拉候选恰好是那 8 个、顺序与清单一致（顺序错 ⇒ 必红）",
+    JSON.stringify(optionValuesOf(treeA)) === JSON.stringify(["", ...COMMON8, "__dshome_custom__"]),
+    JSON.stringify(optionValuesOf(treeA)));
+  const optionsA = byType(treeA, "option");
+  check("音色：/sounds 的候选真渲染成 option", optionsA.map((o) => o.props.value).includes("chimes.wav"),
+    optionsA.map((o) => o.props.value).join("|"));
+  check("音色：首项 =（默认，跟随系统）且 value 是空串（空串 = 不额外播音）",
+    optionsA[0].props.value === "" && optionsA[0].props.children === "（默认，跟随系统）", String(optionsA[0].props.children));
+
+  // 分组映射（冻结 v1+v2）：下拉的 aria-label = 行名 ⇒ 写回的字段名。手法照 1003 行——
+  // **字段名写错 / 挂错行 = 静默失效**：下拉看着能选，host 侧没这个字段或写到别的开关上，什么都没发生。
+  // 四行**必须**一一对应：回合(主任务) / 后台·成员(其余任务) / 确认 / 提问——换行或写错字段都必红。
+  const PAIRS = [
+    ["回合完成时提醒 音色", "soundTurnCompletion"],
+    ["后台/成员任务完成时提醒 音色", "soundBackground"],
+    ["需要我确认时提醒 音色", "soundApproval"],
+    ["有问题等我回答时提醒 音色", "soundUserQuestion"],
+  ];
+  const seenFields = [];
+  for (const [aria, field] of PAIRS) {
+    const sel = byAria(treeA, "select", aria)[0];
+    check(`音色：「${aria.replace(" 音色", "")}」行挂着一个下拉`, sel !== undefined);
+    if (sel === undefined) continue;
+    hA.writes.length = 0;
+    sel.props.onChange({ target: { value: "chimes.wav" } });
+    seenFields.push(hA.writes[0]?.[0]);
+    check(`音色：该行下拉写回 ${field}（字段名/分组错位 ⇒ 静默失效）`,
+      JSON.stringify(hA.writes) === JSON.stringify([[field, "chimes.wav"]]), JSON.stringify(hA.writes));
+  }
+  check("音色：四个字段名 = 冻结契约（soundTurnCompletion / soundBackground / soundApproval / soundUserQuestion）",
+    JSON.stringify(seenFields) === JSON.stringify(PAIRS.map((p) => p[1])), JSON.stringify(seenFields));
+  // v2 的关键区分：主任务与后台/成员任务**不能共用**一个音色字段（共用 = 两类分不开、需求没达成）
+  const bgSelA = byAria(treeA, "select", "后台/成员任务完成时提醒 音色")[0];
+  hA.writes.length = 0;
+  bgSelA.props.onChange({ target: { value: "Windows Notify Calendar.wav" } });
+  check("反例·后台/成员任务行的下拉只写 soundBackground（写成主任务字段 ⇒ 必红）",
+    JSON.stringify(hA.writes) === JSON.stringify([["soundBackground", "Windows Notify Calendar.wav"]]), JSON.stringify(hA.writes));
+
+  /* B) 默认值：空串 / 缺省 ⇒ 渲染成「默认」项（不是空着，也不是第一个候选） */
+  hA.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "", soundUserQuestion: "chimes.wav" });
+  const treeB = hA.render().tree;
+  const selApprovalB = byAria(treeB, "select", "需要我确认时提醒 音色")[0];
+  check("音色：空串 ⇒ 下拉 value 是空串（显示「默认，跟随系统」）", selApprovalB.props.value === "", JSON.stringify(selApprovalB.props.value));
+  check("音色：缺省（字段缺席）也渲染成「默认」项",
+    byAria(treeB, "select", "回合完成时提醒 音色")[0].props.value === "",
+    JSON.stringify(byAria(treeB, "select", "回合完成时提醒 音色")[0].props.value));
+  check("音色：v2 新行（缺省）同样渲染成「默认」项，不空、不崩",
+    byAria(treeB, "select", "后台/成员任务完成时提醒 音色")[0].props.value === "",
+    JSON.stringify(byAria(treeB, "select", "后台/成员任务完成时提醒 音色")[0].props.value));
+  check("音色：非空值（候选内）⇒ 下拉停在那个候选上",
+    byAria(treeB, "select", "有问题等我回答时提醒 音色")[0].props.value === "chimes.wav");
+  check("音色：空串 ⇒ 该行不出自定义输入框（常态没展开）",
+    byAria(treeB, "input", "需要我确认时提醒 自定义音色路径").length === 0);
+
+  /* B2) 常用清单的三条边界：交集 / 本机缺名 / 交集为空 ⇒ 退全量 / 当前值非常用 ⇒ 不假显示 */
+  // ② 白名单里有、本机没有的名字：不出现（交集生效）——本机只有 chimes/ding 两个常用音
+  const mockP = okFetch({ dir: "C:\\Windows\\Media", sounds: ["Alarm09.wav", "chimes.wav", "ding.wav"] });
+  const hP = makeHarness(mockP.fn);
+  const treeP = await mount(hP);
+  check("常用清单：本机缺的名字不出现（交集生效），且顺序仍按清单（chimes 在 ding 之前）",
+    JSON.stringify(optionValuesOf(treeP)) === JSON.stringify(["", "chimes.wav", "ding.wav", "__dshome_custom__"]),
+    JSON.stringify(optionValuesOf(treeP)));
+  // ③ 交集为空（异常环境：一个常用音都没有）⇒ 退回全量，**不许空**
+  const mockQ = okFetch({ dir: "C:\\Windows\\Media", sounds: ["Alarm01.wav", "Alarm02.wav"] });
+  const hQ = makeHarness(mockQ.fn);
+  const treeQ = await mount(hQ);
+  check("常用清单：交集为空 ⇒ 退回 /sounds 全量（宁可多也不能让下拉空掉）",
+    JSON.stringify(optionValuesOf(treeQ)) === JSON.stringify(["", "Alarm01.wav", "Alarm02.wav", "__dshome_custom__"]),
+    JSON.stringify(optionValuesOf(treeQ)));
+  // ④ 当前值不在常用清单里（之前选过 Alarm01.wav）⇒ 哨兵形态 + 输入框预填，绝不显示成第一项「默认」
+  hA.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "Alarm01.wav" });
+  const treeR = hA.render().tree;
+  check("反例·当前值不在常用清单里（Alarm01.wav）⇒ 哨兵形态，不显示成第一项「默认」",
+    byAria(treeR, "select", "需要我确认时提醒 音色")[0].props.value === "__dshome_custom__",
+    JSON.stringify(byAria(treeR, "select", "需要我确认时提醒 音色")[0].props.value));
+  check("反例·同一行：输入框预填那个非常用值（不丢主人已选）",
+    byAria(treeR, "input", "需要我确认时提醒 自定义音色路径")[0]?.props.value === "Alarm01.wav",
+    JSON.stringify(byAria(treeR, "input", "需要我确认时提醒 自定义音色路径")[0]?.props.value));
+  // 四项能力都在：默认 + 8 个常用 + 自定义路径（哨兵）——一个都不许丢
+  check("常用清单：（默认，跟随系统）与（自定义路径…）两项都保留",
+    JSON.stringify(optionValuesOf(treeR)) === JSON.stringify(["", ...COMMON8, "__dshome_custom__"]),
+    JSON.stringify(optionValuesOf(treeR)));
+
+  /* C) 壳没跑 / 端口不通：不许抛，下拉退默认 + 给手输框 + 一行小字 */
+  const badMock = failFetch();
+  const hD = makeHarness(badMock.fn);
+  let mountThrew = null;
+  let treeD = null;
+  try { treeD = await mount(hD); } catch (error) { mountThrew = error; }
+  check("反例·/sounds 连不上：挂载整条链不抛（失败只降级）", mountThrew === null, mountThrew === null ? "" : String(mountThrew));
+  check("音色：失败时确实去试过 /sounds", badMock.calls.length === 1, JSON.stringify(badMock.calls.map((c) => c.url)));
+  check("音色：失败 ⇒ 出「壳未运行」小字", JSON.stringify(treeD).includes("壳未运行"));
+  check("音色：失败 ⇒ 下拉里没有候选（只剩「默认」项 + 当前值的占位项）",
+    byType(treeD, "select").every((s) => s.props.children.every((o) => o.props.value === "" || o.props.value === s.props.value)),
+    JSON.stringify(byType(treeD, "select").map((s) => s.props.children.map((o) => o.props.value))));
+  check("音色：失败且当前值为空 ⇒ 该行下拉只剩「默认」一项",
+    byAria(treeD, "select", "回合完成时提醒 音色")[0].props.children.length === 1,
+    JSON.stringify(byAria(treeD, "select", "回合完成时提醒 音色")[0].props.children.map((o) => o.props.value)));
+  check("音色：失败 ⇒ 允许手输自定义 .wav 路径", byType(treeD, "input").length === 4, `input=${byType(treeD, "input").length}`);
+  check("自定义路径：壳不可达时下拉里**不出现**哨兵项（同一行不留两个自定义入口）",
+    byType(treeD, "select").every((s) => s.props.children.every((o) => o.props.value !== "__dshome_custom__")),
+    JSON.stringify(byType(treeD, "select").map((s) => s.props.children.map((o) => o.props.value))));
+  hD.writes.length = 0;
+  byAria(treeD, "input", "回合完成时提醒 自定义音色路径")[0].props.onBlur({ target: { value: "  C:\\Windows\\Media\\Alarm01.wav  " } });
+  check("音色：手输路径（回车/失焦）写回 soundTurnCompletion 并去空格",
+    JSON.stringify(hD.writes) === JSON.stringify([["soundTurnCompletion", "C:\\Windows\\Media\\Alarm01.wav"]]), JSON.stringify(hD.writes));
+  hD.writes.length = 0;
+  byAria(treeD, "input", "回合完成时提醒 自定义音色路径")[0].props.onBlur({ target: { value: "   " } });
+  check("音色：手输值没变（空白）⇒ 不写回", hD.writes.length === 0, JSON.stringify(hD.writes));
+
+  /* D) 试听：POST /notify {preview:true,sound:<该行当前值>}；壳不可达时不抛 */
+  const pvMock = okFetch({ dir: "C:\\Windows\\Media", sounds: ["Alarm01.wav"] });
+  const hE = makeHarness(pvMock.fn);
+  const treeE = await mount(hE);
+  const btnE = byAria(treeE, "button", "试听：需要我确认时提醒 的音色")[0];
+  check("音色：「试听」按钮的 aria 与所在行一致（分组映射）", btnE !== undefined);
+  pvMock.calls.length = 0;
+  let pvThrew = null;
+  try { btnE.props.onClick(); } catch (error) { pvThrew = error; }
+  const pvCall = pvMock.calls[0];
+  check("音色：试听 = POST http://127.0.0.1:32123/notify {preview:true,sound:该行当前值}",
+    pvThrew === null && pvCall?.url === "http://127.0.0.1:32123/notify" && pvCall.init?.method === "POST"
+      && pvCall.init.body === JSON.stringify({ preview: true, sound: "Windows Notify Calendar.wav" }),
+    JSON.stringify(pvCall));
+  const hF = makeHarness(failFetch().fn);
+  const treeF = await mount(hF);
+  let pvFailThrew = null;
+  try { byAria(treeF, "button", "试听：回合完成时提醒 的音色")[0].props.onClick(); } catch (error) { pvFailThrew = error; }
+  await tick();
+  check("反例·壳不可达时点「试听」不抛（失败只 warn；漏出去的 rejection 会让本脚本非 0 退出）",
+    pvFailThrew === null, pvFailThrew === null ? "" : String(pvFailThrew));
+
+  // 壳对「preview 但没可用音色」回 400（值 = 空串）⇒ 不能静默：必须出一条 warn，否则"点了没反应也不知道为什么"
+  const hostConsole = sandbox.console;
+  const warns = [];
+  sandbox.console = { warn: (...args) => warns.push(args.join(" ")), error: () => {}, log: () => {} };
+  const hG = makeHarness((url, init) => { void url; void init; return Promise.resolve({ ok: false, status: 400, json: () => Promise.resolve({}) }); });
+  const treeH = await mount(hG);
+  let pv400Threw = null;
+  try { byAria(treeH, "button", "试听：回合完成时提醒 的音色")[0].props.onClick(); } catch (error) { pv400Threw = error; }
+  await tick();
+  check("反例·壳回 400（默认项没音色可试听）⇒ 不抛且出 warn（不静默）",
+    pv400Threw === null && warns.some((line) => line.includes("试听未生效")), `threw=${pv400Threw} warns=${JSON.stringify(warns)}`);
+  sandbox.console = hostConsole;
+
+  /* E) 联动：开关全关也不灰化音色控件（可以先选音再开开关；试听只是播音，不属于"通知"） */
+  hE.setValue({ enabled: false, notifyOnTurnCompletion: false, notifyOnBackground: false, notifyOnApproval: false, notifyOnUserQuestion: false, soundApproval: "Windows Notify Calendar.wav" });
+  const treeG = hE.render().tree;
+  const selG = byAria(treeG, "select", "需要我确认时提醒 音色")[0];
+  const btnG = byAria(treeG, "button", "试听：需要我确认时提醒 的音色")[0];
+  check("反例·总开关 + 分项开关都关 ⇒ 音色下拉不灰化", selG.props.disabled !== true, `disabled=${selG.props.disabled}`);
+  check("反例·总开关 + 分项都关 ⇒ v2 新行的下拉也不灰化",
+    byAria(treeG, "select", "后台/成员任务完成时提醒 音色")[0].props.disabled !== true,
+    `disabled=${byAria(treeG, "select", "后台/成员任务完成时提醒 音色")[0].props.disabled}`);
+  check("反例·总开关关 ⇒ 「试听」按钮照常可点", btnG.props.disabled !== true && typeof btnG.props.onClick === "function");
+  check("回归·总开关关 ⇒ 四个分项开关仍禁用（含 v2 新增的后台/成员任务行）",
+    collectNodes(treeG, (n) => n.props?.role === "switch").length === 5
+      && collectNodes(treeG, (n) => n.props?.role === "switch").slice(1).every((s) => s.props.disabled === true),
+    collectNodes(treeG, (n) => n.props?.role === "switch").map((s) => (s.props.disabled === true ? "禁" : "可")).join(","));
+
+  /* F) 常态「自定义路径」入口（哨兵项）：壳在跑、候选 70 个，也要能指定自己目录里的 .wav */
+  const SENTINEL = "__dshome_custom__";
+  const hI = makeHarness(okFetch({ dir: "C:\\Windows\\Media", sounds: ["Alarm01.wav", "Windows Notify Calendar.wav"] }).fn);
+  await mount(hI);
+  hI.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "Windows Notify Calendar.wav" });
+  const treeI0 = hI.render().tree;
+  const selI0 = byAria(treeI0, "select", "需要我确认时提醒 音色")[0];
+  check("自定义路径：常态下拉里常驻哨兵项「（自定义路径…）」（候选齐全时也有入口）",
+    selI0.props.children.some((o) => o.props.value === SENTINEL && o.props.children === "（自定义路径…）"),
+    JSON.stringify(selI0.props.children.map((o) => o.props.value)));
+  check("自定义路径：常态下当前值命中候选 ⇒ 出输入框之前先不出（只在选中哨兵/存着自定义时出）",
+    selI0.props.value === "Windows Notify Calendar.wav" && byAria(treeI0, "input", "需要我确认时提醒 自定义音色路径").length === 0,
+    JSON.stringify(selI0.props.value));
+
+  hI.writes.length = 0;
+  selI0.props.onChange({ target: { value: SENTINEL } });
+  check("自定义路径：只选哨兵不写回（还没输入内容，别把哨兵值当音色存进设置）", hI.writes.length === 0, JSON.stringify(hI.writes));
+  const treeI1 = hI.render().tree;
+  const inputI1 = byAria(treeI1, "input", "需要我确认时提醒 自定义音色路径")[0];
+  check("自定义路径：选中哨兵 ⇒ 该行出现输入框（当前值是候选 ⇒ 预填留空）",
+    inputI1 !== undefined && inputI1.props.value === "", JSON.stringify(inputI1?.props.value));
+
+  hI.writes.length = 0;
+  inputI1.props.onKeyDown({ key: "Enter", target: { value: "  D:\\sfx\\ding.wav  " } });
+  check("自定义路径：输入 + 回车 ⇒ 写回 soundApproval 并去空格（字段名错位 ⇒ 静默失效）",
+    JSON.stringify(hI.writes) === JSON.stringify([["soundApproval", "D:\\sfx\\ding.wav"]]), JSON.stringify(hI.writes));
+  const inputI2 = byAria(hI.render().tree, "input", "需要我确认时提醒 自定义音色路径")[0];
+  hI.writes.length = 0;
+  inputI2.props.onBlur({ target: { value: "E:\\sfx\\bell.wav" } });
+  check("自定义路径：失焦提交走同一条写回路径",
+    JSON.stringify(hI.writes) === JSON.stringify([["soundApproval", "E:\\sfx\\bell.wav"]]), JSON.stringify(hI.writes));
+
+  // 清空 + 失焦 ⇒ 写回空串 = 回到「默认，跟随系统」
+  hI.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "D:\\sfx\\ding.wav" });
+  const inputI3 = byAria(hI.render().tree, "input", "需要我确认时提醒 自定义音色路径")[0];
+  hI.writes.length = 0;
+  inputI3.props.onBlur({ target: { value: "   " } });
+  check("自定义路径：清空 + 失焦 ⇒ 写回空串（= 回到「默认，跟随系统」）",
+    JSON.stringify(hI.writes) === JSON.stringify([["soundApproval", ""]]), JSON.stringify(hI.writes));
+  hI.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "" });   // 宿主确认写入 ⇒ 快照回流
+  check("自定义路径：写回空串后收掉输入框（别停在「自定义」形态、值却是默认）",
+    byAria(hI.render().tree, "input", "需要我确认时提醒 自定义音色路径").length === 0);
+
+  /* G) 假显示回归：当前值 = 候选外的自定义路径 ⇒ 下拉必须显示成哨兵形态，不许显示成第一项「默认」 */
+  const hJ = makeHarness(okFetch({ dir: "C:\\Windows\\Media", sounds: ["Alarm01.wav"] }).fn);
+  await mount(hJ);
+  hJ.setValue({ enabled: true, notifyOnUserQuestion: true, soundUserQuestion: "Z:\\my\\chime.wav" });
+  const treeJ = hJ.render().tree;
+  const selJ = byAria(treeJ, "select", "有问题等我回答时提醒 音色")[0];
+  check("反例·当前值不在候选里 ⇒ 下拉选中哨兵项（显示成第一项「默认」= 假显示，必红）",
+    selJ.props.value === SENTINEL, JSON.stringify(selJ.props.value));
+  check("反例·同一行：哨兵选中 ⇒ 输入框预填那条自定义路径",
+    byAria(treeJ, "input", "有问题等我回答时提醒 自定义音色路径")[0]?.props.value === "Z:\\my\\chime.wav",
+    JSON.stringify(byAria(treeJ, "input", "有问题等我回答时提醒 自定义音色路径")[0]?.props.value));
+
+  /* H) 状态机：哨兵 ↔ 候选 来回切，输入框要能收起（别成了关不掉的浮层） */
+  const hK = makeHarness(okFetch({ dir: "C:\\Windows\\Media", sounds: ["Alarm01.wav"] }).fn);
+  await mount(hK);
+  hK.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "" });
+  byAria(hK.render().tree, "select", "需要我确认时提醒 音色")[0].props.onChange({ target: { value: SENTINEL } });
+  check("自定义路径：选哨兵 ⇒ 输入框展开",
+    byAria(hK.render().tree, "input", "需要我确认时提醒 自定义音色路径").length === 1);
+  const selK = byAria(hK.render().tree, "select", "需要我确认时提醒 音色")[0];
+  hK.writes.length = 0;
+  selK.props.onChange({ target: { value: "Alarm01.wav" } });
+  check("自定义路径：从哨兵改回候选 ⇒ 输入框收起 + 写回该候选（哨兵值绝不落进设置）",
+    JSON.stringify(hK.writes) === JSON.stringify([["soundApproval", "Alarm01.wav"]])
+      && byAria(hK.render().tree, "input", "需要我确认时提醒 自定义音色路径").length === 0,
+    `${JSON.stringify(hK.writes)} / input=${byAria(hK.render().tree, "input", "需要我确认时提醒 自定义音色路径").length}`);
+
+  /* I) 边界：手输的值恰好等于某个候选名 ⇒ 写回后形态交回「当前值」（不留哨兵形态） */
+  const hL = makeHarness(okFetch({ dir: "C:\\Windows\\Media", sounds: ["Alarm01.wav"] }).fn);
+  await mount(hL);
+  hL.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "" });
+  byAria(hL.render().tree, "select", "需要我确认时提醒 音色")[0].props.onChange({ target: { value: SENTINEL } });
+  const inputL = byAria(hL.render().tree, "input", "需要我确认时提醒 自定义音色路径")[0];
+  hL.writes.length = 0;
+  inputL.props.onBlur({ target: { value: "Alarm01.wav" } });
+  hL.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "Alarm01.wav" });   // 宿主确认写入 ⇒ 快照回流
+  const treeL = hL.render().tree;
+  check("自定义路径：手输值恰是候选名 ⇒ 写回后按候选显示（不留哨兵形态、也不留输入框）",
+    JSON.stringify(hL.writes) === JSON.stringify([["soundApproval", "Alarm01.wav"]])
+      && byAria(treeL, "select", "需要我确认时提醒 音色")[0].props.value === "Alarm01.wav"
+      && byAria(treeL, "input", "需要我确认时提醒 自定义音色路径").length === 0,
+    `${JSON.stringify(hL.writes)} / select=${JSON.stringify(byAria(treeL, "select", "需要我确认时提醒 音色")[0].props.value)} / input=${byAria(treeL, "input", "需要我确认时提醒 自定义音色路径").length}`);
+
+  /* J) 试听取「当前草稿值」（ref 同步镜像）：输入后**不回车**直接点试听 —— 不能听旧音色、也不能吞掉错路径 */
+  const previewBody = (call) => { try { return JSON.parse(call.init.body); } catch { return null; } };
+  const callsJ = [];
+  const hN = makeHarness((url, init) => {
+    callsJ.push({ url, init });
+    return url.endsWith("/sounds")
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ dir: "C:\\Windows\\Media", sounds: ["Alarm01.wav", "Windows Notify Calendar.wav"] }) })
+      : Promise.resolve({ ok: true, status: 204, json: () => Promise.resolve({}) });
+  });
+  await mount(hN);
+  hN.setValue({ enabled: true, notifyOnApproval: true, soundApproval: "Windows Notify Calendar.wav" });
+  byAria(hN.render().tree, "select", "需要我确认时提醒 音色")[0].props.onChange({ target: { value: SENTINEL } });
+  byAria(hN.render().tree, "input", "需要我确认时提醒 自定义音色路径")[0].props.onChange({ target: { value: "D:\\sfx\\ding.wav" } });
+  // 真实事件顺序：鼠标点按钮 ⇒ input 先 blur（提交），onClick 的闭包仍是旧值 ⇒ 只有 ref 拿得到新草稿
+  byAria(hN.render().tree, "input", "需要我确认时提醒 自定义音色路径")[0].props.onBlur({ target: { value: "D:\\sfx\\ding.wav" } });
+  callsJ.length = 0;
+  byAria(hN.render().tree, "button", "试听：需要我确认时提醒 的音色")[0].props.onClick();
+  const postedJ = callsJ.filter((c) => c.url.endsWith("/notify"));
+  check("反例·输入后不回车直接点试听 ⇒ preview body 是新草稿值（拿旧持久值 = 假反馈，必红）",
+    postedJ.length === 1 && previewBody(postedJ[0])?.sound === "D:\\sfx\\ding.wav",
+    JSON.stringify(postedJ.map((c) => previewBody(c))));
+
+  /* K) 降级态（壳不可达）同一条路：非受控 input 的 DOM 当前值也要进试听 */
+  const callsK = [];
+  const hO = makeHarness((url, init) => {
+    callsK.push({ url, init });
+    return url.endsWith("/sounds")
+      ? Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:32123"))
+      : Promise.resolve({ ok: true, status: 204, json: () => Promise.resolve({}) });
+  });
+  await mount(hO);
+  byAria(hO.render().tree, "input", "回合完成时提醒 自定义音色路径")[0].props.onChange({ target: { value: "E:\\sfx\\bell.wav" } });   // 只输入，不回车
+  callsK.length = 0;
+  byAria(hO.render().tree, "button", "试听：回合完成时提醒 的音色")[0].props.onClick();
+  const postedK = callsK.filter((c) => c.url.endsWith("/notify"));
+  check("反例·降级态手输后直接点试听 ⇒ preview body 是刚输的路径",
+    postedK.length === 1 && previewBody(postedK[0])?.sound === "E:\\sfx\\bell.wav",
+    JSON.stringify(postedK.map((c) => previewBody(c))));
+
+  delete sandbox.fetch;   // 收尾：别把 mock 留在 vm 里
 }
 
 console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILED`);

@@ -103,13 +103,58 @@ window.__ModuleLoader__.load({
     /** 绑定后的设置 scope（apply 时绑；未就绪则保持 null ⇒ 组件渲染"不可用"文案）。 */
     var notifyScope = null;
 
-    /** 通知栏的四项：`sub` = 受总开关管辖的分项。 */
+    /** 通知栏的五项：`sub` = 受总开关管辖的分项；`sound` = 挂在该行下的音色字段（分组映射已冻结，别换行）。 */
     var NOTIFY_FIELDS = [
       { field: "enabled", label: "系统通知", hint: "总开关；关掉后下列提醒全部静音。" },
-      { field: "notifyOnTurnCompletion", label: "回合完成时提醒", hint: "你发起的回合处理完毕时弹一条系统通知。", sub: true },
-      { field: "notifyOnApproval", label: "需要我确认时提醒", hint: "出现确认弹窗（危险操作 / 沙箱放行）时弹通知。", sub: true },
-      { field: "notifyOnUserQuestion", label: "有问题等我回答时提醒", hint: "模型提问、等你在选项里挑时弹通知。", sub: true },
+      { field: "notifyOnTurnCompletion", label: "回合完成时提醒", hint: "你发起的回合处理完毕时弹一条系统通知。", sub: true, sound: "soundTurnCompletion" },
+      // 契约 v2：主任务与「其余任务」分开听——后台命令 / 派出去的成员做完时用另一个音。
+      // 与「回合完成时提醒」是**并列的两类**（各自音色互不影响），相同点只是都受总开关管辖。
+      { field: "notifyOnBackground", label: "后台/成员任务完成时提醒", hint: "后台命令、以及我派出去的成员（子代理）做完时提醒；这一行用另一个音，便于跟上面的主任务区分。", sub: true, sound: "soundBackground" },
+      { field: "notifyOnApproval", label: "需要我确认时提醒", hint: "出现确认弹窗（危险操作 / 沙箱放行）时弹通知。", sub: true, sound: "soundApproval" },
+      { field: "notifyOnUserQuestion", label: "有问题等我回答时提醒", hint: "模型提问、等你在选项里挑时弹通知。", sub: true, sound: "soundUserQuestion" },
     ];
+
+    // ── 通知音色（契约 v1 + v2：四个音色字段）────────────────────────────────────
+    // 壳（Electron 薄壳 `shell-app/main.cjs`）在 127.0.0.1:32123 上开了两个接口：
+    //   GET  /sounds ⇒ {"dir":"...","sounds":["Alarm01.wav",...]}   候选列表
+    //   POST /notify ⇒ {"preview":true,"sound":"<值>"}              只播音、不弹通知（204）
+    // 端口 = host 的 DSHOME_NOTIFY_PORT 默认值（`packages/dshome/lib/host/notify.js:53`、壳 `shell-app/main.cjs:48`）。
+    // ⚠️ 本仓**没有**把该端口暴露给客户端的机制：全仓 grep `32123` / `NOTIFY_PORT` 只命中 host 侧与壳侧读 env，
+    //    `window.__DSH_BOOT__` 里只有插件花名册、没有配置面 ⇒ 这里与 host 同源硬编码；host 侧将来支持自定义端口时，
+    //    这个常量要跟着换成同一来源（现在改端口＝两处一起改）。
+    var NOTIFY_HTTP = "http://127.0.0.1:32123";
+    var SOUND_LIST_URL = NOTIFY_HTTP + "/sounds";
+    var SOUND_PREVIEW_URL = NOTIFY_HTTP + "/notify";
+    /** 候选列表取不到时的退路说明（小字；只降级、不抛）。 */
+    var SOUND_FALLBACK_HINT = "壳未运行，候选音色取不到：只可选默认音（也可以直接填 .wav 绝对路径）。";
+    /** 「自定义路径…」哨兵项的值：真值只可能是 `.wav` 文件名或绝对路径，撞不上这个串。 */
+    var SOUND_CUSTOM_SENTINEL = "__dshome_custom__";
+    /** 冻结的常用音色清单（**顺序即下拉顺序**）。
+     *  壳给的是本机 `%WINDIR%\Media` 全量（实测 ~70 个 wav）——铺满下拉没法看，只留这几个常用的。 */
+    var COMMON_SOUNDS = [
+      "Windows Notify System Generic.wav",   // 系统通知（最柔和）
+      "Windows Notify Calendar.wav",         // 日历提醒
+      "Windows Notify Email.wav",            // 新邮件
+      "Windows Notify Messaging.wav",        // 即时消息
+      "Windows Notify.wav",                  // 通用通知
+      "notify.wav",                          // 经典提示
+      "chimes.wav",                          // 清亮铃声
+      "ding.wav",                            // 短促叮声
+    ];
+
+    /**
+     * 下拉候选 = 常用清单 ∩ 壳实际返回的列表，**按清单顺序**（不是字母序、也不是壳返回的顺序）。
+     * 为什么取交集：不同 Windows 版本可能缺某个文件，直接照清单铺会给出"选了放不出音"的项。
+     * 空集兜底：交集为空（异常环境）⇒ 退回全量——宁可多，也不能让下拉没有可选项。
+     */
+    function soundCandidates(list) {
+      var available = Array.isArray(list) ? list : [];
+      var common = [];
+      for (var i = 0; i < COMMON_SOUNDS.length; i += 1) {
+        if (available.indexOf(COMMON_SOUNDS[i]) !== -1) common.push(COMMON_SOUNDS[i]);
+      }
+      return common.length > 0 ? common : available.slice();
+    }
 
     /** 设置行的外壳（与 dshome-assistant-identity 的通用设置行同款，视觉一致）。 */
     function notifyRowShell(title, children) {
@@ -149,15 +194,244 @@ window.__ModuleLoader__.load({
       });
     }
 
+    /**
+     * 取候选音色（GET /sounds）。**失败绝不抛**：任何异常（无 fetch / 连不上 / 非 200 / JSON 坏）
+     * 都收敛成 `{loading:false, ok:false, list:[]}`，由调用方渲染「只有默认项 + 手输路径」的退路
+     * （本包纪律：动作失败只提示、绝不抛断 UI）。
+     */
+    function loadSoundList() {
+      var empty = { loading: false, ok: false, list: [] };
+      if (typeof fetch !== "function") {
+        console.warn("dshome-theme: /sounds 跳过 — fetch 不可用");
+        return Promise.resolve(empty);
+      }
+      return Promise.resolve()
+        .then(function () { return fetch(SOUND_LIST_URL); })
+        .then(function (response) {
+          if (!response || response.ok !== true) throw new Error("sounds http " + (response ? response.status : "?"));
+          return response.json();
+        })
+        .then(function (data) {
+          var raw = data && Array.isArray(data.sounds) ? data.sounds : [];
+          var list = [];
+          for (var i = 0; i < raw.length; i += 1) {
+            if (typeof raw[i] === "string" && raw[i] !== "" && list.indexOf(raw[i]) === -1) list.push(raw[i]);
+          }
+          return { loading: false, ok: true, list: list };
+        })
+        .catch(function (error) {
+          console.warn("dshome-theme: /sounds 不可用 — 音色候选退回「默认项 + 手输路径」", error);
+          return empty;
+        });
+    }
+
+    /** 试听（POST /notify {preview:true,sound}）：壳只播音、不弹通知。失败只提示、不抛断 UI。 */
+    function previewSound(sound) {
+      try {
+        if (typeof fetch !== "function") {
+          console.warn("dshome-theme: 试听跳过 — fetch 不可用");
+          return;
+        }
+        var pending = fetch(SOUND_PREVIEW_URL, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ preview: true, sound: typeof sound === "string" ? sound : "" }),
+        });
+        if (pending && typeof pending.then === "function") {
+          // 非 2xx 也要出声（别静默吞掉 ⇒ 否则"点了没反应，也不知道为什么"）。
+          // 壳侧口径（**契约 v1.2**，与旧注释相反，别再照旧的写）：
+          //   preview + 空音色 ⇒ **204**（壳播系统默认音——「（默认，跟随系统）」这一项听得到）；
+          //   preview + 值非法（文件不存在 / 非 .wav）⇒ **400**（用户填错就得在设置页看到，不许拿回退音掩盖）。
+          pending.then(function (response) {
+            if (response && response.ok === true) return;
+            console.warn("dshome-theme: 试听未生效 — 壳返回 " + (response ? response.status : "?") + "（「默认」项没有可试听的音色？）");
+          }, function (error) {
+            console.warn("dshome-theme: 试听失败（壳未运行？）", error);
+          });
+        }
+      } catch (error) {
+        console.warn("dshome-theme: 试听失败（壳未运行？）", error);
+      }
+    }
+
+    /**
+     * 手输路径提交（回车 / 失焦）。
+     * 提交后**形态交回「当前值」决定**（契约：值不在候选里 ⇒ 哨兵形态；空串 ⇒ 回到「默认，跟随系统」；
+     * 命中候选名 ⇒ 按候选显示）——所以草稿要么留着（真自定义），要么收掉（空串 / 候选名）。
+     */
+    function commitSoundPath(event, field, current, setField, setDraft, list) {
+      var raw = event && event.target && typeof event.target.value === "string" ? event.target.value : "";
+      var next = raw.trim();
+      var known = next === "" || (Array.isArray(list) && list.indexOf(next) !== -1);
+      if (next !== current) setField(field, next);
+      setDraft(field, known ? undefined : next);
+    }
+
+    /** 下拉/按钮/输入框的内联样式（与开关行同一套变量，视觉一致；不引第三方组件）。 */
+    var SOUND_SELECT_STYLE = {
+      flex: "0 1 260px", minWidth: 0, height: 28, padding: "0 8px", borderRadius: 6,
+      border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-layer-2,#fff)",
+      color: "var(--dsw-alias-label-primary)", fontSize: 12.5,
+    };
+    var SOUND_BUTTON_STYLE = {
+      flex: "0 0 auto", height: 28, padding: "0 10px", borderRadius: 6,
+      border: "1px solid var(--dsw-alias-border-l2)", background: "transparent",
+      color: "var(--dsw-alias-label-secondary)", fontSize: 12.5, cursor: "pointer",
+    };
+    var SOUND_INPUT_STYLE = {
+      flex: "1 1 200px", minWidth: 0, height: 28, padding: "0 8px", borderRadius: 6,
+      border: "1px solid var(--dsw-alias-border-l2)", background: "var(--dsw-alias-bg-layer-2,#fff)",
+      color: "var(--dsw-alias-label-primary)", fontSize: 12.5,
+    };
+
+    /**
+     * 一条音色控制：原生 `<select>`（首项 = 空串「默认，跟随系统」，末项 = 自定义路径哨兵）
+     * +「试听」按钮 +（哨兵被选中 / 壳不可达时）手输 `.wav` 绝对路径的输入框。
+     * ⚠️ 与开关**不做灰化联动**：分项开关关掉、总开关关掉，这里的下拉/试听照常可用
+     *    （用户可以先选音再开开关；试听只是播音，不属于"通知"本身）。
+     * `draft` = 该行「自定义路径」输入框的草稿（`undefined` = 本次没展开自定义）；
+     * 哨兵展开态必须走 state（不能只看已持久化的值：刚选中哨兵时值还没变，界面得当场反应）。
+     */
+    function notifySoundControl(item, rawValue, sounds, setField, writable, draft, setDraft, draftFor) {
+      var current = typeof rawValue === "string" ? rawValue : "";
+      // 铺进下拉的是**常用清单 ∩ 壳返回列表**（见 soundCandidates）；当前值也按这份候选判形态。
+      var list = soundCandidates(sounds ? sounds.list : []);
+      var failed = sounds ? (sounds.ok !== true && sounds.loading !== true) : false;
+      // 当前值不在候选里（非常用音 / 手填的绝对路径 / 换机器后列表变了）⇒ 自定义形态，别假显示成「默认」
+      var custom = current !== "" && list.indexOf(current) === -1;
+      var armed = draft !== undefined;              // 本次会话里选了「（自定义路径…）」
+      var options = [{ value: "", label: "（默认，跟随系统）" }];
+      for (var i = 0; i < list.length; i += 1) options.push({ value: list[i], label: list[i] });
+      if (failed) {
+        // 降级态：没有候选列表、**也不给哨兵项**——自定义入口就是下面那个输入框，一行不留两个入口。
+        // 但当前自定义值必须仍能显示出来，否则同样是"显示成默认、实际值却是别的"（假显示）。
+        if (custom) options.push({ value: current, label: current + "（自定义）" });
+      } else {
+        options.push({ value: SOUND_CUSTOM_SENTINEL, label: "（自定义路径…）" });
+      }
+      // 选中态：手填值 / 已展开自定义 ⇒ 停在哨兵项；否则按原样选中当前值。
+      // （哨兵形态同样要防"假显示"：原生 select 找不到匹配 value 会显示第一项。）
+      var selectValue = failed ? current : (custom || armed ? SOUND_CUSTOM_SENTINEL : current);
+      var inputValue = draft !== undefined ? draft : (custom ? current : "");
+
+      var row = [
+        react_jsx_runtime.jsx("select", {
+          "aria-label": item.label + " 音色",
+          value: selectValue,
+          disabled: writable !== true,
+          onChange: function (event) {
+            var next = event && event.target ? event.target.value : "";
+            if (next === SOUND_CUSTOM_SENTINEL) {
+              // 只是展开输入框，不写回（写回要等用户真输入 + 回车/失焦）
+              setDraft(item.sound, custom ? current : "");
+              return;
+            }
+            setDraft(item.sound, undefined);
+            setField(item.sound, next);
+          },
+          style: SOUND_SELECT_STYLE,
+          children: options.map(function (option) {
+            return react_jsx_runtime.jsx("option", { value: option.value, children: option.label }, option.value);
+          }),
+        }),
+        react_jsx_runtime.jsx("button", {
+          type: "button",
+          "aria-label": "试听：" + item.label + " 的音色",
+          // 试听**当前草稿值**（ref 同步镜像），不是本次渲染闭包里的旧持久值：
+          // 用户输入后不回车直接点按钮时，onClick 的闭包还是旧值（点下去虽然会先 blur 提交，
+          // 但这次点击听到的必须是刚填的那个音；路径填错也要照着它去报错）。
+          onClick: function () { previewSound(draftFor(item.sound, current)); },
+          style: SOUND_BUTTON_STYLE,
+          children: "试听",
+        }),
+      ];
+      if (failed) {
+        // 退路：候选取不到 ⇒ 允许直接手输 .wav 路径（失败只降级、不抛）
+        row.push(react_jsx_runtime.jsx("input", {
+          type: "text",
+          "aria-label": item.label + " 自定义音色路径",
+          defaultValue: current,
+          disabled: writable !== true,
+          placeholder: "自定义 .wav 绝对路径，回车生效",
+          // 非受控 input：DOM 里的当前值同步进 ref（试听要读它，别读旧闭包）
+          onChange: function (event) { setDraft(item.sound, event && event.target ? event.target.value : ""); },
+          onKeyDown: function (event) { if (event && event.key === "Enter") commitSoundPath(event, item.sound, current, setField, setDraft, list); },
+          onBlur: function (event) { commitSoundPath(event, item.sound, current, setField, setDraft, list); },
+          style: SOUND_INPUT_STYLE,
+        }));
+      } else if (custom || armed) {
+        // 常态自定义入口：哨兵被选中（或已经存着一条自定义路径）⇒ 输入框带草稿态
+        row.push(react_jsx_runtime.jsx("input", {
+          type: "text",
+          "aria-label": item.label + " 自定义音色路径",
+          value: inputValue,
+          disabled: writable !== true,
+          placeholder: "自定义 .wav 绝对路径，回车生效",
+          onChange: function (event) { setDraft(item.sound, event && event.target ? event.target.value : ""); },
+          onKeyDown: function (event) { if (event && event.key === "Enter") commitSoundPath(event, item.sound, current, setField, setDraft, list); },
+          onBlur: function (event) { commitSoundPath(event, item.sound, current, setField, setDraft, list); },
+          style: SOUND_INPUT_STYLE,
+        }));
+      }
+      var children = [
+        react_jsx_runtime.jsx("div", { style: { alignItems: "center", gap: 8, display: "flex" }, children: row }),
+      ];
+      if (failed) {
+        children.push(react_jsx_runtime.jsx("div", {
+          style: { color: "var(--dsw-alias-label-tertiary,#6b7a99)", fontSize: 11.5, lineHeight: "17px" },
+          children: SOUND_FALLBACK_HINT,
+        }));
+      }
+      return react_jsx_runtime.jsx("div", {
+        style: { flexDirection: "column", gap: 6, display: "flex", paddingLeft: 2 },
+        children: children,
+      });
+    }
+
     /** 「通知」行：读 scope 快照渲染，写回走 scope.set（host 侧同一命名空间）。 */
     function NotifySettingsRow() {
       var state = react.useState(function () { return notifyScope ? notifyScope.getSnapshot() : null; });
       var snap = state[0];
       var setSnap = state[1];
+      // 候选音色：挂载时取一次（失败退「默认项 + 手输」，见 loadSoundList）
+      var soundState = react.useState(function () { return { loading: true, ok: false, list: [] }; });
+      var sounds = soundState[0];
+      var setSounds = soundState[1];
+      // 「自定义路径」输入框的草稿（按字段名存）：undefined = 该行没展开自定义。
+      // 必须走 state——刚选中哨兵项时持久值还没变，界面得当场把输入框展开出来。
+      var draftState = react.useState(function () { return {}; });
+      var drafts = draftState[0];
+      var setDrafts = draftState[1];
+      // 草稿的**同步镜像**（ref）：输入后不回车、直接点「试听」时，onClick 的闭包还是本次渲染的旧值，
+      // 只有 ref 拿得到"此刻输入框里的内容"——否则①听到旧音色 ②填错路径也不报（都是假反馈）。
+      var draftRef = react.useRef({});
+      var setDraft = function (field, next) {
+        if (draftRef.current) {
+          if (next === undefined) delete draftRef.current[field];
+          else draftRef.current[field] = next;
+        }
+        setDrafts(function (prev) {
+          var out = {};
+          for (var key in prev) if (Object.prototype.hasOwnProperty.call(prev, key)) out[key] = prev[key];
+          if (next === undefined) delete out[field];
+          else out[field] = next;
+          return out;
+        });
+      };
+      /** 试听用的音色：草稿值优先（`ref.current ?? 当前值`）；未展开/无草稿 ⇒ 与原来一致。 */
+      var draftFor = function (field, fallback) {
+        var boxed = draftRef.current ? draftRef.current[field] : undefined;
+        return boxed === undefined || boxed === null ? fallback : boxed;
+      };
       react.useEffect(function () {
         if (!notifyScope) return void 0;
         setSnap(notifyScope.getSnapshot());
         return notifyScope.subscribe(function () { setSnap(notifyScope.getSnapshot()); });
+      }, []);
+      react.useEffect(function () {
+        var alive = true;
+        loadSoundList().then(function (next) { if (alive) setSounds(next); });
+        return function () { alive = false; };
       }, []);
       var status = snap ? snap.status : "loading";
       var value = (snap && snap.value) || {};
@@ -180,8 +454,7 @@ window.__ModuleLoader__.load({
             style: { flexDirection: "column", gap: 14, display: "flex" },
             children: NOTIFY_FIELDS.map(function (item) {
               var on = value[item.field] !== false;
-              return react_jsx_runtime.jsx("div", {
-                key: item.field,
+              var head = react_jsx_runtime.jsx("div", {
                 style: { alignItems: "center", gap: 12, display: "flex" },
                 children: [
                   react_jsx_runtime.jsx("div", {
@@ -198,6 +471,14 @@ window.__ModuleLoader__.load({
                     onToggle: function () { setField(item.field, !on); },
                   }),
                 ],
+              });
+              var rows = [head];
+              // 音色控制挂在本分项开关行下（分组映射冻结）；不受总开关/分项开关灰化影响。
+              if (item.sound) rows.push(notifySoundControl(item, value[item.sound], sounds, setField, writable, drafts[item.sound], setDraft, draftFor));
+              return react_jsx_runtime.jsx("div", {
+                key: item.field,
+                style: { flexDirection: "column", gap: 8, display: "flex" },
+                children: rows,
               });
             }),
           });

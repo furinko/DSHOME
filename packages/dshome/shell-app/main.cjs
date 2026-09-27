@@ -4,7 +4,8 @@
 // - 后端生命周期：壳负责启动 / 3s 探活 / 挂了自动重启（指数退避）/ 安全模式 / fail-loud 错误弹窗
 // - 窗口加载 DSHOME 后端 URL；后端挂 → 离线页；后端恢复 → 自动加载 UI
 // - 系统托盘：显示窗口 / 刷新页面 / 重启后端 / 安全模式重启 / 开机自启 / 退出
-// - 本地通知监听（DSHOME_NOTIFY_PORT，POST /notify {title, body}）
+// - 本地通知监听（DSHOME_NOTIFY_PORT，POST /notify {title, body, sound}；GET /sounds 列音色）
+// - 分事件音色：壳自己播 .wav（Windows 上 Electron 的 Notification.sound 无效，见 sound.cjs 头注）
 // - 观测日志：%APPDATA%\dshome-shell\dshome-shell.log
 'use strict';
 
@@ -15,6 +16,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const updater = require('./updater.cjs');
 const safeOverlay = require('./safe-overlay.cjs');
+const sound = require('./sound.cjs');
 const readiness = require('./readiness.cjs');
 const autostart = require('./autostart.cjs');
 const backendSpec = require('./backend-spec.cjs');
@@ -917,22 +919,69 @@ function createTray() {
 
 function startNotifyListener() {
   if (!NOTIFY_PORT) return;
+  // 设置页跑在 3099 端口，跨端口请求不补 CORS 会被浏览器拦掉（试听按钮/音色清单都直连本端口）。
+  function cors(res) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  }
+  function json(res, obj) {
+    cors(res);
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(obj));
+  }
+  function preflight(res) { cors(res); res.writeHead(204); res.end(); }
   const server = createServer((req, res) => {
+    if (req.method === 'OPTIONS') { preflight(res); return; }
+    // 音色清单：扫 %WINDIR%\Media，目录不存在 ⇒ 空数组（不是报错）。
+    if (req.method === 'GET' && req.url === '/sounds') { json(res, sound.listSounds()); return; }
     if (req.method === 'POST' && req.url === '/notify') {
       let body = '';
       req.on('data', (c) => { body += c; if (body.length > 64 * 1024) req.destroy(); });
       req.on('end', () => {
-        try {
-          const { title, body: text } = JSON.parse(body || '{}');
-          if (Notification.isSupported()) {
-            const n = new Notification({ title: title ?? 'DSHOME', body: text ?? '' });
-            // 点通知跳回窗口：通知可能在窗口最小化/被遮挡时送达（"等你确认"类尤其如此），
-            // 点一下就该看到那个弹窗——与在线状态通知（applyBackendState）同款处理。
-            n.on('click', showWindow);
-            n.show();
+        let payload;
+        try { payload = JSON.parse(body || '{}'); } catch { cors(res); res.writeHead(400); res.end(); return; }
+        const decision = sound.buildNotifyResponse(payload);
+        if (decision.status !== 204) {
+          // preview 传了非法值 ⇒ 400（契约 v1.2）：响亮失败 + 留痕，别让设置页"点了没反应"。
+          logLine({ notify: 'preview-rejected', status: decision.status, resolved: decision.resolved, sound: String(payload?.sound ?? '') });
+          cors(res); res.writeHead(decision.status); res.end(); return;
+        }
+        // 判据（音色解析/preview 组合）全在 sound.cjs 里，主进程只做两件事：播音 / 弹通知。
+        if (decision.play) {
+          sound.playScript(decision.play, (result) => {
+            if (result?.ok) {
+              // 成功也留一行——但只在**回退音**时记：那意味着设置里填的值是坏的（宿主侧唯一观测点）；
+              // 正常音每条都记只会变日志噪音。
+              if (decision.fallback) logLine({ notify: 'sound-played', fallback: true, resolved: decision.resolved });
+              return;
+            }
+            logLine({
+              notify: 'play-fail', fallback: decision.fallback, resolved: decision.resolved,
+              error: String(result?.error?.message ?? result?.error),
+            });
+          });
+        }
+        // 通知是尽力而为：Notification 不可用/抛错都不影响 204（壳不能因为通知崩）。
+        if (decision.notify) {
+          try {
+            const { title, body: text } = payload;
+            if (Notification.isSupported()) {
+              const n = new Notification({ title: title ?? 'DSHOME', body: text ?? '' });
+              // 点通知跳回窗口：通知可能在窗口最小化/被遮挡时送达（"等你确认"类尤其如此），
+              // 点一下就该看到那个弹窗——与在线状态通知（applyBackendState）同款处理。
+              n.on('click', showWindow);
+              n.show();
+            } else {
+              // 系统不支持通知：此前这条**静默无痕**，宿主侧根本不知道"通知没弹出来"（2026-09-27 补）。
+              logLine({ notify: 'unsupported', title: String(payload?.title ?? '') });
+            }
+          } catch (error) {
+            logLine({ notify: 'show-fail', error: String(error?.message ?? error) });
           }
-          res.writeHead(204); res.end();
-        } catch { res.writeHead(400); res.end(); }
+        }
+        cors(res);
+        res.writeHead(204); res.end();
       });
       return;
     }
