@@ -5,8 +5,17 @@
 //
 // 护栏（设计见历史文档，已归档）：全程 try/catch，electron 缺装/启动失败
 // 只记日志，绝不阻断 profile 启动。
+//
+// 🔴 2026-09-27 补两道闸（主人报障「DSHOME 自动切到前台」的根因）：
+//   本插件的 apply() 会 spawn 一个真 Electron 壳，而 `scripts/verify-host-plugins.mjs`
+//   （pre-commit 钩子第 ③ 步）会对**每个** host 插件真调一次 apply() ⇒ **每次 git commit
+//   都多起一个壳**。已有壳在跑时它抢不到单实例锁就退出，但退出前会给已有壳发
+//   `second-instance`，壳把它处理成 `restore + show + focus` ⇒ 窗口被拽到前台；
+//   壳已经不在了（主人刚关掉）⇒ 这一下直接把窗口开出来，还顺手拉起后端。
+//   两道闸 = ① 环境开关（验证器/门禁进程用）② 端口探针（已有壳就不起）。见 apply()。
 
 import { spawn } from 'node:child_process';
+import { createConnection } from 'node:net';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,12 +112,45 @@ function spawnShell(url) {
 
 let ctxLogger = null;
 
+/** 端口上有没有东西在听 = **已经有壳在跑**（壳在 NOTIFY_PORT 上开 /sounds 与 /notify）。
+ *  只做 TCP 可连判断，不解析 HTTP：口子在听就够了，没必要起第二个壳。
+ *  正常首启（没有壳）时 connect 立刻 ECONNREFUSED ⇒ 零额外等待、行为与旧版一致。 */
+function portListening(port, timeoutMs = 600) {
+  return new Promise((resolve) => {
+    if (!(port > 0)) { resolve(false); return; } // 0 = 通知口关闭 ⇒ 探不到，按旧行为起壳
+    const sock = createConnection({ host: '127.0.0.1', port });
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      try { sock.destroy(); } catch { /* ignore */ }
+      resolve(result);
+    };
+    sock.setTimeout(timeoutMs, () => done(false));
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+  });
+}
+
 /** @param {import('@deepseek-ai/cordis').Context} ctx - host context */
 export function apply(ctx) {
   ctxLogger = ctx.logger?.(name) ?? ctx.logger;
   try {
+    // 闸 ①：验证器/门禁进程**不该有"开窗口"的副作用**。
+    //   `scripts/verify-host-plugins.mjs` 在调 apply() 前设 `DSHOME_SHELL_NO_SPAWN=1`。
+    if (process.env.DSHOME_SHELL_NO_SPAWN === '1') {
+      ctxLogger?.info?.('dshome/shell: spawn skipped (DSHOME_SHELL_NO_SPAWN=1)');
+      return;
+    }
     // 树稳定后（webServer 已绑定）再解析 URL 并拉起窗口。
-    setTimeout(() => spawnShell(backendUrl(ctx)), 1500);
+    setTimeout(async () => {
+      // 闸 ②：已经有壳在跑就别再起（见 portListening 注释：多出来的那个壳会把窗口拽到前台）。
+      if (await portListening(NOTIFY_PORT)) {
+        ctxLogger?.info?.(`dshome/shell: spawn skipped (a shell is already listening on port ${NOTIFY_PORT})`);
+        return;
+      }
+      spawnShell(backendUrl(ctx));
+    }, 1500);
   } catch (error) {
     ctxLogger?.warn('dshome/shell: disabled itself: %O', error);
   }

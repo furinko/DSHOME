@@ -529,6 +529,13 @@ if (!cordisPlugins.ok) {
   }
 }
 
+// 🔴 2026-09-27：门禁**不得有"开窗口"的副作用**。本循环对每个 host 插件真调 apply()，
+//   而 `lib/host/shell.js` 的 apply() 会 spawn 一个真 Electron 壳 ⇒ **每次 git commit 都多起
+//   一个壳**：已有壳在跑时它被 second-instance 拽到前台；壳已不在则凭空开一个窗口并拉起后端。
+//   主人报障「提交时 DSHOME 自动切前台」的根因即此 —— 旧版这里只把 shell 当"在 mock 下不注册
+//   钩子的无害插件"（见下面 strict 分级注释）→ **"apply 不抛错"被当成了"apply 没副作用"**。
+//   开关由 shell.js 认；跑完 delete（同下面 DSHOME_VERIFY_PRIME_FAIL 的写法）。
+process.env.DSHOME_SHELL_NO_SPAWN = '1';
 for (const name of PLUGINS) {
   const file = join(HOST_DIR, `${name}.js`);
   const record = { logs: [], registered: [], handlers: [] };
@@ -608,6 +615,7 @@ for (const name of PLUGINS) {
     if (expectFail) console.log(`       行为断言未通过：${expectFail}`);
   }
 }
+delete process.env.DSHOME_SHELL_NO_SPAWN; // 开关只对本次门禁的 apply 循环有效（见循环上方注释）
 
 // 门禁自检：整轮跑完，marker 必须与**进程起点基线**逐字节一致。
 //   露头条件：① 快照线序错位（拍在 apply 之后 → 恢复把污染写回）；② 恢复写入失败；③ 有插件在 apply 里
