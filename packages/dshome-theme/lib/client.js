@@ -677,6 +677,17 @@ window.__ModuleLoader__.load({
     const MINIMAP_TIP_MS = 60;
     /** 拖动状态的寿命上限：人不会按着拖半分钟，超时就是状态卡了，自动收工。 */
     const MINIMAP_DRAG_TIMEOUT_MS = 30000;
+    /**
+     * 官方右侧边栏开/合后，等它**滑完**再重算一次位置的时间（ms）。
+     * 为什么用「定时」而不是 `transitionend`（二选一，理由）：
+     *  ① 官方 CSS 在 `prefers-reduced-motion: reduce` 下是 `transition:none` ⇒ 过渡事件**永远不来**，
+     *     避让就会停在动画中途读到的那个错位置；
+     *  ② 面板收起态是 `visibility:hidden`，元素不可见时不保证派发过渡事件；
+     *  ③ `transitionend` 会从面板子树里**每个**过渡元素冒泡上来（几百个），监听它 = 白白连续重算。
+     * 320ms = 官方 `--ds-transition-duration-slow` 量级 + 余量：短了会读到动画中途的 rect（避让量偏小），
+     * 长了主人会看到「缩略条先被盖一下再让位」。
+     */
+    const MINIMAP_SIDEBAR_SETTLE_MS = 320;
 
     /**
      * ⑤ 会话缩略导航（VSCode minimap 形态）。
@@ -697,8 +708,11 @@ window.__ModuleLoader__.load({
      *  - 块表在重绘时缓存成升序数组，hover 提示用二分查，避免每次移动都遍历 + 强制布局。
      *  - 失败一律静默：这一层挂了最多是少个导航，绝不能阻断 UI。
      */
-    /** 版本戳：控制台敲 `window.__dshomeMinimapVersion` 就知道当前跑的是哪一版（改完自检用）。 */
-    const MINIMAP_VERSION = "v41-noshift";
+    /**
+     * 版本戳：控制台敲 `window.__dshomeMinimapVersion` 就知道当前跑的是哪一版（改完自检用）。
+     * v42-sidebar-avoid：官方右侧边栏（覆盖层）打开时缩略条让位到「边栏左缘 − 8」、全屏态隐藏。
+     */
+    const MINIMAP_VERSION = "v42-sidebar-avoid";
 
     function ensureTurnMinimap() {
       if (typeof document === "undefined") return;
@@ -820,6 +834,86 @@ window.__ModuleLoader__.load({
       }) : null;
       if (appearObserver !== null) {
         try { appearObserver.observe(document.body, { childList: true, subtree: true }); } catch { /* 挂不上就靠轮询 */ }
+      }
+
+      /* ---------- 官方右侧边栏（覆盖层）⇒ 缩略条自己避让 ---------- */
+      /**
+       * 只用**语义属性**，不认打包哈希类名（`.P3OORG_*` 是构建产物，官方下次打包就变）。
+       * 真源码核实：**同一个面板元素**常驻 `data-sidebar-right-panel`（"push" / "fullscreen"），
+       * 展开时才有 `data-sidebar-right-open`（React `expanded || undefined`）。
+       * 它是 `position:absolute;right:0;z-index:10;transform:translate(100%)` 的**覆盖层**：
+       * `[data-sidebar-right-open]{transform:none}` 滑进来就压在缩略条（z-index 6）上，而且
+       * **不改布局 ⇒ 没有 resize / ResizeObserver 回调**。
+       * ⚠️ 按纪律**不动 z-index**：把缩略条抬到 10 以上就会盖住边栏里的文件内容。
+       */
+      const SIDEBAR_OPEN_SELECTOR = "[data-sidebar-right-open]";
+      const SIDEBAR_FULLSCREEN_SELECTOR = '[data-sidebar-right-panel="fullscreen"]';
+
+      /**
+       * 当前**可见**的右侧边栏面板的 rect；没有 / 宽为 0（= 不可见）/ 读不到 ⇒ null。
+       * 多个匹配时取**最靠左**的那个（避让最保守：宁可多让 8px，也不被压在底下）。
+       */
+      const visibleSidebarPanel = () => {
+        try {
+          if (typeof document.querySelector !== "function") return null;
+          const list = typeof document.querySelectorAll === "function"
+            ? Array.from(document.querySelectorAll(SIDEBAR_OPEN_SELECTOR))
+            : [document.querySelector(SIDEBAR_OPEN_SELECTOR)];
+          let picked = null;
+          let pickedLeft = Infinity;
+          for (const el of list) {
+            if (el === null || el === undefined || typeof el.getBoundingClientRect !== "function") continue;
+            const rect = el.getBoundingClientRect();
+            if (rect === null || rect === undefined || !(rect.width > 0)) continue;   // 宽 0 ⇒ 当它不存在
+            const left = Number(rect.left);
+            if (!Number.isFinite(left)) continue;
+            if (left < pickedLeft) { pickedLeft = left; picked = rect; }
+          }
+          return picked;
+        } catch { return null; }   // 官方没有这些属性 / rect 读不到 ⇒ 不避让（行为同现在）
+      };
+      /** 边栏左缘（可见时）；取不到 ⇒ null = 不避让。 */
+      const sidebarLeftOf = () => {
+        const rect = visibleSidebarPanel();
+        return rect === null ? null : Number(rect.left);
+      };
+      /** 是否处于**全屏**态（`position:fixed;inset:0`：右边缘那一列整个被它盖住，缩略条无处可放）。 */
+      const sidebarFullscreen = () => {
+        try {
+          if (typeof document.querySelector !== "function") return false;
+          const el = document.querySelector(SIDEBAR_FULLSCREEN_SELECTOR);
+          return el !== null && el !== undefined;
+        } catch { return false; }
+      };
+
+      /**
+       * 边栏开合 ⇒ 主动重算。
+       * 为什么要单独听属性：覆盖层开合**不产生 resize / ResizeObserver 回调**（布局没变），
+       * 现有的 resizeObserver 与 window.resize 都指望不上。
+       * `attributeFilter` 只认这两个属性名：这样缩略条自己改 `style`（它也是 body 子树里的元素）
+       * 不会反过来触发自己 —— 不过滤就是自激循环。
+       */
+      let sidebarSettleTimer = 0;
+      const resyncForSidebar = () => {
+        // 属性一变先算一次：**关**边栏时属性一没就当场让位回来，不用等动画。
+        try { sync(); } catch { /* 重算失败不影响 250ms 轮询兜底 */ }
+        if (sidebarSettleTimer !== 0) { try { window.clearTimeout(sidebarSettleTimer); } catch { /* 环境没有就算了 */ } }
+        // **开**边栏的这一刻，rect.left 还在屏幕外/旧位置（translate 动画刚起步）⇒
+        // 滑完再算一次，拿动画结束后的最终位置（见 MINIMAP_SIDEBAR_SETTLE_MS 选型理由）。
+        sidebarSettleTimer = window.setTimeout(() => {
+          sidebarSettleTimer = 0;
+          try { sync(); } catch { /* 同上 */ }
+        }, MINIMAP_SIDEBAR_SETTLE_MS);
+      };
+      const sidebarObserver = typeof MutationObserver === "function" ? new MutationObserver(resyncForSidebar) : null;
+      if (sidebarObserver !== null) {
+        try {
+          sidebarObserver.observe(document.body, {
+            attributes: true,
+            attributeFilter: ["data-sidebar-right-open", "data-sidebar-right-panel"],
+            subtree: true,
+          });
+        } catch { /* 挂不上就靠 250ms 轮询兜底：行为同现在 */ }
       }
 
       /** canvas 不认 CSS 变量，得先解析成具体色值（每次重绘现读，跟得住主题切换）。 */
@@ -1223,6 +1317,13 @@ window.__ModuleLoader__.load({
         }
         // 拖动中不跑重活（querySelector / 读 rect / zoomOf 都在读布局）——跟手性优先，摆位等松手再修正
         if (dragging) return;
+        // ★ 官方右侧边栏**全屏**（position:fixed;inset:0）⇒ 右边缘那一列整个被它盖住，缩略条无处可放：
+        //   直接藏起来（退出全屏时属性变了 ⇒ 上面那个 sidebarObserver + 250ms 轮询会恢复显示）。
+        if (sidebarFullscreen()) {
+          box.style.display = "none";
+          window.__dshomeMinimapWhy = "隐藏：官方右侧边栏全屏（缩略条无处可放）";
+          return;
+        }
         const rail = document.querySelector(RAIL_SELECTOR);
         const next = findScroller();
         // ⚠️ 只有"找不到会话内容"才隐藏；**官方导轨缺失不再隐藏**——导轨只是用来对齐右边距的，
@@ -1312,16 +1413,23 @@ window.__ModuleLoader__.load({
           draw();                     // 块高/块数变了 ⇒ 当场重新测量（只重画不重测会拿旧块表）
         }
         const railRight = railOk ? Math.round(railRect.right) : (window.innerWidth || 0) - 8;
-        const geometry = `${top}|${boxH}|${railRight}|${window.innerWidth}|${window.__dshomeMinimapWidth ?? ""}`;
+        // ★ 官方右侧边栏是**覆盖层**（z-index 10 > 缩略条 6；`transform` 滑入、不改布局）⇒ 它开的时候会从
+        //   右边滑过来压在缩略条上。右边缘 = min(导轨右缘, 边栏左缘 − 8)：贴着"还能看见的会话区"右缘。
+        //   没有边栏（属性不存在 / 宽 0）时 `rightAnchor === railRight` ⇒ 行为与以前**逐字一致**。
+        const sidebarLeft = sidebarLeftOf();
+        const rightAnchor = sidebarLeft === null ? railRight : Math.min(railRight, sidebarLeft - 8);
+        // 避让量必须进比较键：不进的话导轨/窗口/条高都没变 ⇒ 几何缓存命中 ⇒ 边栏打开也不会让位。
+        const geometry = `${top}|${boxH}|${rightAnchor}|${window.innerWidth}|${window.__dshomeMinimapWidth ?? ""}`;
         if (geometry !== lastGeometry) {
           lastGeometry = geometry;
           box.style.top = `${top}px`;
           box.style.height = `${boxH}px`;
           box.style.width = `${window.__dshomeMinimapWidth > 0 ? window.__dshomeMinimapWidth : MINIMAP_WIDTH_PX}px`;
-          // 右边缘与官方导轨对齐（导轨只被藏起来，rect 仍然有效）
-          box.style.right = `${Math.round(window.innerWidth - railRight)}px`;
+          // 右边缘与官方导轨对齐（导轨只被藏起来，rect 仍然有效）；边栏开着时再往左让到边栏左缘 − 8
+          box.style.right = `${Math.round(window.innerWidth - rightAnchor)}px`;
           scheduleDraw();
         }
+        if (sidebarLeft !== null) window.__dshomeMinimapWhy += `／已避让右侧边栏(${Math.round(sidebarLeft)}px)`;
         paintThumb();
         paintShift();
       };
@@ -1522,6 +1630,8 @@ window.__ModuleLoader__.load({
         try { if (observer !== null) observer.disconnect(); } catch { /* 同上 */ }
         try { if (appearObserver !== null) appearObserver.disconnect(); } catch { /* 同上 */ }
         try { if (resizeObserver !== null) resizeObserver.disconnect(); } catch { /* 同上 */ }
+        try { if (sidebarObserver !== null) sidebarObserver.disconnect(); } catch { /* 同上 */ }
+        try { if (sidebarSettleTimer !== 0) window.clearTimeout(sidebarSettleTimer); } catch { /* 同上 */ }
       };
       sync();
     }

@@ -70,6 +70,11 @@ const SAFE = new Set([
   // （临时夹具 + 真树读数，真仓库零触碰）· PASS 退出 0 / FAIL 退出 1；`--self-test` 另跑三个注入
   // 变异的反证（在临时副本里，要求"红在预期断言"而非随便红）。
   'scripts/verify-mind-panel-labels.mjs',
+  // 2026-09-27 加：心智图谱「TRASH 归档快照不出图」不变式（`buildGraph()` 过滤链新增一行，排掉
+  // `TRASH/` 下 basename 带 `__` 的快照副本；活进程读数 320→91 节点、TRASH 232→3，响应体 135KB→约 4KB）。
+  // 无参可跑 · 只读真仓库（真加载 lib 跑 buildGraph，另自己 walk 磁盘做交叉验证；临时副本只用 %TEMP%，
+  // 真仓库零触碰）· PASS 退出 0 / FAIL 退出 1。⚠️ 它的「git HEAD 旧版对照」是**信息臂**（不判 FAIL）。
+  'scripts/verify-mind-graph-trash-snapshots.mjs',
   // 2026-09-26 加：`TRASH` 排空执行件（`trash-sweep.mjs`，按 `Memory §十一` 三档：甲永不删 / 乙可再生产物 /
   // 丙逐字节重复件）的**行为**核验——它是会**物理删除**的工具，没门禁＝拿主机回收站当测试场。
   // 每用例一个独立临时 DSH_HOME（真仓库零触碰）· 19 条含 3 反例（甲档/保护名/龄内不许删）· PASS 0 / FAIL 1。

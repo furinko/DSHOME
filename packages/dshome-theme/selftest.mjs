@@ -132,6 +132,13 @@ scroller.querySelectorAll = (sel) => (sel.includes("data-chat-turn") ? scroller.
 const rail = new El("nav");
 rail.rect = { top: 100, height: 400, width: 28, left: 1172, right: 1200, bottom: 500 };
 
+// 假「官方右侧边栏」面板（覆盖层）：真源码核实 —— **同一个元素**同时带 data-sidebar-right-panel
+// （常驻，"push" / "fullscreen"）与 data-sidebar-right-open（只有展开时才有，React `expanded || undefined`）。
+// 这里照同一套属性建模：用例改属性 = 改官方状态；默认「没有展开态、也不是全屏」⇒ 与既有用例环境逐字一致。
+const sidebarEl = new El("div");
+sidebarEl.attrs["data-sidebar-right-panel"] = "push";
+sidebarEl.rect = { top: 0, left: 1280, right: 1440, bottom: 900, width: 160, height: 900 };
+
 const body = new El("body");
 body.children = [];
 const head = new El("head");
@@ -143,8 +150,18 @@ const document_ = {
   _scrollers: [scroller],
   _rail: rail,
   createElement: (tag) => new El(tag),
-  querySelector: (sel) => (sel.includes("_frame") ? document_._rail : null),
-  querySelectorAll: (sel) => (sel.includes("_scrollBody") ? document_._scrollers : []),
+  // 语义属性选择器（与官方真 DOM 一致：属性在不在 = 状态在不在）
+  querySelector: (sel) => {
+    if (sel.includes("data-sidebar-right-open")) return "data-sidebar-right-open" in sidebarEl.attrs ? sidebarEl : null;
+    if (sel.includes("data-sidebar-right-panel")) return sidebarEl.attrs["data-sidebar-right-panel"] === "fullscreen" ? sidebarEl : null;
+    if (sel.includes("_frame")) return document_._rail;
+    return null;
+  },
+  querySelectorAll: (sel) => {
+    if (sel.includes("_scrollBody")) return document_._scrollers;
+    if (sel.includes("data-sidebar-right-open")) return "data-sidebar-right-open" in sidebarEl.attrs ? [sidebarEl] : [];
+    return [];
+  },
   addEventListener: (type, fn) => { (docListeners[type] ??= []).push(fn); },
   removeEventListener() {},
 };
@@ -156,8 +173,8 @@ const resizeObservers = [];
 const mutationObservers = [];
 
 class FakeMutationObserver {
-  constructor(cb) { this.cb = cb; mutationObservers.push(this); }
-  observe() {}
+  constructor(cb) { this.cb = cb; this.records = []; mutationObservers.push(this); }
+  observe(target, options) { this.records.push({ target, options }); }
   disconnect() {}
 }
 class FakeResizeObserver {
@@ -871,7 +888,9 @@ check("恢复后重新显示", box.style.display === "block", String(box.style.d
   const newBox = body.children.at(-1);
   check("HMR 重跑：旧条从 DOM 撤掉、新条装上（不叠着）",
     body.children.length === before && !body.children.includes(oldBox) && newBox !== oldBox, `n=${body.children.length}`);
-  check("版本戳已设置", win.__dshomeMinimapVersion === "v41-noshift", String(win.__dshomeMinimapVersion));
+  // 这里断的是**版本字符串常量本身**（真机验收的判据锚点：敲 window.__dshomeMinimapVersion 认版本），
+  // 不是行为判据 —— 行为判据（避让/全屏/监听）见文件末尾那一节，一条都没放松。
+  check("版本戳已设置", win.__dshomeMinimapVersion === "v42-sidebar-avoid", String(win.__dshomeMinimapVersion));
   check("拆解器已挂上", typeof win.__dshomeMinimapTeardown === "function");
   const cssAfter = head.children.at(-1)?.textContent ?? "";
   check("HMR 重跑不重复注入 CSS（样式表只涨一份）", cssAfter === css, `${css.length} → ${cssAfter.length}`);
@@ -1431,6 +1450,138 @@ check("恢复后重新显示", box.style.display === "block", String(box.style.d
     JSON.stringify(postedK.map((c) => previewBody(c))));
 
   delete sandbox.fetch;   // 收尾：别把 mock 留在 vm 里
+}
+
+/* ---------------- 官方右侧边栏（覆盖层）⇒ 缩略条自己避让 ----------------
+ * 病根：官方右侧边栏 `.P3OORG_panel{position:absolute;right:0;z-index:10;transform:translate(100%)}`，
+ * 打开时 `[data-sidebar-right-open]{transform:none}` 从右边滑出来 —— 它是**覆盖层**，z-index 10 > 缩略条 6，
+ * 又不改布局（**没有 resize / ResizeObserver 回调**）⇒ 正好压在缩略条上。
+ * 修法（冻结规格）：右边缘 = min(导轨右缘, 边栏左缘 − 8)；属性变化 + 过渡结束后主动重算；全屏态藏起来。
+ * ⚠️ 按纪律**不动 z-index**（抬上去就压住边栏里的文件内容了），也**不认打包哈希类名**。 */
+{
+  const liveBox = body.children.at(-1);          // 最后一次 apply 装上的那条 = 当前实例（HMR/多次 apply 后仍成立）
+  const liveWhy = () => win.__dshomeMinimapWhy;
+  const liveRight = () => num(liveBox.style.right);
+  const liveRightEdge = () => win.innerWidth - liveRight();
+
+  check("只用语义属性（不认官方打包哈希类名 .P3OORG_*）", !/P3OORG_[A-Za-z]/.test(src));
+  check("夹具：测的是**当前实例**的缩略条（拿错对象 ⇒ 下面全是假绿）",
+    liveBox?.className === "dshome-minimap", `${liveBox?.className} / body 子元素 ${body.children.length} 个`);
+
+  setBig();                                       // 干净的 200 块长会话（够一屏 ⇒ 该显示）
+  scroller.scrollTop = 0;
+  document_._scrollers = [scroller];
+
+  const savedInner = win.innerWidth;
+  const savedRailRect = rail.rect;
+  // 真实场景：窗口 1440，导轨右缘 1440（导轨在覆盖层**底下**，边栏打开时它的 rect 一点不动）
+  win.innerWidth = 1440;
+  rail.rect = { top: 100, height: 400, width: 28, left: 1412, right: 1440, bottom: 500 };
+  sidebarEl.rect = { top: 0, left: 1280, right: 1440, bottom: 900, width: 160, height: 900 };
+  sidebarEl.attrs["data-sidebar-right-panel"] = "push";
+  delete sidebarEl.attrs["data-sidebar-right-open"];
+
+  // (b) 没有边栏 ⇒ 与旧公式**逐字一致**：贴导轨右缘
+  syncNow();
+  check("(b) 边栏没开 ⇒ 贴导轨右缘（1440 − 导轨右缘 1440 = 0px），与旧实现逐字一致",
+    liveRight() === 0 && liveRightEdge() === 1440, `right=${liveBox.style.right} 右边缘=${liveRightEdge()} / ${liveWhy()}`);
+
+  // (b2) 老配置（窗口 1280 / 导轨右缘 1200 ⇒ 80px）：读数与既有实现一致
+  win.innerWidth = 1280;
+  rail.rect = { top: 100, height: 400, width: 28, left: 1172, right: 1200, bottom: 500 };
+  syncNow();
+  check("(b2) 老配置读数不变（1280 − 1200 = 80px）", liveRight() === 80, `right=${liveBox.style.right}`);
+  win.innerWidth = 1440;
+  rail.rect = { top: 100, height: 400, width: 28, left: 1412, right: 1440, bottom: 500 };
+  syncNow();
+
+  // (b3) 没有官方导轨 ⇒ 兜底贴窗口右缘 8px（既有那条「仍然显示」的语义不许被边栏逻辑改掉）
+  const savedRail = document_._rail;
+  document_._rail = null;
+  syncNow();
+  const noRailRight = liveRight();
+  const noRailDisplay = liveBox.style.display;
+  document_._rail = savedRail;
+  syncNow();
+  check("(b3) 没有官方导轨 ⇒ 兜底贴窗口右缘 8px（边栏逻辑没改变它）",
+    noRailRight === 8 && noRailDisplay === "block", `right=${noRailRight}px / display=${noRailDisplay}`);
+
+  // (a) 边栏打开（左缘 1280、窗口 1440）⇒ 右边缘 = 1272 = 1280 − 8，不被压住
+  sidebarEl.attrs["data-sidebar-right-open"] = "";
+  sidebarEl.rect = { top: 0, left: 1280, right: 1440, bottom: 900, width: 160, height: 900 };
+  syncNow();
+  check("(a) 边栏打开(左缘 1280 / 窗口 1440) ⇒ 缩略条右边缘 = 1272（= 边栏左缘 − 8，不被压住）",
+    liveBox.style.right === "168px" && liveRightEdge() === 1272 && liveRightEdge() <= 1280 - 8,
+    `right=${liveBox.style.right} 右边缘=${liveRightEdge()} / ${liveWhy()}`);
+
+  // (d) 反例（**同一条判据**，只把"避让输入"拿掉）：面板宽 0（= 不可见）⇒ 不避让 ⇒ 回到被压住的旧读数
+  const savedSidebarRect = sidebarEl.rect;
+  sidebarEl.rect = { ...sidebarEl.rect, width: 0 };
+  syncNow();
+  const blindRight = liveBox.style.right;
+  const blindEdge = liveRightEdge();
+  sidebarEl.rect = savedSidebarRect;
+  syncNow();
+  check("(d) 反例·边栏不可见（宽 0）⇒ 不避让（读数 ≠ 168px、右边缘 1440 > 1272 = 正是被压住的样子）",
+    blindRight !== "168px" && blindEdge > 1280 - 8,
+    `宽 0 时 right=${blindRight} 右边缘=${blindEdge}（避让时 168px / 1272）`);
+
+  // (c) 全屏态：position:fixed;inset:0 ⇒ 缩略条无处可放，藏起来；退出全屏 ⇒ 恢复
+  sidebarEl.attrs["data-sidebar-right-panel"] = "fullscreen";
+  syncNow();
+  const fsDisplay = liveBox.style.display;
+  const fsWhy = liveWhy();
+  sidebarEl.attrs["data-sidebar-right-panel"] = "push";
+  syncNow();
+  check("(c) 边栏全屏 ⇒ display:none；退出全屏 ⇒ 恢复显示（且回到避让位）",
+    fsDisplay === "none" && liveBox.style.display === "block" && liveRightEdge() === 1272,
+    `全屏=${fsDisplay}(${fsWhy}) / 退出后=${liveBox.style.display} 右边缘=${liveRightEdge()}`);
+
+  // (2) 属性观察真的挂上了（覆盖层没有 resize/RO 回调，只能自己听属性）
+  const sidebarObs = mutationObservers
+    .filter((o) => o.records.some((r) => Array.isArray(r.options?.attributeFilter) && r.options.attributeFilter.includes("data-sidebar-right-open")))
+    .at(-1);
+  const obsRec = sidebarObs?.records.at(-1);
+  check("(2) 对 document.body 挂了属性观察（attributeFilter 两个属性 + subtree:true）",
+    obsRec?.target === body && obsRec.options.subtree === true && obsRec.options.attributes === true
+      && obsRec.options.attributeFilter.includes("data-sidebar-right-open")
+      && obsRec.options.attributeFilter.includes("data-sidebar-right-panel"),
+    JSON.stringify(obsRec?.options ?? null));
+
+  // (2b) 动画中途 rect 还在屏外 ⇒ 属性变那一刻算不出最终位置，**过渡结束后必须再算一次**
+  //      （这就是「不能只靠 resizeObserver」的那半条：属性变 = 动画起步，不是终点）
+  delete sidebarEl.attrs["data-sidebar-right-open"];
+  syncNow();
+  sidebarEl.attrs["data-sidebar-right-open"] = "";
+  sidebarEl.rect = { top: 0, left: 1440, right: 1600, bottom: 900, width: 160, height: 900 };   // 还停在屏幕外 translate(100%)
+  sidebarObs?.cb();
+  const duringAnim = liveRightEdge();
+  sidebarEl.rect = { top: 0, left: 1280, right: 1440, bottom: 900, width: 160, height: 900 };   // 动画结束：最终位置
+  flushTimers();                                                                                // 延迟兜底那一跳
+  check("(2b) 过渡结束后的重算拿到最终位置（不靠 transitionend：reduced-motion 下它永远不来）",
+    duringAnim !== 1272 && liveRightEdge() === 1272, `动画中 右边缘=${duringAnim} → 过渡结束后=${liveRightEdge()}`);
+
+  // (5) 安全退化：环境没有 MutationObserver ⇒ 不抛；靠 250ms 轮询仍然算对（行为同现在）
+  const savedMO = sandbox.MutationObserver;
+  delete sandbox.MutationObserver;
+  let degThrew = null;
+  let degBox = null;
+  try {
+    mod.apply({ get: () => undefined });   // 老环境里再装一次
+    degBox = body.children.at(-1);
+    intervals.at(-1).fn();                 // 新实例的 sync 一跳
+  } catch (error) { degThrew = error; }
+  check("(5) 反例·环境不支持 MutationObserver ⇒ 不抛，缩略条照常显示且仍会避让（只是没有主动重算）",
+    degThrew === null && degBox?.style.display === "block" && num(degBox.style.right) === 168,
+    `threw=${degThrew === null ? "null" : String(degThrew)} / display=${degBox?.style.display} / right=${degBox?.style.right}`);
+  sandbox.MutationObserver = savedMO;
+
+  // 收尾：夹具还原（后面的用例/重跑不受影响）
+  delete sidebarEl.attrs["data-sidebar-right-open"];
+  sidebarEl.attrs["data-sidebar-right-panel"] = "push";
+  sidebarEl.rect = savedSidebarRect;
+  win.innerWidth = savedInner;
+  rail.rect = savedRailRect;
 }
 
 console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILED`);

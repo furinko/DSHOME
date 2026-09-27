@@ -195,6 +195,14 @@ function buildGraph(project) {
   const scoped = pj && !/[/\\]/.test(pj);
   const files = all.filter((f) => {
     if (f.rel.startsWith('tasks/evolution/snapshots/')) return false;
+    // TRASH 归档快照（2026-09-27）：`TRASH/` 下 basename 带 `__` 归档戳的副本 = 「同一份文档的历史版本」，
+    // 与上面 snapshots 同族（归档副本、非活内容）——进图谱只会造出假节点与假边：同名卡占满 label 去重组、
+    // 显式 related 指向活文件时连出来的全是「副本↔活文件」的假边；且它们是图谱体积的大头。
+    // 实测读数（活进程 `GET /api/mind/graph`，改动前）：320 节点 / 131 边，其中 TRASH 层 232 个（72%），
+    // 响应体 135KB，后端 199~266ms。离线基准（与后端同语义）：320 节点 / 读 4.36MB / 47ms
+    // ⇒ 排除后 91 节点 / 0.86MB / 10ms（`mind-private\TRASH\` 234 个 .md 里 229 个是这种副本）。
+    // 只排「快照副本」：TRASH 下的真回收件（无 `__`）保持照常进图。
+    if (f.rel.startsWith('TRASH/') && path.basename(f.rel).includes('__')) return false;
     if (!scoped) return true;
     if (f.zone === 'factory') return true;
     if (!f.rel.startsWith('L3/projects/')) return true; // 非项目记忆（含私有 L0-L2 底座/common 等）全留
