@@ -21,10 +21,18 @@
 //   · 删除后**双向留痕**：`TRASH\_index.md` 对应行划掉 + `tasks\evolution\changelog.md` 追加 `↳清理` 行。
 //   · `--age <N>`：只清**进入 TRASH 超过 N 天**的（默认 0＝不设龄；给巡检用时可设 7 天做缓冲）。
 //
-// 用法：node scripts/trash-sweep.mjs [--sweep] [--age <天>] [--json] [--quiet]
+// 用法：node scripts/trash-sweep.mjs [--sweep --only <名[,名…]>] | [--auto] [--age <天>] [--dry-run] [--json] [--quiet]
+//   `--dry-run`：**覆盖任何落刀口**（`--auto` / `--sweep` 都能只列不删）——自动出口上线前审阅、
+//     事后审计都靠它；没有这个口子，"自动"就等于"看不见地删"。
 //   ⚠️ **默认＝只列清单（只读）**：要真删必须显式给 `--sweep` —— 2026-09-26 独立复核后定的姿势：
 //      物理删除是最不可逆的动作，不给"顺手删"，也不让 `--apply` 这种暧昧词承担它。
+//   **`--auto`＝按龄自动清（2026-09-27 主人放行）**：不需 `--only`，判据＝**保留期到期**——
+//      大件（单件 > 20MB）满 **30 天**、小件满 **180 天**即物理删除。**只对已认定的乙/丙档候选生效**
+//      （甲档与保护名永不自动清，判据一个字没松）；留痕与点名模式完全同构（`_cleared-*.md` + 索引划行 + changelog）。
 //   `--age <N>`：只清进入 TRASH 超过 N 天（N 必须是 ≥0 的整数；非法值**响亮失败**，不静默当 0）。
+//      ⚠️「进入 TRASH 多久」＝**条目名前缀里的入站戳**（`YYYY-MM-DDTHH-mm-ss__…`，UTC —— `evolve-log` 的 `ts()` 就是
+//         `toISOString()` 形态），取不到才回退 `mtime`。**不能只用 mtime**：移入走 `rename`，mtime 保留的是
+//         **文件原来的修改时间** ⇒「今天移入的 2023 年老文件」会被算成「龄 700 天」、保留期整条被绕过（2026-09-27 修）。
 // 退出码：0＝正常（含无可清项）；2＝环境不可用（找不到 TRASH 根）；1＝参数非法。
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, appendFileSync, unlinkSync, rmSync } from 'node:fs';
@@ -39,12 +47,19 @@ const TRASH_INDEX = join(TRASH, '_index.md');
 const LOG = join(PRIVATE, 'tasks', 'evolution', 'changelog.md');
 
 const argv = process.argv.slice(2);
-const APPLY = argv.includes('--sweep');
+const AUTO = argv.includes('--auto');
+// `--auto` **自带落刀**（保留期到期即清，不需要逐次点名）⇒ 它等价于"apply + 分层期限"。
+const DRY = argv.includes('--dry-run');
+const APPLY = (argv.includes('--sweep') || AUTO) && !DRY;
 const JSON_OUT = argv.includes('--json');
 const QUIET = argv.includes('--quiet');
 const ageIdx = argv.indexOf('--age');
 const ageRaw = ageIdx >= 0 ? argv[ageIdx + 1] : '0';
 const AGE_DAYS = Number(ageRaw);
+// 保留期分层（2026-09-27 主人放行 · 大件 30 天 / 小件 180 天）：大件是体积账单；小件（快照旧版、旧记忆）
+// 总共几 MB，留久不花钱，而它的价值恰恰是"很久以后想回溯才用得上"。
+const BIG_RETAIN_DAYS = 30;
+const SMALL_RETAIN_DAYS = 180;
 // 2026-09-26 复核后加：非法龄**响亮失败**——原来 `--age 7x` / 无值 / 负数会被 `Number()` 变成 NaN 或负数，
 // 而 `AGE_DAYS > 0` 恒假 ⇒ 静默降级成"无龄闸"（读数还像设了），这是"看起来在拦、其实没拦"。
 if (!Number.isInteger(AGE_DAYS) || AGE_DAYS < 0) {
@@ -182,12 +197,28 @@ function origForEntry(name) {
   if (sameAt.length === 1) return sameAt[0].orig;
   return null; // 同秒多条且尾段对不上 ⇒ **不猜**（划行宁可少划，也不误划别人的账）
 }
+/** 入站时间（ms）：**条目名前缀**是权威（`YYYY-MM-DDTHH-mm-ss__…`，UTC），取不到才回退 `mtime`。
+ *  ⚠️ 不能只用 `mtime`：`evolve-log trash` 移入走 `rename`，mtime **保留文件原来的修改时间** ⇒
+ *  「今天移入的 2023 年老文件」会被算成「龄 700 天」、保留期当场被突破（窗口＝0）。2026-09-27 修。 */
+function enteredAt(e) {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})__/.exec(e.name);
+  if (m) {
+    const t = Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}Z`);
+    if (Number.isFinite(t)) return { ms: t, src: '入站戳' };
+  }
+  return { ms: e.mtimeMs, src: 'mtime·回退' };
+}
 const now = Date.now();
 const candidates = [];
 const kept = [];
 for (const e of trashEntries()) {
-  const ageDays = (now - e.mtimeMs) / 86400000;
-  if (AGE_DAYS > 0 && ageDays < AGE_DAYS) { kept.push({ ...e, why: `龄 ${ageDays.toFixed(1)} 天 < ${AGE_DAYS}` }); continue; }
+  const entered = enteredAt(e);
+  e.enteredSrc = entered.src;
+  const ageDays = (now - entered.ms) / 86400000;
+  if (AUTO) {
+    const retain = e.size > BIG_BYTES ? BIG_RETAIN_DAYS : SMALL_RETAIN_DAYS;
+    if (ageDays < retain) { kept.push({ ...e, why: `龄 ${ageDays.toFixed(1)} 天 < 保留期 ${retain} 天（${e.size > BIG_BYTES ? '大件' : '小件'}）` }); continue; }
+  } else if (AGE_DAYS > 0 && ageDays < AGE_DAYS) { kept.push({ ...e, why: `龄 ${ageDays.toFixed(1)} 天 < ${AGE_DAYS}` }); continue; }
   if (isProtectedName(e.name)) { kept.push({ ...e, why: '甲档·保护名（身份/规则真源的副本，含备份尾巴，归主人权利域）' }); continue; }
   // 目录：整体只看乙档，**且必须先确认里面没有不可再生的东西**（复核阻断项：只看外壳会把含
   //      `.md` 快照字节的目录整个 `rmSync recursive`）
@@ -221,11 +252,15 @@ const totalBytes = candidates.reduce((s, c) => s + c.size, 0);
 //   不给 `--only` 就拒绝执行（响亮失败，不是静默只列）。
 const onlyIdx = argv.indexOf('--only');
 const ONLY = onlyIdx >= 0 ? String(argv[onlyIdx + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
-if (APPLY && ONLY.length === 0) {
+if (APPLY && !AUTO && ONLY.length === 0) {
   console.error('[trash-sweep] ❌ `--sweep` 必须配 `--only <条目名子串[,子串…]>`：自动判据只列候选，落刀要逐次点名（判据错一次 ≠ 批量损失）。先跑不带参数的清单，再点名。');
   process.exit(1);
 }
-const targets = ONLY.length ? candidates.filter((c) => ONLY.some((k) => c.name.includes(k))) : [];
+if (AUTO && ONLY.length) {
+  console.error('[trash-sweep] ❌ `--auto` 与 `--only` 互斥：`--auto`＝按保留期自动清（期限由规则定），`--only`＝逐次点名。两者不能混。');
+  process.exit(1);
+}
+const targets = AUTO ? candidates : (ONLY.length ? candidates.filter((c) => ONLY.some((k) => c.name.includes(k))) : []);
 if (APPLY && ONLY.length && targets.length === 0) {
   console.error(`[trash-sweep] ❌ --only 点名的对象在候选里一个都没匹配上（${ONLY.join(' / ')}）——拒绝执行（不猜）`);
   process.exit(1);
@@ -235,7 +270,8 @@ const lines = [];
 if (APPLY && targets.length) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   clearedLog = join(TRASH, `_cleared-${stamp}.md`);
-  lines.push(`# TRASH 清理留痕 ${stamp}`, '', '判据＝`Memory §十一` 硬约束 1 三档（乙可再生产物 / 丙逐字节重复件）；甲档与保护名不动。', '', '| 条目 | 档 | 体积 | 依据 | 结果 |', '|---|---|---|---|---|');
+  const modeText = AUTO ? `按龄自动清（大件满 ${BIG_RETAIN_DAYS} 天 / 小件满 ${SMALL_RETAIN_DAYS} 天）` : '逐次点名（--only）';
+  lines.push(`# TRASH 清理留痕 ${stamp}`, '', `判据＝\`Memory §十一\` 硬约束 1 三档（乙可再生产物 / 丙逐字节重复件）；甲档与保护名不动。模式＝${modeText}；「龄」取条文名前缀的入站戳（取不到才回退 mtime）。`, '', '| 条目 | 档 | 体积 | 依据 | 结果 |', '|---|---|---|---|---|');
   const struck = [];
   for (const c of targets) {
     // 复核后加：删前**再核一次**——丙档的依据是"与活文件相同"，而活文件可能已被并发写者移走/改掉
@@ -271,7 +307,7 @@ if (APPLY && targets.length) {
   }
   // ② changelog：追一行（审计流水）；**写不进去就把退出码置 1**（复核指出：留痕不完整却 exit 0 = 假绿）
   try {
-    appendFileSync(LOG, `| ${new Date().toISOString().slice(0, 10)} | ↳清理:TRASH | 乙/丙档机器可证（§十一 硬约束 1） | 物理删除 ${deleted} 项 ${human(deletedBytes)}（失败 ${failed}） | ${relative(repoRoot, clearedLog).replace(/\\/g, '/')} |\n`);
+    appendFileSync(LOG, `| ${new Date().toISOString().slice(0, 10)} | ↳清理:TRASH${AUTO ? '（auto·保留期到期）' : '（点名）'} | 乙/丙档机器可证（§十一 硬约束 1） | 物理删除 ${deleted} 项 ${human(deletedBytes)}（失败 ${failed}） | ${relative(repoRoot, clearedLog).replace(/\\/g, '/')} |\n`);
     changelogOk = true;
   } catch (e) {
     changelogOk = false;
@@ -282,14 +318,15 @@ if (APPLY && targets.length) {
 if (JSON_OUT) {
   console.log(JSON.stringify({
     ok: failed === 0 && changelogOk !== false,
-    mode: APPLY ? 'sweep' : 'list', ageDays: AGE_DAYS, trash: TRASH,
+    mode: DRY ? 'dry-run' : (AUTO ? 'auto' : (APPLY ? 'sweep' : 'list')), ageDays: AGE_DAYS, auto: AUTO, dryRun: DRY,
+    bigRetainDays: BIG_RETAIN_DAYS, smallRetainDays: SMALL_RETAIN_DAYS, trash: TRASH,
     candidates: candidates.map((c) => ({ name: c.name, tier: c.tier, size: c.size, evidence: c.evidence })),
     kept: kept.map((c) => ({ name: c.name, size: c.size, why: c.why })),
     totalCandidates: candidates.length, totalBytes, keptCount: kept.length, targeted: targets.length, only: ONLY,
     deleted, failed, deletedBytes, clearedLog: clearedLog ? relative(repoRoot, clearedLog) : null, changelogOk,
   }, null, 2));
 } else if (!QUIET) {
-  console.log(`[trash-sweep] ${APPLY ? '🔴 SWEEP（执行物理删除）' : '📋 LIST（只列清单，不删任何东西；要删给 --sweep）'} · ${TRASH}`);
+  console.log(`[trash-sweep] ${DRY ? '🧪 DRY-RUN（--dry-run：只列不删）' : AUTO ? `⏳ AUTO（按龄自动清：大件满 ${BIG_RETAIN_DAYS} 天 / 小件满 ${SMALL_RETAIN_DAYS} 天）` : APPLY ? '🔴 SWEEP（执行物理删除）' : '📋 LIST（只列清单，不删任何东西；要删给 --sweep）'} · ${TRASH}`);
   if (!candidates.length) console.log('  无「可清」条目（乙/丙档为空）——甲档一律不动。');
   for (const c of candidates) console.log(`  [${c.tier}] ${c.name}  ${human(c.size)}  ← ${c.evidence}`);
   console.log(`  合计：${candidates.length} 项 / ${human(totalBytes)}；甲档保留 ${kept.length} 项`);

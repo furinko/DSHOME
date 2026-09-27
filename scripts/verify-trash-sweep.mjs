@@ -19,7 +19,7 @@
 //
 // 用法：node scripts/verify-trash-sweep.mjs；退出码 0＝全过 / 1＝有偏差 / 2＝环境不可用。
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync, truncateSync, utimesSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -138,6 +138,53 @@ console.log('[verify-trash-sweep] TRASH 排空执行件 · 行为核验');
   const r3 = sweep(f.home, ['--age', '-1', '--json']);
   assert('--age -1 ⇒ 退出 1', r3.code === 1, 1, r3.code);
   rmSync(f.home, { recursive: true, force: true });
+}
+
+// ── 5) --auto：按保留期自动清（大件 30 天 / 小件 180 天）+ 入站戳基准的回归反例 ──
+// ⚠️ 本块的核心是**两个方向相反的 mtime 陷阱**（⑤ 与 ⑥）：把基准钉死在「条目名里的入站戳」上。
+//    若有人把 enteredAt() 改回 mtimeMs，这两条必红 —— 判据才有区分度（写不出反例＝没验过）。
+{
+  const home = mkdtempSync(join(tmpdir(), 'verify-sweep-auto-'));
+  const priv = join(home, 'mind-private');
+  const trash = join(priv, 'TRASH');
+  mkdirSync(join(priv, 'tasks', 'evolution'), { recursive: true });
+  mkdirSync(trash, { recursive: true });
+  const w = (name, text) => { const p = join(trash, name); writeFileSync(p, text); return p; };
+  const big = (name) => { const p = join(trash, name); writeFileSync(p, ''); truncateSync(p, 21 * 1024 * 1024); return p; };
+  const OLD = '2026-01-01T00-00-00';
+  const NEW = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const oldBig = big(`${OLD}__aaa00001__old-build.zip`);
+  const oldSmall = w(`${OLD}__aaa00002__old-setup.msi`, 'msi');
+  const newBig = big(`${NEW}__aaa00003__fresh.zip`);
+  const trapNew = big(`${NEW}__aaa00004__looks-old.zip`);
+  const oldMtime = new Date(Date.now() - 3 * 365 * 86400000);
+  utimesSync(trapNew, oldMtime, oldMtime);
+  const trapOld = w(`${OLD}__aaa00005__old-entry.zip`, 'zip');
+  const nowDate = new Date();
+  utimesSync(trapOld, nowDate, nowDate);
+  const keepOld = w(`${OLD}__aaa00006__某记忆条目.md`, '不可再生');
+  const protOld = w(`${OLD}__aaa00007__人设卡.md`, '人设卡');
+  const all = [oldBig, oldSmall, newBig, trapNew, trapOld, keepOld, protOld];
+
+  const rd = sweep(home, ['--auto', '--dry-run', '--json']);
+  let jd = null; try { jd = JSON.parse(rd.out); } catch { /* 见下 */ }
+  assert('--auto --dry-run：只看不删（7 件原样）', all.every(existsSync), '7 件都在', all.filter((p) => !existsSync(p)).map((p) => p.split('\\').pop()));
+  assert('--auto --dry-run：mode=dry-run 且回显保留期 30/180', jd && jd.mode === 'dry-run' && jd.bigRetainDays === 30 && jd.smallRetainDays === 180, 'dry-run + 30/180', jd && [jd.mode, jd.bigRetainDays, jd.smallRetainDays]);
+
+  const r = sweep(home, ['--auto', '--json']);
+  let j = null; try { j = JSON.parse(r.out); } catch { /* 见下 */ }
+  assert('--auto 退出 0 且 mode=auto', r.code === 0 && j && j.mode === 'auto', 'exit 0 + mode=auto', { code: r.code, mode: j && j.mode });
+  assert('① 超期大件（入站 9 个月 > 30 天）被删', !existsSync(oldBig), '已删', existsSync(oldBig) ? '仍在' : '已删');
+  assert('② 超期小件（乙档 .msi，> 180 天）被删', !existsSync(oldSmall), '已删', existsSync(oldSmall) ? '仍在' : '已删');
+  assert('③ 未超期大件（今天入站）没被删', existsSync(newBig), '仍在', existsSync(newBig) ? '仍在' : '被删了');
+  assert('**回归反例⑤（mtime 陷阱·正向）**：入站=今天 + mtime=3 年前 ⇒ 必须留', existsSync(trapNew), '仍在', existsSync(trapNew) ? '仍在' : '被删了（基准退化回 mtime）');
+  assert('**回归反例⑥（mtime 陷阱·反向）**：入站=9 个月前 + mtime=今天 ⇒ 必须删', !existsSync(trapOld), '已删', existsSync(trapOld) ? '仍在（基准退化回 mtime）' : '已删');
+  assert('④ 甲档超期件没被自动删（不可再生永不自动清）', existsSync(keepOld), '仍在', existsSync(keepOld) ? '仍在' : '被删了');
+  assert('⑦ 保护名超期件没被自动删（保护名优先于保留期）', existsSync(protOld), '仍在', existsSync(protOld) ? '仍在' : '被删了');
+  const rMix = sweep(home, ['--auto', '--only', 'old-build.zip', '--json']);
+  assert('--auto 与 --only 互斥 ⇒ 退出 1', rMix.code === 1 && /互斥/.test(rMix.out), 'exit 1 + 互斥提示', rMix.code);
+  assert('--auto 留痕：_cleared-*.md 落盘 + changelog 记「auto·保留期到期」', readdirList(trash).some((n) => /^_cleared-/.test(n)) && /auto·保留期到期/.test((() => { try { return readFileSync(join(priv, 'tasks', 'evolution', 'changelog.md'), 'utf8'); } catch { return ''; } })()), '有留痕 + auto 行', readdirList(trash).filter((n) => /^_cleared-/.test(n)));
+  rmSync(home, { recursive: true, force: true });
 }
 
 // ── 4) 环境不可用 ⇒ 响亮失败 ────────────────────────────────────────────────

@@ -203,9 +203,18 @@ function readApprovals() {
 function writeApprovals(items) {
   try {
     mkdirSync(dirname(approvalsFile()), { recursive: true }); // mind-private\tasks\ 可能未初始化：先建目录再写，否则写入静默失败、放行/待裁决全丢
-    let aa = null;
-    try { aa = JSON.parse(readFileSync(approvalsFile(), 'utf8')).autoApprove || null; } catch { /* 无既有文件 */ }
-    writeFileSync(approvalsFile(), JSON.stringify(aa ? { items, autoApprove: aa } : { items }, null, 2));
+    let aa = null; let tr = null;
+    try {
+      const prev = JSON.parse(readFileSync(approvalsFile(), 'utf8'));
+      aa = prev.autoApprove || null;
+      // ⚠️ 必须**透传** `upstreamTrace`（2026-09-27 加）：本函数原先只回写 `{items, autoApprove}`
+      //    ⇒ 下一次任何 `items` 变更都会把弹窗留痕**整段抹掉**（留痕静默丢失，与"写了却没留下"同型）。
+      tr = Array.isArray(prev.upstreamTrace) ? prev.upstreamTrace : null;
+    } catch { /* 无既有文件 */ }
+    const out = { items };
+    if (tr) out.upstreamTrace = tr;
+    if (aa) out.autoApprove = aa;
+    writeFileSync(approvalsFile(), JSON.stringify(out, null, 2));
   } catch { /* 忽略 */ }
 }
 /** 面板「自动同意」开关——`enabled && decidedBy==='user'` 时生效：高危改动免逐条面板确认。
@@ -290,7 +299,9 @@ function addApprovalPending(filePath, op, content) {
 }
 
 /** autoApprove 开启时的**自动放行留痕**（2026-09-11 加，主人要求「可以先拦再放，但不能静默」）。
- *  三态语义：`pending`=待人拍（拦）· `approved`=人已放行 · `auto-approved`=**开关代放，不拦但必留痕**。
+ *  三态语义（`items`）：`pending`=待人拍（拦）· `approved`=人已放行（**唯一授权态**）·
+ *  `auto-approved`=**开关代放，不拦但必留痕**。另有**平级字段** `upstreamTrace`＝弹窗放行留痕
+ *  （2026-09-27 加；**不进 items、不授权**，见 `addApprovalUpstream`）。
  *  ⚠️ 它**不构成授权**：`isApproved` 要求 `status==='approved' && decidedBy==='user'`，
  *  故 auto-approved 记录不会被当成放行依据——留痕就是留痕。
  *  用途：事后可回溯「哪些宪法/规则/门禁改动是在自动同意下过的」（P0 批次关 autoApprove 的关切正是"硬流程被整体绕过"）。 */
@@ -564,8 +575,44 @@ function warnUpstreamOnce(ctx, msg) {
   upstreamWarned = true;
   try { ctx.logger?.('dshome')?.warn?.(`[mind-guard] ${msg}`); } catch { /* 记不上日志不影响裁决 */ }
 }
+/** 弹窗（上游 approval）放行的**留痕**（2026-09-27 加 · 主人提议）——落在 `approvals.json` 的
+ *  **独立字段 `upstreamTrace`**（**不是 `items`**，理由见函数内注释）。
+ *  补的正是**放行真源里的空白**：`allow-by-upstream` 此前**只**落 `guard-decisions.jsonl`（决策流水）
+ *  ⇒ 事后查 `approvals.json` 的人（尤其 agent）看不到"谁放的、怎么放的"，只能反过来问主人
+ *  （2026-09-27 真实发生：我三次 L1 改动都记 `allow-by-upstream`，而真源里只有 09-11 的旧账，
+ *  于是只能反问「这条是你点的吗」）。
+ *  ⚠️ **留痕，但不授权**：不进 `items` ⇒ `isApproved` 不会认它，弹窗仍是**逐次**的
+ *  （点一次只放行那一次调用）。若写进 `items` 并给 `status:'approved'`，弹窗就退化成
+ *  "点一次 = 永久放行"、门禁强度当场下降——那正是既有用例① 要挡的东西。 */
+function addApprovalUpstream(filePath, op) {
+  try {
+    const f = approvalsFile();
+    let prev = {};
+    try { prev = JSON.parse(readFileSync(f, 'utf8')); } catch { /* 首次 */ }
+    const items = prev.items || [];
+    // ⚠️ 落点是**平级字段 `upstreamTrace`**，不是 `items`：`items` 是**卡片**的数据源（面板待裁决 +
+    //    `isApproved` 的授权额度），而既有设计明确要求「上游放行**不建自家卡**」
+    //    （`verify-guard-decisions` 用例① 断言 `自家卡=0`，理由＝避免一张永远没人点的幽灵卡）。
+    //    写在同文件平级字段 ⇒ 查放行真源的人看得到，而 `items` / `isApproved` / 面板语义一个字不变。
+    const trace = Array.isArray(prev.upstreamTrace) ? prev.upstreamTrace : [];
+    const now = new Date().toISOString();
+    trace.push({
+      id: `up-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      at: now, path: normalizePath(filePath), op,
+      decision: 'allow-by-upstream', via: 'popup', decidedBy: APPROVAL_CHANNEL_USER,
+      note: '主人在宿主弹窗点「允许一次」——一次一调用，**不是长期额度**（故不进 items、不被 isApproved 认）',
+    });
+    const out = { items, upstreamTrace: trace.slice(-200) }; // 上界 200：留痕不该无界增长
+    if (prev.autoApprove) out.autoApprove = prev.autoApprove;
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, JSON.stringify(out, null, 2));
+  } catch { /* 留痕失败不影响放行本身（放行已由上游完成）；guard 不因记账失败而反悔 */ }
+}
+
 /** 上游裁决的台账记录（与 guard 侧同一条物证流；上游本身另有一对会话审计事件）。 */
 function recordUpstreamDecision(exec, filePath, decision, reason) {
+  // 2026-09-27 加：放行时**同时**往 `approvals.json`（放行真源）补一条留痕态记录（见 addApprovalUpstream）。
+  if (decision === 'allow-by-upstream') addApprovalUpstream(filePath, 'edit');
   return appendDecision({
     ts: new Date().toISOString(),
     tool: String(exec?.name ?? ''),

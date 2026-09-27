@@ -305,8 +305,26 @@ try {
     const r = await preHooks[0](highRisk, () => 'next-called');
     const g = guards[0](highRisk);
     const led = readUpLedger().at(-1);
-    upOk = upOk && r === 'next-called' && g === undefined && asked === 1 && readUpAp().length === 0 && led?.decision === 'allow-by-upstream';
-    upLog.push(`① allowed-once → 放行=${r === 'next-called'} guard不拦=${g === undefined} 问上游 ${asked} 次 自家卡=${readUpAp().length} 台账=${led?.decision}`);
+    const trace1 = (() => { try { return JSON.parse(readFileSync(apUp, 'utf8')).upstreamTrace || []; } catch { return []; } })();
+    upOk = upOk && r === 'next-called' && g === undefined && asked === 1 && readUpAp().length === 0 && led?.decision === 'allow-by-upstream'
+      // 2026-09-27 加：弹窗放行**要留痕**（平级字段 `upstreamTrace`），但**仍不建自家卡**（items 恒 0）。
+      && trace1.length === 1 && trace1[0].decision === 'allow-by-upstream' && trace1[0].via === 'popup';
+    upLog.push(`① allowed-once → 放行=${r === 'next-called'} guard不拦=${g === undefined} 问上游 ${asked} 次 自家卡=${readUpAp().length} 台账=${led?.decision} 弹窗留痕=${trace1.length}`);
+
+    // ①-b 回归反例（2026-09-27 加）：任何 `items` 变更（都走 writeApprovals）**不得抹掉** upstreamTrace。
+    //      变异反证：把 writeApprovals 里的透传那句话删掉 ⇒ 本行必红（留痕被静默抹掉）。
+    {
+      const { c: c2, guards: g2, preHooks: p2 } = mkCtx({ request: async () => 'unavailable' }); // → 回落自家流程
+      mod.apply(c2);
+      await p2[0]({ ...highRisk, callId: 'c-high-2' }, () => 'next-called');
+      // ⚠️ 建卡发生在 **guard（`decide()`）** 里，不在 pre-hook 里 —— 只调 pre-hook 不会建卡（第一版就栽在这）。
+      g2[0]({ ...highRisk, callId: 'c-high-2' });
+      const after = (() => { try { return JSON.parse(readFileSync(apUp, 'utf8')); } catch { return {}; } })();
+      const tr2 = after.upstreamTrace || [];
+      const it2 = (after.items || []).length;
+      upOk = upOk && tr2.length === 1 && it2 === 1;
+      upLog.push(`①-b writeApprovals 透传 → pending 卡=${it2}（望 1）· 弹窗留痕仍在=${tr2.length}（望 1）`);
+    }
   }
   // ② rejected → 硬拒（不改用自家卡）
   {
