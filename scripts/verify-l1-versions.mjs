@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// scripts/verify-l1-versions.mjs — L1 规则文件「改正文必须提版本」门禁（2026-09-17 建）
+// scripts/verify-l1-versions.mjs — L0/L1 规则件「改正文必须提版本 + 换下的旧版本行必须归档」门禁（2026-09-17 建）
 //
 // ── 为什么需要它（真实漏项，不是假想）────────────────────────────────────────
 // 既定流程（`Ritual §四` 自我修改事务）要求：改 L1 规则 ⇒ **版本号 +0.1 + 版本行追加本次授权与
@@ -8,6 +8,11 @@
 // Design-Philosophy / Wisdom）的头/尾版本行无人校验**。2026-09-17 实测：同一天我把
 // `Ritual.md`（§四 四段式 + `:47`）与 `Power.md`（`:79` 口径）正文改了两次、**两次都忘了提版本**，
 // 靠收工自查才发现（事后补 1.15 / 1.14）。同类已知盲区：`Skill\README.md` 能力表。
+// ⚠️ 2026-09-28 **改动面扩到 `mind/L0/`**（主人授权；上一轮的诚实边界 3）：L0 四件（SOUL / AGENTS /
+//   TOOL / CREW）的版本行同样受「改正文必须提版本」约束，换下的旧行同样要归档（SOUL/AGENTS →
+//   `changelog-L0.md`；CREW/TOOL → `changelog-L1.md`）。**扩面之前**：判据 B 的映射虽已含 L0 四件，
+//   但改动面只有 `mind/L1/`，且「无 L1 改动 ⇒ 跳过」会先短路 ⇒ **只改 L0 的提交，判据 B 一次都不跑**
+//   （改 L0 后没把换下的旧版本行搬进台账，机器看不见）。
 //
 // ── 判据（不需要任何台账）───────────────────────────────────────────────────
 // 拿 **staged 内容 vs HEAD 内容** 直接比：
@@ -22,6 +27,7 @@
 //   现在：跳过分支会读 `git status`，工作区有 L1 改动就**响亮列出来**并给出真判据；另加 `--all`
 //   （`HEAD` ↔ **工作区**，含未跟踪）供"直接跑"用。**刻意不做成硬失败**：pre-commit 场景下
 //   "本次提交不含 L1"本就是正确跳过，硬失败会误伤与 L1 无关的提交。
+//   （2026-09-28 扩面后，跳过口径＝「**L0 与 L1 都**无改动」；任一有改动就真跑。）
 //
 // ── 反例（写不出反例＝没验过；`--selftest` 可执行）──────────────────────────
 //   ① 只改正文不动版本行 → 必须红 · ② 只动版本行 → 必须不红 · ③ 两处都改 → 不红
@@ -31,16 +37,23 @@
 //   ⑨ 被换下的当前版本行**不在**台账 ⇒ 必须红（本次遗漏）· ⑩ 已整行照抄进台账 ⇒ 不红
 //   ⑪ HEAD 正文里更老的残留行被顺带清掉且不在台账 ⇒ 只 warn（历史遗留，不拦无关提交）
 //   ⑫ HEAD 无此文件（新文件）/ 两份 changelog 都无该段（未受管）⇒ 显式跳过（不许静默）
+//   —— 面级反例（L0 扩面，2026-09-28 加，跑在 `%TEMP%` 独立 git 夹具仓里）——
+//   ⑭ 只改 `mind/L0/` 的当前版本行且台账里没有 ⇒ 红，且 `[info]` 分母证明**没走跳过分支**（比对 ≥1）
+//   ⑮ L0 与 L1 **都**无改动 ⇒ 走跳过分支，且 `[info]` 仍报受管面分母
+//   ⑯ L0 那行已照抄进台账 ⇒ 不红 · ⑰ 暂存口径（无参）同样覆盖 L0（staged 改了 L0 ⇒ 红）
 //
 // 用法：node scripts/verify-l1-versions.mjs [--selftest] [--all]
 // 退出码：0 = 通过；1 = 有断言失败（或 git 不可用——门禁跑不起来要响亮，见 verify-integrity）
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname, basename } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = process.env.DSH_HOME || join(dirname(fileURLToPath(import.meta.url)), '..');
 const L1_DIR = 'mind/L1/';
+const L0_DIR = 'mind/L0/';                                              // 2026-09-28 扩面：L0 四件同受约束
+const SURFACE = [L0_DIR, L1_DIR];                                       // 改动面（git pathspec；两个面一起取）
 // 沿革台账（判据 B 的映射来源；**不写死受管清单**，段标题从这两份文件实测）。
 const CHANGELOGS = ['mind/L1/changelog-L1.md', 'mind/L1/changelog-L0.md'];
 
@@ -188,7 +201,64 @@ export function judgeL1VersionChange(oldText, newText) {
   return { ok: true, warn, reason: `版本行已更新（头 ${va.head ?? '—'}→${vb.head ?? '—'} / 尾 ${va.foot ?? '—'}→${vb.foot ?? '—'}）` };
 }
 
-// ── 自检：可执行反例（判据 A 8 项 + 判据 B 5 项，见文件头反例清单）────────────────
+// ── 面级反例（L0 扩面，2026-09-28 加）：跑**本文件的真 CLI** + 真 git，夹具建在 `%TEMP%` 独立 git 仓里
+//    （真仓库零触碰；`mind/L0/` 是高危区，只读只判、绝不写）。为什么要面级而不是只测纯函数：
+//    「L0 有没有进改动面 / 有没有被跳过分支短路」是 **main() 的事实**，纯函数测不到。
+/** @returns {{clean:object, red:object, unstaged:object, staged:object, archived:object}} */
+function surfaceFixture() {
+  const tmp = mkdtempSync(join(tmpdir(), 'l1v-surface-'));
+  const cli = fileURLToPath(import.meta.url);
+  const g = (args) => execFileSync('git', ['-c', 'commit.gpgsign=false', ...args],
+    { cwd: tmp, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const runCli = (args) => {
+    try {
+      const out = execFileSync(process.execPath, [cli, ...args],
+        { cwd: tmp, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DSH_HOME: tmp } });
+      return { code: 0, out: String(out) };
+    } catch (e) {
+      return { code: e.status ?? 1, out: `${e.stdout ?? ''}\n${e.stderr ?? ''}` };   // ❌ 走 stderr，合并取全
+    }
+  };
+  try {
+    mkdirSync(join(tmp, 'mind', 'L0'), { recursive: true });
+    mkdirSync(join(tmp, 'mind', 'L1'), { recursive: true });
+    // 夹具 L0 件形态对齐真机：`CREW.md` 只有**尾行**版本行、没有头行（mind\L0\ 四件：CREW/SOUL/AGENTS 仅尾行、TOOL 仅头行）
+    writeFileSync(join(tmp, 'mind', 'L0', 'CREW.md'), [
+      '# CREW.md — 成员底线（夹具）', '', '## 一、正文', '- 原文', '',
+      '_版本：1.0 | 2026-01-01 | 初版_', '',
+    ].join('\n'), 'utf8');
+    writeFileSync(join(tmp, 'mind', 'L1', 'changelog-L1.md'), [
+      '# changelog-L1.md（夹具）', '', '## CREW.md 沿革', '', '（夹具：暂无归档行）', '',
+      '## TOOL.md 沿革', '', '（夹具）', '', '_版本：1.0 | 2026-01-01 | 台账_', '',
+    ].join('\n'), 'utf8');
+    writeFileSync(join(tmp, 'mind', 'L1', 'changelog-L0.md'), [
+      '# changelog-L0.md（夹具）', '', '## SOUL.md 沿革', '', '（夹具）', '',
+      '## AGENTS.md 沿革', '', '（夹具）', '', '_版本：1.0 | 2026-01-01 | 台账_', '',
+    ].join('\n'), 'utf8');
+    g(['init', '-q']);
+    g(['add', '-A']);
+    g(['-c', 'user.name=selftest', '-c', 'user.email=selftest@local', 'commit', '-q', '-m', 'init']);
+    const clean = runCli(['--all']);                        // ⑮ 初始：L0/L1 都无改动
+    const p = join(tmp, 'mind', 'L0', 'CREW.md');
+    writeFileSync(p, readFileSync(p, 'utf8')
+      .replace('_版本：1.0 | 2026-01-01 | 初版_', '_版本：1.1 | 2026-02-02 | 本版：改了正文_'), 'utf8');
+    const red = runCli(['--all']);                          // ⑭ 只改 L0 的当前版本行、台账不动
+    const unstaged = runCli([]);                            // ⑰前置：没 `git add` ⇒ staged 面看不见
+    g(['add', 'mind/L0/CREW.md']);
+    const staged = runCli([]);                              // ⑰ 暂存口径同样覆盖 L0 ⇒ 红
+    writeFileSync(join(tmp, 'mind', 'L1', 'changelog-L1.md'), readFileSync(join(tmp, 'mind', 'L1', 'changelog-L1.md'), 'utf8')
+      .replace('（夹具：暂无归档行）', ['### 替换追加', '', '_版本：1.0 | 2026-01-01 | 初版_'].join('\n'))
+      // ⚠️ 真流程复刻：往台账里追加归档**同时要提台账自身的尾版本行**（否则既有判据 A 会判台账「改了正文却没提版本」红——
+      //    台账未受管只是**判据 B** 的面，不是判据 A 的面）。
+      .replace('_版本：1.0 | 2026-01-01 | 台账_', '_版本：1.1 | 2026-02-02 | 追加 CREW 旧行归档_'), 'utf8');
+    const archived = runCli(['--all']);                     // ⑯ 已整行照抄进台账
+    return { clean, red, unstaged, staged, archived };
+  } finally {
+    try { rmSync(tmp, { recursive: true, force: true }); } catch { /* 忽略 */ }
+  }
+}
+
+// ── 自检：可执行反例（判据 A 8 项 + 判据 B 6 项 + L0 扩面 4 项 ＝ 18 项；分项见文件头反例清单）────────
 function selftest() {
   const base = [
     '> 版本：1.0 | 2026-01-01 | 初版',
@@ -260,7 +330,50 @@ function selftest() {
   // ⑬ 整行口径与 versionsOf 同源：正文里的版本行**模板占位**（无数字）不算版本行
   if (versionLines(withTemplate).length === 2) console.log('ok   ⑬ 版本行**整行**口径与 versionsOf 同源（模板占位 `_版本：vX …_` 不算）');
   else { bad += 1; console.error(`FAIL ⑬ 整行口径不齐：得到 ${versionLines(withTemplate).length} 条（期望 2：1 头 + 1 尾）`); }
-  console.log(bad ? `\nverify-l1-versions --selftest: ${bad} 项失败` : '\nverify-l1-versions --selftest: 全部通过（13 项：6 反例 + 1 退化检查 + 1 尾行取值检查 + 5 项沿革归档）');
+  // ── 面级反例（L0 扩面，2026-09-28 加）：真 CLI + 真 git，%TEMP% 独立夹具仓（真仓库零触碰）──
+  let fx;
+  try { fx = surfaceFixture(); } catch (e) { fx = { error: e?.message ?? String(e) }; }
+  if (fx.error) {
+    bad += 1;
+    console.error(`FAIL ⑭⑮⑯⑰ L0 扩面的**面级反例未能执行**（不是通过）：${fx.error}`);
+  } else {
+    const numOf = (out, re) => { const m = out.match(re); return m ? Number(m[1]) : null; };
+    // ⑮ 两个面都无改动 ⇒ 走跳过分支，且 `[info]` 仍报受管面分母（不许静默）
+    if (fx.clean.code === 0 && fx.clean.out.includes('本次提交无 L0/L1 改动 → 跳过') && /受管文件 4 件/.test(fx.clean.out)) {
+      console.log('ok   ⑮ L0 与 L1 **都**无改动 ⇒ 走跳过分支，且 [info] 仍报受管面分母（受管文件 4 件）');
+    } else {
+      bad += 1;
+      console.error(`FAIL ⑮ 跳过分支口径不符：exit=${fx.clean.code} out=«${clip(fx.clean.out, 180)}»`);
+    }
+    // ⑭ 只改 L0 的**当前版本行**、台账里没有 ⇒ 必须红；并证明**没走跳过分支**（分母「本次比对 ≥1」+ 无跳过文案）
+    const cmp = numOf(fx.red.out, /本次比对 (\d+) 件/);
+    const onlyArchiveRed = fx.red.out.includes('1 个 L0/L1 文件的旧版本行没搬进沿革台账')
+      && !fx.red.out.includes('改了正文却没提版本');
+    if (fx.red.code === 1 && fx.red.out.includes('❌ mind/L0/CREW.md：旧版本行未归档')
+      && !fx.red.out.includes('本次提交无 L0/L1 改动') && cmp !== null && cmp >= 1 && onlyArchiveRed) {
+      console.log(`ok   ⑭ 只改 mind/L0/ 的当前版本行、台账里没有 ⇒ 红（exit 1；未走跳过分支：本次比对 ${cmp} 件 ≥1；且唯一失败面是「旧版本行未归档」）`);
+    } else {
+      bad += 1;
+      console.error(`FAIL ⑭ L0 未归档没变红 / 被跳过分支短路：exit=${fx.red.code} 比对=${cmp} 唯一归档红=${onlyArchiveRed} out=«${clip(fx.red.out, 220)}»`);
+    }
+    // ⑰ 暂存口径（无参）同样覆盖 L0：未 `git add` ⇒ 看不见（跳过分支响亮列出）；`git add` 后 ⇒ 红
+    const un = fx.unstaged.code === 0 && fx.unstaged.out.includes('工作区有 1 项 L0/L1 改动未被本门禁校验');
+    const st = fx.staged.code === 1 && fx.staged.out.includes('❌ mind/L0/CREW.md：旧版本行未归档');
+    if (un && st) {
+      console.log('ok   ⑰ 暂存口径（无参）同样覆盖 L0：未 `git add` ⇒ 跳过分支响亮列出该项；`git add` 后 ⇒ 红');
+    } else {
+      bad += 1;
+      console.error(`FAIL ⑰ 暂存口径异常：未暂存 exit=${fx.unstaged.code}（响亮列出=${un}）/ 已暂存 exit=${fx.staged.code}（红=${st}）`);
+    }
+    // ⑯ 换下的 L0 版本行已整行照抄进台账 ⇒ 不红
+    if (fx.archived.code === 0 && fx.archived.out.includes('沿革归档 ✓（换下 1 条版本行，均已归档）')) {
+      console.log('ok   ⑯ L0 换下的版本行已**整行**照抄进台账 ⇒ 不红');
+    } else {
+      bad += 1;
+      console.error(`FAIL ⑯ 已归档却仍红：exit=${fx.archived.code} out=«${clip(fx.archived.out, 220)}»`);
+    }
+  }
+  console.log(bad ? `\nverify-l1-versions --selftest: ${bad} 项失败` : '\nverify-l1-versions --selftest: 全部通过（判据 A 8 项 · 判据 B 6 项 · L0 扩面 4 项 ＝ 18 项）');
   process.exit(bad ? 1 : 0);
 }
 
@@ -275,12 +388,12 @@ function main() {
   try {
     if (allMode) {
       // `--all`：`HEAD` ↔ **工作区**（含未跟踪）——"直接跑"要判的是磁盘现状，不是暂存区。
-      const tracked = git(['diff', '--name-only', '--diff-filter=ACMR', 'HEAD', '--', L1_DIR]);
-      const untracked = git(['ls-files', '--others', '--exclude-standard', '--', L1_DIR]);
+      const tracked = git(['diff', '--name-only', '--diff-filter=ACMR', 'HEAD', '--', ...SURFACE]);
+      const untracked = git(['ls-files', '--others', '--exclude-standard', '--', ...SURFACE]);
       changed = [...tracked.split('\n'), ...untracked.split('\n')]
         .map((s) => s.trim()).filter((s) => s.endsWith('.md'));
     } else {
-      changed = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '--', L1_DIR])
+      changed = git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '--', ...SURFACE])
         .split('\n').map((s) => s.trim()).filter((s) => s.endsWith('.md'));
     }
   } catch (e) {
@@ -292,18 +405,19 @@ function main() {
   const cm = changelogMap();
   if (!cm) process.exit(1);   // 台账读不到＝门禁跑不起来 ⇒ 响亮失败（已在 changelogMap 里打原因）
   if (changed.length === 0) {
-    // 跳过 ≠ 验过（2026-09-25 补）：工作区有 L1 改动就**响亮列出来**，别让人把"跳过"读成"全绿"。
+    // 跳过 ≠ 验过（2026-09-25 补）：工作区有改动就**响亮列出来**，别让人把"跳过"读成"全绿"。
+    // 2026-09-28 扩面后：跳过口径＝「**L0 与 L1 都**无改动」；列出与判据都覆盖两个面。
     let dirty = [];
-    try { dirty = git(['status', '--porcelain', '--', L1_DIR]).split('\n').map((s) => s.trim()).filter(Boolean); }
+    try { dirty = git(['status', '--porcelain', '--', ...SURFACE]).split('\n').map((s) => s.trim()).filter(Boolean); }
     catch { /* git 面已在上游响亮报错 */ }
     if (dirty.length > 0) {
-      console.log(`[verify-l1-versions] ⚠️ 本次提交无 L1 改动（暂存区），但**工作区有 ${dirty.length} 项 L1 改动未被本门禁校验**：`);
+      console.log(`[verify-l1-versions] ⚠️ 本次提交无 L0/L1 改动（暂存区），但**工作区有 ${dirty.length} 项 L0/L1 改动未被本门禁校验**：`);
       for (const d of dirty.slice(0, 10)) console.log('   ' + d);
       console.log('[verify-l1-versions] ⇒ 要校验工作区请跑 `node scripts/verify-l1-versions.mjs --all`（或先 `git add` 走提交口径）');
     } else {
-      console.log('[verify-l1-versions] 本次提交无 L1 改动 → 跳过（工作区亦无 L1 改动）');
+      console.log('[verify-l1-versions] 本次提交无 L0/L1 改动 → 跳过（工作区亦无 L0/L1 改动）');
     }
-    console.log(`[info] 沿革归档面（判据 B）：受管文件 ${cm.map.size} 件（${cm.info}）· 本次无 L1 改动 ⇒ 归档判据**未跑**（跳过，不是「验过」）`);
+    console.log(`[info] 沿革归档面（判据 B）：受管文件 ${cm.map.size} 件（${cm.info}）· 本次无 L0/L1 改动 ⇒ 归档判据**未跑**（跳过，不是「验过」）`);
     if (cm.conflicts.length) console.log(`[info] ⚠️ 段冲突：${cm.conflicts.join('；')}`);
     process.exit(0);
   }
@@ -334,11 +448,11 @@ function main() {
     }
   }
   const parts = [];
-  if (failedVersion) parts.push(`${failedVersion} 个 L1 文件改了正文却没提版本`);
-  if (failedArchive) parts.push(`${failedArchive} 个 L1 文件的旧版本行没搬进沿革台账`);
+  if (failedVersion) parts.push(`${failedVersion} 个 L0/L1 文件改了正文却没提版本`);
+  if (failedArchive) parts.push(`${failedArchive} 个 L0/L1 文件的旧版本行没搬进沿革台账`);
   console.log(parts.length
     ? `\n[verify-l1-versions] ❌ ${parts.join(' / ')}（Ritual §四：版本号 +0.1 + 版本行追加摘要；被换下的旧版本行**整行**追加到对应 changelog）`
-    : `\n[verify-l1-versions] ✅ 通过（${changed.length} 个 L1 改动${warned ? `，${warned} 处仅提示` : ''}）`);
+    : `\n[verify-l1-versions] ✅ 通过（${changed.length} 个 L0/L1 改动${warned ? `，${warned} 处仅提示` : ''}）`);
   // 🔎 自证扫了几个文件（Invariants #14：门禁必须报分母，否则「绿」不可复算）。
   console.log(`[info] 沿革归档面（判据 B）：${cm.info} ⇒ 受管文件 ${cm.map.size} 件 · 本次比对 ${archiveChecked} 件 / 跳过 ${archiveSkipped} 件（HEAD 无此文件 或 未受管）；映射取自「## <文件> 沿革」段`);
   if (cm.conflicts.length) console.log(`[info] ⚠️ 段冲突：${cm.conflicts.join('；')}`);
