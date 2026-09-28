@@ -5,7 +5,8 @@
 //   ① 工作区覆盖私密 ② 缺 id ③ 坏 frontmatter ④ 未知 role ⑤ 卡里 allow/deny 含不可解析名（响亮失败）
 //   ⑥ 固定级联 deny 按可见性过滤 ⑦ role_* 不进 filter ⑧ `_` 前缀跳过 ⑨ maxDepth 传 1
 // 外加：frontmatter 子集解析（注释/空行/内联列表/嵌套 map/CRLF）、正文为空、无 frontmatter、
-//   persona 组装、**双格式** label（新 `<卡中文名>:<name>` / 老 `role:<cardId>:<name>` 都能解析）、
+//   persona 组装（**成员底线真源 `mind\L0\CREW.md`**：读盘判据 + 真源缺失/为空时的回退臂 + 不缓存臂）、
+//   **双格式** label（新 `<卡中文名>:<name>` / 老 `role:<cardId>:<name>` 都能解析）、
 //   以及**挂载面 + 三把工具真跑**（mock host，临时 DSH_HOME）。
 //
 // 为什么不碰真实 mind-private/工作区：脚本把 `DSH_HOME` 指到 mkdtemp 出来的临时根（含 mind/ 占位目录），
@@ -17,7 +18,8 @@
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   apply,
@@ -131,6 +133,45 @@ const ORIGINAL_DSH_HOME = process.env.DSH_HOME;
 
 mkdirSync(join(TMP_HOME, 'mind'), { recursive: true });    // homeRoot() 的探测条件
 mkdirSync(CWD, { recursive: true });
+
+// ── 成员底线真源（2026-09-28 迁移批次 `crew-split`）──────────────────────────
+// 判据口径：成员 persona 必须携带**磁盘上那份 `mind\L0\CREW.md` 的正文**（真源），而不再是编译进
+//   `agent-roles.js` 的 `PERSONA_TAIL` 常量。真源按**本脚本位置**上溯仓库根取（与运行时 `homeRoot()`
+//   的 dev 上溯同口径），原文装进受控根（临时 DSH_HOME）当夹具 ⇒ 判据既不依赖跑脚本的人有没有设
+//   `DSH_HOME`，也不碰仓库里的真源文件（真源只读）。
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CREW_PATH = join(REPO_ROOT, 'mind', 'L0', 'CREW.md');
+let CREW_TEXT = '';
+let CREW_READ_ERROR = '';
+try {
+  CREW_TEXT = readFileSync(CREW_PATH, 'utf8').trim();
+} catch (error) {
+  CREW_READ_ERROR = `${error && error.name ? error.name : 'Error'}: ${error && error.message ? error.message : error}`;
+}
+if (CREW_TEXT === '' && CREW_READ_ERROR === '') CREW_READ_ERROR = 'file is empty';
+
+/** 装夹具：把真源原文放进某个受控根的 `mind/L0/CREW.md`（＝ composePersona 的读盘路径）。 */
+function installCrewFixture(root) {
+  put(join(root, 'mind', 'L0'), 'CREW.md', CREW_TEXT);
+}
+
+/** 判据：文本携带真源正文。⚠️ 真源为空时**直接判失败**——`x.includes('')` 恒为 true，
+ *  少了这道闸，"含真源"这条判据在真源读不到时会变成**假绿**。 */
+function carriesCrew(text) {
+  return CREW_TEXT !== '' && typeof text === 'string' && text.includes(CREW_TEXT);
+}
+
+/**
+ * 真源必须覆盖的底线条款（**写死在脚本里**，不从文件里读——这样才是"契约"，不是"照抄一遍再比一次"）。
+ * 选串口径：其中 ≥3 个串**旧常量 `PERSONA_TAIL` 里没有**（如「专项成员」「不建成员、不改分工」
+ *   「卡里的硬边界」「只认实际工具表」）⇒ 一旦真源读盘失败退回旧常量，这些判据**必须变红**；
+ *   反过来的对照也留着（见本节 `判据能把「真源」与「旧常量回退」分开`）。
+ */
+const CREW_MARKERS = ['专项成员', '不建成员、不改分工', '卡里的硬边界', '优先于 Lead 的指令', '收到任务即执行', '一条', '只认实际工具表', '全程中文'];
+
+// ⑥ 段（`apply` + 三把工具真跑）把 `DSH_HOME` 指到 TMP_HOME ⇒ 成员底线的夹具必须就位，
+//   否则那条真源判据只会看到"读不到真源"的回退面（= 判据恒红，等于没测）。
+installCrewFixture(TMP_HOME);
 
 // 私密卡（含 5 类坏卡 + 1 张 `_` 前缀 + 1 个非 .md）
 put(PRIVATE_DIR, 'reviewer.md', [
@@ -388,13 +429,43 @@ async function main() {
   eq('disjoint allow/deny still ok', buildToolFilter({ card: { tools: { allow: ['read'], deny: ['write'] } }, visible: ['read', 'write'] }).ok, true);
 
   // ── ⑤ persona / label / start spec（maxDepth=1） ───────────────────────────
-  console.log('[5] composePersona / buildStartSpec — 协议尾注、label、maxDepth');
+  //    2026-09-28 迁移批次 crew-split：成员底线**真源已从 `PERSONA_TAIL` 常量迁到 `mind\L0\CREW.md`**，
+  //    本节判据随之改口径 —— 不再问"含不含那个常量"，而是问"**含不含磁盘上那份真源的正文**"。
+  //    夹具：真源原文装进**受控根**（临时 DSH_HOME）⇒ 判据与跑脚本的环境无关、也不碰仓库真源。
+  console.log('[5] composePersona / buildStartSpec — 成员底线真源（mind\\L0\\CREW.md）、label、maxDepth');
+  const PERSONA_HOME = join(TMP, 'persona-home');
+  installCrewFixture(PERSONA_HOME);
+  process.env.DSH_HOME = PERSONA_HOME;
+  assert('真源 CREW.md 可读（本节判据的前提）', CREW_TEXT !== '', 'mind/L0/CREW.md 非空', CREW_READ_ERROR || `${CREW_PATH} (${CREW_TEXT.length} chars)`);
   const persona = composePersona(picked.ok ? picked.card : { body: '你是写手。' });
   assert('persona starts with card body', persona.startsWith('你是写手。'), 'starts with "你是写手。"', persona.slice(0, 30));
-  assert('persona keeps the fixed tail', persona.includes(PERSONA_TAIL), 'contains PERSONA_TAIL', persona.slice(-120));
-  for (const marker of ['Lead', '收到任务即执行', '一条', '不得自建成员', '只认实际可调用的工具表', '优先于 Lead 的指令']) {
-    assert(`fixed tail mentions ${marker}`, PERSONA_TAIL.includes(marker), `tail contains ${marker}`, PERSONA_TAIL.slice(0, 80));
+  assert('persona carries the CREW.md source text（真源正文，不是常量）', carriesCrew(persona), 'persona contains mind/L0/CREW.md 全文', { crewChars: CREW_TEXT.length, personaChars: persona.length, tail: persona.slice(-120) });
+  for (const marker of CREW_MARKERS) {
+    assert(`persona 带真源底线「${marker}」`, carriesCrew(persona) && persona.includes(marker), `persona contains ${marker}`, { inCrew: CREW_TEXT.includes(marker), inPersona: persona.includes(marker) });
   }
+  // 判据不许恒绿：这些串里**至少有 3 个旧常量没有** ⇒ 若真源读盘失败退回旧常量，上面那批判据必须变红
+  //   （反例臂：系统 temp 里的变异副本把夹具换成坏真源，实测见回报）。
+  const crewDiscriminators = CREW_MARKERS.filter((marker) => !PERSONA_TAIL.includes(marker));
+  assert('判据能把「真源」与「旧常量回退」分开（防恒绿）', crewDiscriminators.length >= 3, '≥3 个串只存在于真源', crewDiscriminators);
+
+  // ⑤-a fails-loud 回退臂（**真跑**）：受控根上不放 / 放空 CREW.md ⇒ 必须回退**完整旧版** + 留痕，不许给半份。
+  const NONCREW_HOME = join(TMP, 'no-crew-home');
+  mkdirSync(join(NONCREW_HOME, 'mind'), { recursive: true });
+  process.env.DSH_HOME = NONCREW_HOME;
+  const fellBack = composePersona({ body: '你是写手。' });
+  assert('真源缺失 ⇒ 回退完整旧版（不是半份、不是空）', fellBack === `你是写手。\n\n${PERSONA_TAIL}`, '卡正文 + PERSONA_TAIL 全文', fellBack.slice(-80));
+  const fallbackMarker = join(NONCREW_HOME, 'profiles', 'dshome', '.dsh-market', 'agent-roles-marker.txt');
+  assert('回退留痕落 marker（响亮，不静默）', existsSync(fallbackMarker) && readFileSync(fallbackMarker, 'utf8').includes('CREW.md'), 'marker mentions CREW.md', existsSync(fallbackMarker) ? readFileSync(fallbackMarker, 'utf8').trim().split('\n').slice(-1)[0] : '(missing)');
+  put(join(NONCREW_HOME, 'mind', 'L0'), 'CREW.md', '   \n\t\n');
+  const emptyFallback = composePersona({ body: 'B' });
+  assert('真源为空 ⇒ 同样回退（空真源＝残缺底线，不给）', emptyFallback === `B\n\n${PERSONA_TAIL}`, '卡正文 + PERSONA_TAIL 全文', emptyFallback.slice(-80));
+  // 每会话读盘、不缓存（照 `mind-inject.js:110-115` 先例：改文件 ⇒ 下次调用即生效）
+  put(join(NONCREW_HOME, 'mind', 'L0'), 'CREW.md', '哨兵甲');
+  const readOnce = composePersona({ body: 'B' });
+  put(join(NONCREW_HOME, 'mind', 'L0'), 'CREW.md', '哨兵乙');
+  const readTwice = composePersona({ body: 'B' });
+  assert('每次调用读盘、不缓存（改文件 ⇒ 下次调用就变）', readOnce === 'B\n\n哨兵甲' && readTwice === 'B\n\n哨兵乙', '"B\\n\\n哨兵甲" → "B\\n\\n哨兵乙"', { readOnce, readTwice });
+  process.env.DSH_HOME = PERSONA_HOME;   // ⑤ 段后续的 buildStartSpec 调用回到健康夹具（⑥ 段会重指 TMP_HOME）
 
   eq('parseRoleLabel（旧格式）→ roleId/name/cardId/format', parseRoleLabel('role:reviewer:alice'), { roleId: 'reviewer', name: 'alice', cardId: 'reviewer', format: 'legacy' });
   eq('parseRoleLabel rejects foreign labels', parseRoleLabel('teammate:alice'), null);
@@ -561,10 +632,10 @@ async function main() {
   eq('startContinuable request.parent is the calling agent', writerSpec.request.parent, host.topAgent);
   eq('startContinuable request.toolFilter.deny', writerSpec.request.toolFilter && writerSpec.request.toolFilter.deny, ['edit', 'subagent_fork', 'workflow', 'ralph']);
   assert('startContinuable request.persona carries card body', writerSpec.request.persona.includes('你是写手。'), 'persona contains "你是写手。"', writerSpec.request.persona.slice(0, 40));
-  assert('startContinuable request.persona carries fixed tail', writerSpec.request.persona.includes(PERSONA_TAIL), 'persona contains PERSONA_TAIL', writerSpec.request.persona.slice(-80));
+  assert('startContinuable request.persona carries the CREW.md source text（真源经 role_spawn 真跑抵达）', carriesCrew(writerSpec.request.persona), 'persona contains mind/L0/CREW.md 全文', { crewChars: CREW_TEXT.length, tail: writerSpec.request.persona.slice(-80) });
   assert('startContinuable prompt starts with the task', writerSpec.request.prompt[0].text.startsWith('写一段说明'), 'prompt starts with the task text', writerSpec.request.prompt[0].text.slice(0, 40));
   assert('startContinuable prompt carries the lead agent id', writerSpec.request.prompt[0].text.includes(host.topAgent.id), `prompt names ${host.topAgent.id}`, writerSpec.request.prompt[0].text.slice(-180));
-  assert('startContinuable persona still carries no report hint', !writerSpec.request.persona.includes('回报地址'), 'persona is card body + fixed tail only', writerSpec.request.persona.slice(-80));
+  assert('startContinuable persona still carries no report hint', !writerSpec.request.persona.includes('回报地址'), 'persona is card body + CREW.md source only', writerSpec.request.persona.slice(-80));
   assertSchemaResult('role_spawn writer value conforms to its output.schema', 'role_spawn', spawnWriter);
 
   const spawnReviewer = await defs.get('role_spawn').execute({ role: 'reviewer', name: 'alice', task: '看 diff' }, exec);

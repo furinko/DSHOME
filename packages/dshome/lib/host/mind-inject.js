@@ -194,6 +194,46 @@ export function apply(ctx) {
         if (!isMindConnected(agent?.session?.header?.id)) {
           return decision;
         }
+        // ── v3.3（2026-09-27）**成员会话不注 R0**（成员面分家）：成员底线改走 `mind\L0\CREW.md`
+        //   （经角色卡系统提示段接线），R0 全文只服务顶层会话。判据**只认这一条**：
+        //     `agent?.session?.header?.origin === 'subagent'`
+        //   为什么是它 / 证据：`SessionHeader.origin?: 'subagent'`
+        //     （`@deepseek-ai/dsh-session` lib/types/types.d.ts:81 —— 全文只有这一个取值）；
+        //     写入端**唯一一处**是 `dsh-subagent` 的 `childSessionMeta`
+        //     （lib/types/child-agent.js:121，其注释自陈 "Navigation classification only"），
+        //     该函数被三条创建路径共用（in-process driver lib/index.js:183、
+        //     子代理运行时 lib/index.js:1697、continuation lib/types/continuation.js:162）
+        //     ⇒ 所有 in-process 子会话都带它，而**顶层会话这个字段是缺席的**。
+        //     本仓既有同款判据三处可对照：notify.js:311/368、session-budget.js:293/337、
+        //     mind-mood.js:418；姊妹插件 mind-recall 更早就只注顶层（mind-recall.js:167-171）。
+        //   ⚠️ 下面这些写法**都会把顶层误判成成员 ⇒ 顶层 R0 全灭，而没有任何门禁会红**
+        //      （注入路径照常成功、marker 照写，只是内容是错的）——故**严禁**，改前先读本段：
+        //     · `depth === 0` —— 它判的其实是「深度为 0 的会话」，与「是不是成员」无关：
+        //       顶层 **live 真值可能是 `undefined`**（字段缺席）⇒ `undefined === 0` 为假 = **漏判**；
+        //       而磁盘上的 `0` 是写入端 `delegationDepth: header.delegationDepth ?? 0` 补的
+        //       （dsh-session-persistence-jsonl/lib/index.js:813）⇒ 恢复/续聊来的顶层会话深度是
+        //       数字 0，会被**误判成成员** ⇒ 那批顶层会话 R0 全灭。
+        //       **枪毙手 = verify-host-plugins 场景 11 的「depth:0」臂**（实测：判据换成
+        //       `depth === 0` 后该臂红，而「depth 缺席」臂仍绿 —— 两臂分别盯漏判与误判）。
+        //     · `depth >= 0` / `typeof depth === 'number'` / `Number.isInteger(depth)` ——
+        //       顶层（0）与成员（≥1）都可能是数字深度 ⇒ 这类写法要么恒真（顶层全灭）要么与
+        //       成员面无关，一个都不能用来判「是不是成员」。
+        //     · `origin !== 'primary'` —— 本仓**不存在** `'primary'`（类型里只有 `'subagent'`）；
+        //       顶层是**缺席**（`undefined`）⇒ `undefined !== 'primary'` **恒真** ⇒ 顶层全灭。
+        //     · 「`parentSession` 存在即成员」—— `session/fork` 造的**顶层**会话带
+        //       `parentSession` 却不带委托语义（types.d.ts:70-76：fork 血缘 ≠ 委派）⇒ 误杀顶层。
+        //   位置与顺序：插在「开关」与「surface 复核」之间 —— **只加一条 early return**，
+        //     不打乱既有判定序列（kind → sessionKey → 代次快路径 → 开关 → surface 复核）的语义；
+        //     `origin` 判断是 O(1)，成本可忽略。**不记 state**：成员会话每步都走这一行，既不会
+        //     和顶层共用 state 表，也不存在「记了代次就永不再判」的死角。
+        //     联动注意（**实测绘过，别按印象转述**）：**裸** subagent/workflow/ralph 子会话不走
+        //     角色卡通道（agent-roles 的 role_spawn）⇒ 拿不到 CREW；而 R1 上工召回早已只注顶层
+        //     （mind-recall.js:167-171 用 delegationDepth>0 跳）⇒ 这些子会话从**心智注入主面**
+        //     （R0 身份+纪律 / R1 召回）上彻底清零。**但**「没有任何注入」是不成立的：
+        //     `mind-skill-loader` 带触发词的方法论/工具手册卡片（source form='catalog'，:161-205）
+        //     **没有成员闸**，成员会话照样收到（本次实测：成员桩 1 张、顶层桩 1 张）。
+        //     这是「成员面分家」的既定取舍，不是漏网；要覆盖它们得另开一条注入面。
+        if (agent?.session?.header?.origin === 'subagent') return decision;
         // 换代次（压缩收缩过）⇒ 按 surface 复核：还在场就只补记代次，不在就补注入。
         if (isR0OnSurface(view)) {
           state.set(key, { gen, ever: rec?.ever === true });

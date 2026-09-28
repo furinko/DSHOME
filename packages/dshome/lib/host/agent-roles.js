@@ -26,9 +26,13 @@
 // 不抛穿工具边界（`dispatchToolBody` 虽会兜住 throw，但结构化错误对模型更可读）。
 //
 // 导出纯函数（供 `scripts/verify-agent-roles.mjs` 真断言）：parseCard / discoverCards / selectCard /
-// buildToolFilter / composePersona / renderPolicyText / buildStartSpec / reportHint / roleLabel /
+// buildToolFilter / composePersona / readCrewText / renderPolicyText / buildStartSpec / reportHint / roleLabel /
 // legacyRoleLabel / parseRoleLabel / normalizeTools / normalizeModel / toolFaceOfCard / inlineToolsError。
-// fs 只出现在 discoverCards / saveCardAtomic / writeMarker 里，测试传临时目录即可。
+// fs 只出现在 discoverCards / readCrewText / saveCardAtomic / writeMarker 里，测试传临时目录即可
+// （readCrewText 的根由 `homeRoot()` 定：env `DSH_HOME` 优先 ⇒ 自测把 DSH_HOME 指到临时根即可隔离）。
+//
+// 成员底线真源（2026-09-28 迁移批次 `crew-split`）：`mind\L0\CREW.md` —— `composePersona` 每会话**读盘**
+//   拼进成员 persona，本文件里的 `PERSONA_TAIL` 只作**回退**（详见各自的注释块）。
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -145,7 +149,15 @@ export function isValidMemberName(name) {
 const DEFAULT_TASK = '（初始唤醒）请确认你的角色；等待 Lead 下发任务，收到即执行，完成后用一条消息回报。';
 
 /**
- * 成员协作协议尾注（固定，卡正文不可覆盖）。
+ * 成员协作协议尾注 —— **旧版常量（回退用）**。
+ * ⚠️ **真源已迁 `mind\L0\CREW.md`**（2026-09-28 迁移批次 `crew-split`）：`composePersona` 每次调用
+ *   **读盘**取那份文件的正文；本常量只在**真源读不到／读坏／为空**时兜底（见 `composePersona` 的
+ *   fails-loud 回退）⇒ **不要再往这里加条款**：要改成员底线，改 `mind\L0\CREW.md`（改文件即生效）。
+ * 为什么常量必须留着（不能删）：
+ *   ① 回退面——真源缺失时给"**旧但完整**"的底线，而不是把成员扔进没有底线的状态（残缺底线比旧底线更糟）；
+ *   ② 外部仍引用它——`scripts/verify-agent-roles.mjs` 拿它作**回退值对照**（证明"含真源内容"这条判据
+ *      不是恒绿：真源读不到时必须变红）。
+ * ── 以下为本常量当初的来历（存档）────────────────────────────────────────────
  * 规格七条：身份=Lead 派的成员 / 收到任务即执行 / 完成后一条消息回报 / 不得自建成员、不改分工
  *          / 能力面陈述只认实际工具表 / 卡的硬边界优先于 Lead 指令 / 全程中文。
  * 后两条是 2026-09-23 真机实证加上的（证据即下面两行，**不外引文档**——本文件历史上两处
@@ -822,10 +834,60 @@ export function selectCard(discovery, roleId) {
 // persona 组装
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 卡正文 + 固定协作协议尾注（正文为空时只给尾注，绝不产出空 persona）。 */
+/**
+ * 成员底线**真源**的相对路径（相对仓库根）：`mind\L0\CREW.md`。
+ * 2026-09-28 迁移批次 `crew-split`：成员底线从本文件的 `PERSONA_TAIL` 常量迁到这份文件
+ *   ⇒ 改底线＝改文件（改代码不再是唯一途径），常量退居回退位（见 `PERSONA_TAIL` 头注）。
+ */
+const CREW_REL_PATH = ['mind', 'L0', 'CREW.md'];
+
+/**
+ * 读成员底线真源文本。**每次调用都真读盘、不缓存**（照 `mind-inject.js:110-115` 先例）：
+ *   那边的病灶是"只算一次 ⇒ 整个进程冻结在启动时刻的版本"（当时实测注入的 AGENTS 比磁盘旧一版）。
+ *   成员底线同理：缓存一次就等于在代码里放一份影子副本，**真源被倒挂**（改文件不生效）。
+ * 根口径＝`mind-inject.js:59-63` 的 `repoRoot()`：env `DSH_HOME` 优先（且含 `mind` 目录），
+ *   否则从本文件位置上溯仓库根。本文件已有**同一口径**的 `homeRoot()`（见上，:195-201），直接复用它
+ *   ——**不另造第二套根**（两处根口径漂移 ⇒ 真源认到别的盘/别的 DSHOME 上去了）。
+ * @returns `{ ok:true, text, path }`（text 已 trim 且非空）或 `{ ok:false, reason, path }`；**绝不抛**。
+ */
+export function readCrewText() {
+  const file = join(homeRoot(), ...CREW_REL_PATH);
+  try {
+    if (!existsSync(file)) return { ok: false, reason: 'not found', path: file };
+    const text = readFileSync(file, 'utf8').trim();
+    if (text === '') return { ok: false, reason: 'empty', path: file };
+    return { ok: true, text, path: file };
+  } catch (error) {
+    return { ok: false, reason: describeError(error), path: file };
+  }
+}
+
+/**
+ * 卡正文 + 成员底线（**真源 `mind\L0\CREW.md`，每次调用读盘**；正文为空时只给底线，绝不产出空 persona）。
+ *
+ * **fails-loud 回退**：真源缺失／读失败／内容为空（trim 后）⇒ 回退**旧版完整常量** `PERSONA_TAIL`
+ *   ＋写一条 marker 留痕。为什么是"回退 + 留痕"而不是"抛错"或"给半份"：
+ *   · 抛错：本函数在 fail-open 的 host 插件里被 `role_spawn` 同步调用（:1118），抛出去会毁掉整个起成员动作
+ *     ——底线的缺席不该升级成"起不了成员"；
+ *   · 给半份：**残缺底线比旧底线更糟**（成员带着不完整的契约去干活，而它自己不知道缺了什么）
+ *     ⇒ **宁可给旧的完整版，不可给残缺版**。
+ * 留痕为什么选 marker、不选 `logger.warn`：本函数是纯函数、拿不到 `ctx`（也就没有 logger），
+ *   把 logger 穿进来要改签名 + 全部调用点；而 marker（`agent-roles-marker.txt`）是本文件既有的诊断面、
+ *   `scripts/verify-agent-roles.mjs:581` 已在断言它，且**任何调用路径**（role_spawn / role_send 唤醒 / 自测脚本）
+ *   都落得下（写失败也吞掉，不影响功能）。
+ * 为什么**不**做"每进程只报一次"的闸（原稿做过、已撤）：每次回退都留一行（频率＝起成员的频率，
+ *   marker 自带 20 行环）比"只报第一次"更好用——① 事后能看出"坏了多久/坏了几次"；
+ *   ② 不留模块级可变状态。⚠️ `mind-inject.js:132-139` 那种一次性闸是针对**每步都触发**的事件，本处不适用。
+ */
 export function composePersona(card) {
   const body = card && typeof card.body === 'string' ? card.body.trim() : '';
-  return body === '' ? PERSONA_TAIL : `${body}\n\n${PERSONA_TAIL}`;
+  const crew = readCrewText();
+  let tail = crew.text;
+  if (!crew.ok) {
+    tail = PERSONA_TAIL;
+    writeMarker(`persona#fallback: CREW.md ${crew.reason} → 回退 PERSONA_TAIL 常量 @ ${new Date().toISOString()} (${crew.path})`);
+  }
+  return body === '' ? tail : `${body}\n\n${tail}`;
 }
 
 /** 管控者协议文本（顶层会话可见；与八把工具一一对应）。 */

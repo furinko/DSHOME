@@ -81,11 +81,15 @@ const msgText = (m) => {
  *  `agent.session.surface = { replaceGeneration, nodes }` 与 `agent.session.eventAt(seq)`
  *  （真 Session 上：`surface.replaceGeneration` 只在压缩 replace 时 +1，`eventAt(seq)` 读日志）。
  *  ⚠️ 探针 messages 一律给空数组：判据若还看 messages（v3.1 的死代码路径），场景 4/负例会立刻变红。 */
-function makeSessionProbe({ id = 'verify-probe', gen = 0, nodes = [], events = [], depth = 0 } = {}) {
+function makeSessionProbe({ id = 'verify-probe', gen = 0, nodes = [], events = [], depth = 0, origin } = {}) {
   const log = new Map(events);
   return {
     id,
-    header: { id, delegationDepth: depth, cwd: repoRoot },
+    // 2026-09-27 加 `origin`：成员面判据 = `SessionHeader.origin?: 'subagent'`
+    //   （dsh-session/lib/types/types.d.ts:81）。**不传 = 键缺席**，那正是顶层会话的真形态
+    //   （`dsh-subagent` 的 `childSessionMeta` 只在子会话上写它）—— 所以默认值必须是"没有"，
+    //   而不是 `'primary'`（本仓不存在这个取值，写成它等于给桩塞一个真实世界没有的形态）。
+    header: { id, delegationDepth: depth, cwd: repoRoot, ...(origin === undefined ? {} : { origin }) },
     surface: { replaceGeneration: gen, nodes: [...nodes] },
     eventAt: (seq) => log.get(seq),
     /** 测试用：切换到下一代的 surface（模拟压缩 replace 把注入换出去 / 换回来）。 */
@@ -222,6 +226,47 @@ const EXPECT = {
       const r9b = await run(F, 2);
       const n9b = retMessages(r9b.at(-1)).filter(isR0Msg).length;
       out.push({ name: '场景9 surface 恢复后仍能注入（不是永久停摆）', ok: n9b === 1, detail: `恢复后注入 ${n9b} 条，期望 1` });
+      // ── 2026-09-27 加：**成员面分家**（成员会话不再注 R0；顶层逐字不变）──────────────────
+      // 判据 = `agent?.session?.header?.origin === 'subagent'`（SessionHeader.origin，
+      //   dsh-session/lib/types/types.d.ts:81；写入端唯一处 = dsh-subagent 的 childSessionMeta
+      //   child-agent.js:121）。**两条臂必须同时成立**，缺哪条都会造出假绿：
+      //   ① 成员臂（origin:'subagent'）⇒ 必须 0 条 —— 判据被删/写恒假时会变 1 ⇒ 红
+      //      （这正是改前的行为：成员会话照注 R0）；
+      //   ② 顶层臂（origin 缺席）⇒ 必须 1 条 —— 判据写成恒真时会变 0 ⇒ 红。
+      // ⚠️ 顶层臂**故意混入三种真形态**（见下表），而不是只写一条"origin 缺席"：只测成员臂的话，
+      //   `depth === 0` / `depth >= 0` / `typeof depth === 'number'` / 「parentSession 存在即成员」/
+      //   `origin !== 'primary'` 这五种**把顶层误判成成员**的写法在成员臂上照样绿
+      //   （成员臂要的就是"不注入"）⇒ 顶层 R0 全灭却无门禁报警，正是本组断言存在的唯一理由。
+      const M = makeSessionProbe({ id: 'verify-probe-member', gen: 0, nodes: [], origin: 'subagent' });
+      const r10a = await run(M, 1);
+      const n10a = retMessages(r10a.at(-1)).filter(isR0Msg).length;
+      M.setSurface(1, []); // 成员会话压缩换代次（surface 收缩）→ 仍不许注入
+      const r10b = await run(M, 2);
+      const n10b = retMessages(r10b.at(-1)).filter(isR0Msg).length;
+      out.push({
+        name: "场景10 成员会话（header.origin==='subagent'）⇒ 必须不注入",
+        ok: n10a === 0 && n10b === 0,
+        detail: `首注 ${n10a} 条 / 换代次后 ${n10b} 条，均期望 0（判据缺失或恒假时会变 1）`,
+      });
+      const topShapes = [
+        { id: 'verify-probe-top-live', label: 'depth 键缺席（顶层 live 真值）', mutate: (h) => { delete h.delegationDepth; } },
+        { id: 'verify-probe-top-disk', label: 'depth:0（写入端 ?? 0 补的磁盘形态）', mutate: () => {} },
+        { id: 'verify-probe-top-fork', label: 'depth:0 + parentSession（fork 造的顶层）', mutate: (h) => { h.parentSession = 'verify-fork-parent'; } },
+      ];
+      for (const shape of topShapes) {
+        const T = makeSessionProbe({ id: shape.id, gen: 0, nodes: [] });
+        shape.mutate(T.header);
+        const rT = await run(T, 1);
+        const mT = retMessages(rT.at(-1)).filter(isR0Msg);
+        const text = mT.length === 1 ? msgText(mT[0]) : '';
+        const hasBlockHead = text.includes('【心智系统 · R0 运行宪法（SOUL + AGENTS 全文）】');
+        const hasBothDocs = text.includes('# SOUL.md') && text.includes('# AGENTS.md');
+        out.push({
+          name: `场景11 顶层正对照（${shape.label}）⇒ 必须照旧注入`,
+          ok: mT.length === 1 && hasBlockHead && hasBothDocs,
+          detail: `注入 ${mT.length} 条（期望 1）；块头=${hasBlockHead}、SOUL+AGENTS=${hasBothDocs}；len=${text.length}`,
+        });
+      }
       // 既有「SOUL 先于 AGENTS」顺序契约断言继续作用于**场景 1（首注）**的结果——与旧默认单场景同一读数。
       //   ⚠️ 必须放在所有场景**之后**：runHandlers 每跑一次都会刷新 record.lastDecision。
       record.lastDecision = r1.at(-1)?.ret;
