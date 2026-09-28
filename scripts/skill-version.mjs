@@ -9,6 +9,12 @@
 // 设计（**不动门禁**）：校验仍在 `scripts/mind-validate.mjs`（pre-commit ② 已经在跑，四元不一致即 warn、
 // `--strict` 即拒）。本工具只当**执行器**：按 frontmatter 真源回写那三个镜像。单一职责，避免第二套判据。
 //
+// 2026-09-28 修一处判据缺陷（`l1-slim` 把沿革搬进 changelog 后暴露）：`treeVersion()` 原先按「**第一个**
+// 含 `<id>.md` 的行」取版本 ⇒ Tree.md 自己的头/尾版本行只要在摘要里提到「新登 `xxx.md` X.Y.Z」就会**劫持**
+// 该 Skill 的版本读数。实测后果两向：`--sync` 已把清单行改对、`--check` 仍读版本行里的旧号（永远修不好）；
+// 反过来版本行写新号、清单行落后 ⇒ `--check` 报「一致」＝**假绿**。现只认**技能清单表格行**
+// （`skillRowCells()`），写入侧 `writeMirrors()` 用同一把尺；`--selftest` 补 M/N/O/P 四条反例。
+//
 // 用法：
 //   node scripts/skill-version.mjs --check                  # 只报漂移（读，不写）
 //   node scripts/skill-version.mjs --sync <id>              # 按 frontmatter 回写三个镜像
@@ -50,10 +56,29 @@ function listSkills({ skillDir }) {
     .map((f) => ({ id: basename(f, '.md'), file: join(skillDir, f), rel: f }));
 }
 
-/** Tree.md 行里第 2 格 = 版本。 */
-function treeVersion(treePath, rel) {
+/** Tree.md 的**技能清单表格行**判定（2026-09-28 加）：行去缩进后以 `|` 开头，且**文件名格**去空白/去反引号后
+ *  **恰好等于** `rel`。实测表格形态（`mind\L1\Tree.md` :41-58）：
+ *    `| distillation.md | 1.0.1 | 描述… | 触发关键词 |`
+ *  按 `split('|')` 的下标数：`[0]` 是行首空串 ⇒ **文件名在 `[1]`、版本在 `[2]`**（`[0]` 起数即「第 2 格＝文件名、第 3 格＝版本」）。
+ *  @returns {string[]|null} 该行的分格数组（命中）/ null（不是这个技能的清单行）。 */
+function skillRowCells(line, rel) {
+  if (!String(line).trimStart().startsWith('|')) return null;      // 非表格行一律不认（版本行/正文行即在此被挡掉）
+  const cells = line.split('|');
+  const name = (cells[1] ?? '').trim().replace(/^`+|`+$/g, '');
+  return name === rel ? cells : null;
+}
+
+/** Tree.md 行里**表格行的版本格（`[2]`）** = 版本。
+ *  🔴 为什么必须收紧（2026-09-28 修）：旧判据是 `.find(l => l.includes(rel))` ＝「第一个含 `<id>.md` 的行」，
+ *  于是 Tree.md **自己的头/尾版本行**只要在摘要里出现「新登 `xxx.md` 1.0.1」，就会**抢先命中**，
+ *  读数变成版本行里描述格中第一个像版本的串 ⇒ 两个方向都坏：
+ *   ① `--sync` 改对了清单行、`--check` 仍读版本行里的旧值 ⇒ 门禁卡在「永远不一致」；
+ *   ② 版本行写新号而清单行落后 ⇒ `--check` 报「一致」＝**假绿**。
+ *  同族防护见 `indexVersion()`（只认反引号包住的 id）与 `readmeVersion()`（按第 2 格精确匹配 id）。
+ *  反例（`--selftest` M/N/O/P）：版本行在前带新号 + 清单行旧号 ⇒ 必须读到清单行的旧号。 */
+export function treeVersion(treePath, rel) {
   if (!existsSync(treePath)) return null;
-  const line = readFileSync(treePath, 'utf8').split('\n').find((l) => l.includes(rel));
+  const line = readFileSync(treePath, 'utf8').split('\n').find((l) => skillRowCells(l, rel));
   if (!line) return null;
   return ((line.split('|')[2] || '').match(VER) || [])[0] || null;
 }
@@ -126,7 +151,9 @@ function writeMirrors(root, s, ver, { footer = true } = {}) {
     const lines = readFileSync(p.tree, 'utf8').split('\n');
     let hit = false;
     const out = lines.map((l) => {
-      if (hit || !l.includes(s.rel)) return l;
+      // 与 `treeVersion()` 共用同一判据（只认清单表格行）——读的口径与写的口径必须同一把尺，
+      // 否则会出现「写进了版本行、读的却是清单行」这类**永不收敛**的错位。
+      if (hit || !skillRowCells(l, s.rel)) return l;
       const cells = l.split('|');
       if (cells.length < 4) return l;
       const old = (cells[2] || '').trim();
@@ -265,6 +292,37 @@ function selftest() {
     assert(check(root).length === 1, 'J README 版本打坏 → check 变红（第 5 元真在生效）');
     sync(root, 'fake-skill');
     assert(check(root).length === 0, 'K --sync 后五元复一致');
+    // 反证 6（2026-09-28 加）：Tree.md 的**版本行**（非表格行）先提到 `fake-skill.md` 且带**新**号，
+    //   清单表格行是**旧**号 ⇒ 必须读到清单行的旧号、check 必须红。夹具刻意复刻真机形态
+    //   （Tree.md 头版本行摘要里写「Skill 清单新登 `xxx.md` X.Y.Z」）。
+    //   ⚠️ 这两条必须成对：先证明「旧写法真会被劫持」（否则反例是空打），再证明新写法不中招。
+    const treeTrap = [
+      '> 版本：3.0.0 | 2026-01-01 | Skill 清单新登 `fake-skill.md` 3.0.0（摘要里刻意带 .md 与版本号）',
+      '',
+      '| 文件 | 版本 | 描述 | 触发 |',
+      '|---|---|---|---|',
+      '| fake-skill.md | 0.9.9 | 假技能 | 无 |',
+      '',
+    ].join('\n');
+    writeFileSync(join(root, 'mind', 'L1', 'Tree.md'), treeTrap, 'utf8');
+    const trapLine = treeTrap.split('\n').find((l) => l.includes('fake-skill.md'));   // ← 旧判据的取行方式
+    const trapVer = ((trapLine.split('|')[2] || '').match(/\d+\.\d+(?:\.\d+)?/) || [])[0] || null;
+    assert(trapVer === '3.0.0', 'M 反例夹具**真的**能劫持旧判据（旧写法在这行读到 3.0.0，而非清单行的 0.9.9）');
+    assert(treeVersion(join(root, 'mind', 'L1', 'Tree.md'), 'fake-skill.md') === '0.9.9',
+      'N treeVersion 只认清单表格行（读到 0.9.9；版本行带的新号劫持失败）');
+    assert(check(root).length === 1, 'O 版本行新号 + 清单行旧号 → check 变红（旧写法在此**假绿**：五元会被读成全是 3.0.0）');
+    // 反例 7：正常形态（清单表格行在前、版本行在后）⇒ 读到表格行版本，不红。
+    writeFileSync(join(root, 'mind', 'L1', 'Tree.md'), [
+      '| 文件 | 版本 | 描述 | 触发 |',
+      '|---|---|---|---|',
+      '| fake-skill.md | 3.0.0 | 假技能 | 无 |',
+      '',
+      '> 版本：3.0.0 | 2026-01-01 | 清单行在前、版本行在后（正常形态）',
+      '',
+    ].join('\n'), 'utf8');
+    assert(treeVersion(join(root, 'mind', 'L1', 'Tree.md'), 'fake-skill.md') === '3.0.0' && check(root).length === 0,
+      'P 表格行在前、版本行在后 → 读到表格行版本（3.0.0），check 不红');
+    // 反证 5 续（放在本条之后跑：它把 README 行删空 ⇒ 之后 check 必因第 5 元报红，会污染 Tree 面的断言）
     writeFileSync(join(dir, 'README.md'), '| 技能 | 版本 | 描述 |\n|---|---|---|\n', 'utf8');
     assert(check(root).length === 1, 'L README 缺该技能行 → check 变红（"漏登"不许放过）');
     // 反证 3：真源缺失 → 拒绝回写
@@ -288,8 +346,15 @@ function main() {
   const root = ri === -1 ? undefined : args[ri + 1];
   if (args.includes('--selftest')) process.exit(selftest() ? 0 : 1);
   if (args.includes('--check')) {
+    // 🔴 零输入不许报绿（Invariants #14 / verify-integrity：「无输入即响亮失败」）：目录不存在或读不到 Skill
+    //    时必须响亮失败——否则 `--root` 打错、树缺失时会印出「五元一致 ✅」＝**假绿**。
+    const skills = listSkills(paths(root));
+    if (skills.length === 0) {
+      console.error(`skill-version: ❌ 扫到 0 个 Skill（目录 ${paths(root).skillDir}）—— 零输入不构成「一致」，拒绝报绿；请核对 --root / DSH_HOME`);
+      process.exit(1);
+    }
     const drift = check(root);
-    if (!drift.length) { console.log('skill-version: 全部 Skill 版本**五元**一致 ✅（frontmatter · 文件尾 · Tree · _index · README）'); process.exit(0); }
+    if (!drift.length) { console.log(`skill-version: 全部 Skill 版本**五元**一致 ✅（frontmatter · 文件尾 · Tree · _index · README）｜实扫 ${skills.length} 个 Skill`); process.exit(0); }
     for (const d of drift) console.error(`  ❌ ${d.id}: frontmatter=${d.fm || '无'} 文件尾=${d.foot || '无'} Tree=${d.tree || '无'} _index=${d.index || '无'} README=${d.readme || '缺行'}`);
     console.error(`skill-version: ${drift.length} 个 Skill 漂移（用 --sync <id> 或 --bump <id> <x.y.z> 修）`);
     process.exit(1);
