@@ -7,7 +7,7 @@
 
 | 层 | 回答 | 内容 |
 |---|---|---|
-| L0 | 我是谁？怎么活？ | SOUL（人格）+ AGENTS（纪律）+ TOOL（工具） |
+| L0 | 我是谁？怎么活？ | SOUL（人格）+ AGENTS（纪律）+ TOOL（工具）+ CREW（成员底线·**从属参考、非宪法级**；L0 四件，见 `L1\Tree.md`） |
 | L1 | 能做什么？怎么做？怎么存？ | HUB（中枢·运行时总纲）+ Wisdom（思维）+ Tree（索引）+ Power（能力手册）+ Memory（归档规则）+ Learn（痕迹）+ Dream（灵感）+ Ritual（行为规程）+ Invariants（确定性内核）+ Concepts（契约）+ Design-Philosophy（生长哲学） |
 | L2 | 某类问题怎么解决？ | Skill（方法论）+ Exp（工具手册） |
 | L3 | 踩过的坑去哪查？被替代的去了哪？ | `common`（通用结晶）+ `projects`（项目记忆 + `知识\<主题>\`）+ `history`（时间胶囊）——三区**物理隔离**，见 `L1\Memory.md` §一/§十 |
@@ -33,6 +33,8 @@
 
 所有 L2 Skill/Exp 与 L3 记忆文件带头部元数据（机器可识别，支撑导入协议）：
 
+> ⚠️ **完整规范以 `mind\L1\Power.md` §四 为准**（本处只给形状，别当第二份真源）。**`contract` 是 L2 必填**——`triggers` 就是**机器触发来源**（skill-loader 按 `contract.triggers` 匹配），**漏了 `contract` 的 Skill 永远不会被触发**（2026-09-28 校正：原模板缺该块）。
+
 ```yaml
 ---
 name: 条目名
@@ -40,6 +42,12 @@ description: 一句话摘要
 version: 1.0.0
 author: 来源（DSHOME / 其他设备 / 导入）
 license: internal | MIT
+contract:
+  id: 技能id
+  triggers: [触发该技能的关键词]   # 机器触发来源（加载器按此匹配）
+  inputs: 输入
+  outputs: 输出
+  deps: 依赖
 metadata:
   tags: [关键词触发]
   related: [关联的 skill/记忆/文档]   # 知识网络链路

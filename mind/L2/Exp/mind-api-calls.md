@@ -1,7 +1,7 @@
 ---
 name: mind-api-calls
 description: 用脚本直打心智 HTTP API（`/api/mind/*`）的三条硬口径——① 必须带 `Sec-Fetch-Site: same-origin`（否则 403）② body 必须显式 UTF-8 字节（传字符串会把中文**静默**变 `?`，接口仍返 200）③ 写完必须**回读校验**。触发：打API / Invoke-RestMethod / api/mind / 心智API / 中文变问号 / body编码 / 回读校验 / cron任务API / CSRF / 403 forbidden。
-version: 1.0.1
+version: 1.0.2
 author: DSHOME
 license: internal
 contract:
@@ -74,3 +74,7 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:3099/api/mind/cron/add' -Headers $h -Me
 - 私有区 Exp「读文本 / 比较文件的操作口径」（**私有区**，按标题引用）—— **读侧**同族：`Get-Content` 默认 ANSI ⇒ 中文乱码 + 私有全文上屏；本条目是它的**写侧姊妹**
 - 本机 `Learn.md` 2026-09-11「探针要对被测资产零风险」及其 2026-09-24 补记（**私有区**，按标题引用）—— 上面那条事故链的原始记录与四条动作
 - 该「`/api/mind/cron/run` 绕过串行闸 + 该会话不进台账」缺口**已于 2026-09-28 修**（改走 `cron.trigger(task,'panel-run')`，形状见上「已实测的路由形状」）；当时挂在私有区项目档的那条待办已随之办结
+
+---
+
+_版本：1.0.2 | 2026-09-28 | 补齐**缺失的文件尾版本行**（依据 `mind\L1\Power.md` §四「文件头版本与文件尾版本一致」；`Exp\README.md` 1.3→1.4 · `Tree.md` 1.45→1.46 同批同步）——**正文零改动** | 1.0.1 | 2026-09-28 | `/api/mind/cron/run` 改走串行闸（`cron.trigger`，返回 `{ok,mode,…}`）+ 该会话**会进** `cron-runs.jsonl` 台账 | 1.0.0 | 2026-09-24 | 由私有区**提升**、去敏改写为固定四章_

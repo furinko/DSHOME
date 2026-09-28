@@ -1,6 +1,6 @@
 # Tree.md — 知识网络血管（全目录）
 
-> 版本：1.45 | 2026-09-28 | Exp 清单行同步：`mind-api-calls` 1.0.0→**1.0.1**（`/api/mind/cron/run` 改走串行闸 ⇒ 返回 `{ok,mode,…}` + 该会话**会进** `cron-runs.jsonl` 台账；病灶 232 的文档面收口）| 历史沿革见 mind\L1\changelog-L1.md
+> 版本：1.46 | 2026-09-28 | Exp 清单行同步：`mind-api-calls` 1.0.1→**1.0.2**（补齐该 Exp **缺失的文件尾版本行**，依据 `Power.md` §四「文件头版本与文件尾版本一致」；正文零改动）| 历史沿革见 mind\L1\changelog-L1.md
 > 加载：按需层——上工由 R1 召回带层骨架速览；完整目录按需 read（查"X 在哪"→ 本文件定位 → grep/read 目标）
 > 定位：L1 循环系统——全知识网络目录，AI 友好表格化。"有什么"的一键查询。
 
@@ -59,7 +59,7 @@
 ### Exp 清单（工具手册）
 | 文件 | 版本 | 描述 | 触发关键词 |
 |---|---|---|---|
-| `mind-api-calls.md` | 1.0.1 | 用脚本直打心智 HTTP API（`/api/mind/*`）的三条硬口径：CSRF 头 `Sec-Fetch-Site: same-origin` · body 必须 **UTF-8 字节**（字符串 body 会把中文**静默**变 `?`、接口仍返 200） · 写完**回读校验**；附已实测路由形状 + 「`cron/run` 会真拉一个 agent」的边界（2026-09-24 由私有区**提升**、去敏改写为固定四章；1.0.1：`cron/run` 改走串行闸 ⇒ 返回形状 `{ok,mode,…}` + 会话**会进**台账） | 打API · Invoke-RestMethod · api/mind · 心智API · 中文变问号 · body编码 · 回读校验 · CSRF · 403 |
+| `mind-api-calls.md` | 1.0.2 | 用脚本直打心智 HTTP API（`/api/mind/*`）的三条硬口径：CSRF 头 `Sec-Fetch-Site: same-origin` · body 必须 **UTF-8 字节**（字符串 body 会把中文**静默**变 `?`、接口仍返 200） · 写完**回读校验**；附已实测路由形状 + 「`cron/run` 会真拉一个 agent」的边界（2026-09-24 由私有区**提升**、去敏改写为固定四章；1.0.2：补齐文件尾版本行、正文零改动；1.0.1：`cron/run` 改走串行闸 ⇒ 返回形状 `{ok,mode,…}` + 会话**会进**台账） | 打API · Invoke-RestMethod · api/mind · 心智API · 中文变问号 · body编码 · 回读校验 · CSRF · 403 |
 
 ## L3 — 记忆层（mind-private\L3\，隐私）
 
@@ -90,4 +90,4 @@
 
 ---
 
-_版本：1.45 | 2026-09-28 | Exp 清单行同步：`mind-api-calls` 1.0.0→**1.0.1**（`/api/mind/cron/run` 改走串行闸 + 该会话**会进** `cron-runs.jsonl` 台账；病灶 232 的文档面收口）_
+_版本：1.46 | 2026-09-28 | Exp 清单行同步：`mind-api-calls` 1.0.1→**1.0.2**（补齐该 Exp 缺失的文件尾版本行，正文零改动）| 1.45 | 2026-09-28 | Exp 清单行同步：`mind-api-calls` 1.0.0→**1.0.1**（`/api/mind/cron/run` 改走串行闸 + 该会话**会进** `cron-runs.jsonl` 台账；病灶 232 的文档面收口）_
