@@ -81,14 +81,22 @@ for (const [spec, name, why, fallbackFile] of OPTIONAL_EXPORTS) {
 
 // ── §B 槽位名：我们注册的 slot 是否还存在于官方 UI 包 ──────────────────────
 // 槽位名归官方 UI 包所有。改名 = 我们的界面块**静默消失**（注册不报错，只是挂不上）。
+// 2026-09-28 补 3 条（升级评估挖出的**盲区**）：本仓**真在用**、此前却不在本名单里的槽 ——
+//   `conversation.input.dock`（`dshome-input/lib/client.js:440`，同 id `queue` + priority −1 **影子遮蔽**官方条目）、
+//   `conversation.input.right`（`dshome-quick-phrases/lib/client.js:675`）、
+//   `tool.call.toolview`（`imagegen-plugin/lib/client.js:1074`，keyed slot · key=`generate_image`）。
+//   漏登记的代价＝真失配时**门禁全绿**（静默少一块界面）；补完在**当前 0.1.5-rc.2** 上应仍全绿。
 const NEEDED_SLOTS = [
   ['conversation.view', 'dshome-mind 心智面板 / 定时面板'],
   ['conversation.input.left', 'dshome-mind「接入心智」开关'],
+  ['conversation.input.right', 'dshome-quick-phrases「短语」按钮'],
+  ['conversation.input.dock', 'dshome-input 三档输入队列（影子遮蔽官方 queue）'],
   ['settings.general.item', 'dshome-assistant-identity 设置两行'],
   ['sidebar.footer.action', 'dshome-plugin-center 插件中心入口'],
   ['sidebar.brand.mark', 'dshome-theme 品牌标记'],
   ['sidebar.brand.name', 'dshome-theme 品牌名'],
   ['conversation.hero.brand.mark', 'dshome-theme 首屏品牌标记'],
+  ['tool.call.toolview', 'imagegen-plugin 生图工具专属渲染行（keyed slot）'],
 ];
 
 /** 在全部官方 client UI 包里找某个字符串（返回命中的包名列表）。 */
