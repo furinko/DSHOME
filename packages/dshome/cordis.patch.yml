@@ -57,6 +57,10 @@
     # 与 mind-inject 职责互补：inject 管静态纪律摘要，recall 管动态记忆召回；空机优雅降级。
     - id: dshome-mind-recall
       name: dshome/mind-recall
+    # dshome-mind-mood（host）：情绪状态注入——每轮第一步注入一条「当前情绪 + 客观成因」，
+    # 只影响语气不影响判断；状态存 sessionProjections（跨重启恢复），压缩遮蔽后自愈补注。
+    - id: dshome-mind-mood
+      name: dshome/mind-mood
     # dshome-mind-connect（host）：「接入心智」每会话开关——per-session 记忆 + /api/mind/connect
     # 读写；mind-inject/recall 在决策点前查 isMindConnected(sessionId)，关闭则跳过注入。
     # 与 inject(纪律)/recall(记忆) 互补：本插件只管「要不要」，fails-open（默认接入）。
