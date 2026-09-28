@@ -49,8 +49,10 @@ const SAFE = new Set([
   'scripts/verify-boot-recall.mjs',
   'scripts/verify-guard-decisions.mjs',
   'scripts/verify-host-plugins.mjs',
-  // 2026-09-23 加：自建角色 agent 的 143 条断言（无参可跑 · 只用临时目录 · PASS 退出 0 / FAIL 退出 1）
+  // 2026-09-23 加：自建角色 agent 的断言套件（无参可跑 · 只用临时目录 · PASS 退出 0 / FAIL 退出 1）
   // ⇒ 挂白名单让每次提交都真跑一次；不挂的话它谁也不在链上（= 测试写了没人跑）。
+  // ⚠️ 条数（2026-09-28 实测 `PASS 304/304`）：本注释原写"143 条"，是建当时的旧读数、后来一直没人动过
+  // ⇒ 典型的文档漂移。套件条数会随插件注册面 / 序列化面增长，**别把条数当判据写死**；要写就带实测日期。
   'scripts/verify-agent-roles.mjs',
   // 2026-09-25 加：角色卡「自动调优」闭环的三把工具（list/read/write）端到端断言——正例 + 6 类反例
   // （乐观锁过期 / id 不一致 / 新文本不可解析 / 缺 reason / 卡不存在 / 台账写不进去必须拒绝改动）+ 不污染本机。

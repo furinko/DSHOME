@@ -195,14 +195,22 @@ function buildGraph(project) {
   const scoped = pj && !/[/\\]/.test(pj);
   const files = all.filter((f) => {
     if (f.rel.startsWith('tasks/evolution/snapshots/')) return false;
-    // TRASH 归档快照（2026-09-27）：`TRASH/` 下 basename 带 `__` 归档戳的副本 = 「同一份文档的历史版本」，
-    // 与上面 snapshots 同族（归档副本、非活内容）——进图谱只会造出假节点与假边：同名卡占满 label 去重组、
-    // 显式 related 指向活文件时连出来的全是「副本↔活文件」的假边；且它们是图谱体积的大头。
+    // TRASH 归档快照（2026-09-27 建 · 2026-09-28 修判据口径）：`TRASH/` 下带归档戳（`__`）的副本 = 「同一份
+    // 文档的历史版本」，与上面 snapshots 同族（归档副本、非活内容）——进图谱只会造出假节点与假边：同名卡
+    // 占满 label 去重组、显式 related 指向活文件时连出来的全是「副本↔活文件」的假边；且它们是图谱体积的大头。
     // 实测读数（活进程 `GET /api/mind/graph`，改动前）：320 节点 / 131 边，其中 TRASH 层 232 个（72%），
     // 响应体 135KB，后端 199~266ms。离线基准（与后端同语义）：320 节点 / 读 4.36MB / 47ms
     // ⇒ 排除后 91 节点 / 0.86MB / 10ms（`mind-private\TRASH\` 234 个 .md 里 229 个是这种副本）。
-    // 只排「快照副本」：TRASH 下的真回收件（无 `__`）保持照常进图。
-    if (f.rel.startsWith('TRASH/') && path.basename(f.rel).includes('__')) return false;
+    // ⚠️ 戳落在**哪一段不拘**：文件级 `TRASH/<戳>__<原名>.md` 与目录级 `TRASH/<戳>__<目录名>/…` 是**同义形态**
+    // （同一套归档命名法，只是一个戳在 basename、一个在目录段）。旧判据只看 `path.basename(f.rel)` ⇒ 目录级
+    // 副本整棵漏网（那些文件的 basename 干干净净）：2026-09-28 实测两个目录级戳目录共 **25 个 .md 全部进图**，
+    // 其中 14 个 basename 无戳、按旧口径被算成"真回收件"（图谱 TRASH 层 26 节点里 14 个是本该排掉的副本），
+    // 并在真树上造出 4 组「活档 ↔ 目录级副本」重名组（活档 `L3/common/<主题>/<文件>` ↔ 副本
+    // `TRASH/<戳>__<归档目录>/知识/<主题>/<文件>`：兜底去重贴的父目录名与区名都相同 ⇒ 糊不开）。
+    // ⇒ 判据改为看 **rel 的任一段**是否带 `__`（目录级戳同样算归档戳）。
+    // 只排「快照副本」：TRASH 下的真回收件（rel 各段都不含 `__`，例 `TRASH/2026-09-12_退役记录_回收件.md`、
+    // 单下划线目录 `TRASH/2026-09-11_docs-archive-soul_…/`）保持照常进图——不许放宽成"TRASH 整层排掉"。
+    if (f.rel.startsWith('TRASH/') && f.rel.split('/').some((s) => s.includes('__'))) return false;
     if (!scoped) return true;
     if (f.zone === 'factory') return true;
     if (!f.rel.startsWith('L3/projects/')) return true; // 非项目记忆（含私有 L0-L2 底座/common 等）全留

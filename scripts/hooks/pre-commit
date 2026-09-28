@@ -115,9 +115,21 @@ HINDSIGHT_NO_METRICS=1 node scripts/search-regression.mjs --layer=factory
 #      · verify-pin-vs-installed —— profile 精确 pin ↔ node_modules 实体（治"git 同步了、依赖没同步"）。
 #      · verify-boot-recall —— 上工召回注入链存在性（行为验收另跑 `mind-boot-recall-itest.mjs`）。
 #      · verify-shell-readiness / verify-shell-autostart —— 外壳两道（就绪判据 / 开机自启登记口径，2026-09-17 建）。
+#      · verify-mind-panel-labels（2026-09-28 加）—— 心智面板「卡名可区分性」：同主题多篇记忆 / 同文档多份
+#        快照**不得撞在同一卡名上**（主人 2026-09-26 反馈"卡片辨识度太低"的机器件）。**为什么必须直挂**：
+#        它是**活数据不变式**——抓手一半在活树（真仓库 `mind-private/L3` + `TRASH` 的目录形态）、一半在被测
+#        lib 的过滤链（`buildGraph()`），而这两处变化**都不会让它自己上链**：它虽在 ⑥「真跑冒烟」的 SAFE
+#        白名单里，但 ⑥ 默认只跑**暂存区里的**脚本 ⇒ 只改 lib、或往 TRASH 扔一个带戳目录的提交里它**永不执行**。
+#        代价当天就发生过：`TRASH/<戳>__<目录名>/…` 这种**目录级归档戳**副本漏网（凡 basename 干净的都进图），
+#        真树 179 节点里 14 个是本该排掉的副本、4 组「活档 ↔ 目录级副本」重名组，而 pre-commit **全绿放行**
+#        （同型第 N 次：⑮⑯⑰⑱ 都栽在"挂进白名单被当成挂上链"）。
+#        直挂依据：无参＝**只读**（临时夹具 + 真树真加载读数，真仓库零触碰）· 语义化退出码 PASS 0 / FAIL 1 ·
+#        `--self-test` 另有 4 组注入变异反证（要求"退出 1 且红在预期断言"，含 M4＝把 TRASH 过滤判据还原成
+#        旧的 basename 口径 ⇒ 目录级副本那一臂必红）。
 node scripts/verify-upstream-contract.mjs
 node scripts/verify-l1-versions.mjs
 node scripts/verify-pin-vs-installed.mjs
+node scripts/verify-mind-panel-labels.mjs
 node scripts/verify-boot-recall.mjs
 node scripts/verify-shell-readiness.mjs
 node scripts/verify-shell-autostart.mjs

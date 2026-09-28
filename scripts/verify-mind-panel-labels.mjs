@@ -19,6 +19,12 @@
 //    图谱**（`buildGraph()` 过滤链新增一行，与 `tasks/evolution/snapshots/` 同族；实测 320→91 节点）。
 //    ⇒ 夹具里那两个快照文件改为断言「图谱里取不到节点」，并**另加一个非快照 TRASH 回收件**断言
 //    「仍在图 且 卡名 == 整条 basename」——原「TRASH 卡名规则」的覆盖不因语义改动而丢。
+// 3c. 归档戳的**同义形态**（2026-09-28 加）：文件级 `TRASH/<戳>__<原名>.md` 与目录级
+//    `TRASH/<戳>__<目录名>/…` 用的是同一套归档命名法（戳落在 basename 还是目录段而已）——旧判据
+//    只看 basename ⇒ 目录级副本整棵进图（2026-09-28 真树实测：14 个 basename 干净的副本混在 TRASH 层，
+//    并造出 4 组「活档 ↔ 目录级副本」重名组）。⇒ 夹具专造这一对「目录级戳目录里的文件 + 同名活档」，
+//    断言**副本不进图 / 活档仍在图 / 重名组为 0**；旧判据下这一臂必红（`--self-test` 的 M4 机器化之）。
+//    ⚠️ 与 3b 合起来钉住"只排副本、不排整层"：目录级戳排掉、无戳真回收件照常进图，两边都不许松。
 // 4. 夹具 **L0/L1/L2/角色卡 == 原 frontmatter name**（改动不得波及不重名的层）。
 // 5. 夹具 + **真实仓库树**：重名卡组数为 0（活数据回归）。
 // 6. 真树：搜索面仍以 `rel` 带主题目录（不能为改卡名把主题分组吃掉）。
@@ -26,11 +32,13 @@
 //
 // ── 反证（**应当变红**）────────────────────────────────────────────────────
 // 内建 `--self-test`（**迭代式**）：驱动器把被测模块复制进临时夹具，再 spawn **副本门禁自己**
-// （`--expect-mutant`）⇒ 副本读变异计划、把变异行插进自己那棵树的 `fileNameStem` 后正常跑判据。
+// （`--expect-mutant`）⇒ 副本读变异计划、把变异行插进自己那棵树的被测模块后正常跑判据。变异锚点两类：
+// `fileNameStem` 里的活档 return（M1~M3）、TRASH 过滤行本身（M4，计划里用 `anchor: 'filter'` 指定）。
 // 要求 **退出 1 且失败断言名恰好命中预期**（"随便红了就行"不算，`status` 与 `FAIL 行`同判）：
 //   M1 活档卡名不擦日期（还原"文件名裸用"）      ⇒ 「夹具：L3 记忆卡名 == 文件名（非主题名）」变红
 //   M2 卡名恒等主题目录名（还原 L3 旧规则）        ⇒ 「夹具：L3 记忆卡名 == 文件名（非主题名）」变红
 //   M3 卡名恒等正文标题（旧规则的正文半边）        ⇒ 「夹具：重名组 = 0」变红
+//   M4 TRASH 过滤只看 basename（还原目录级副本漏网）⇒ 「夹具：TRASH 目录级归档戳目录里的文件不进图」变红
 // 反证与判据共用同一段代码、单一来源 ⇒ 不存在"另一份会过期的断言表"。真仓库零触碰。
 // 跑法：`node scripts/verify-mind-panel-labels.mjs --self-test`
 //
@@ -150,6 +158,14 @@ function addFixtureFiles(root) {
   // ③b TRASH 下的**真回收件**（basename 不含 `__`）：只排副本、不排整层 ⇒ 它必须照旧进图。
   //     正文标题故意与文件名不同 ⇒ 卡名规则一旦退回"正文标题/主题目录名"，下面的等值断言立刻红。
   w('mind-private/TRASH/2026-09-12_退役记录_回收件.md', '# 退役记录：正文标题\n');
+  // ③c TRASH **目录级**归档戳（2026-09-28 加，**同义形态**）：`TRASH/<戳>__<归档目录>/…` 里的文件
+  //     basename **干干净净**（一个 `__` 都没有）——旧判据只看 `path.basename` ⇒ 整目录副本照旧进图，
+  //     与活档撞成重名组（真树形态：`L3/common/<主题>/<文件>` ↔ `TRASH/<戳>__<归档目录>/知识/<主题>/<文件>`，
+  //     父目录名与区名都相同 ⇒ 兜底去重贴的 ` · <父目录> · <区名>` 一模一样，**糊不开**）。
+  //     ⚠️ 这一对就是把 A（TRASH 过滤改看 rel 任一段）退化成旧判据时**必须变红**的那一臂：夹具臂
+  //     「目录级归档戳目录里的文件不进图」+「重名组 = 0」同时红（反证见 `--self-test` 的 M4）。
+  w('mind-private/L3/common/某主题/SKILL.md', '---\ntopic: 某主题\n---\n# 活档：正文标题\n');
+  w('mind-private/TRASH/2026-09-14T10-00-00__某归档目录/知识/某主题/SKILL.md', '---\ntopic: 某主题\n---\n# 活档：正文标题\n');
   // ④ 跨区同 rel（出厂 + 私有各一份，正是本机 L1/Learn.md、L1/Dream.md 的形态；区后缀必须生效）
   w('mind/L3/common/某主题/2026-09-06_戊篇_出厂版.md', '---\nname: 同 rel 出厂档\n---\n');
   w('mind-private/L3/common/某主题/2026-09-06_戊篇_出厂版.md', '---\nname: 同 rel 出厂档\n---\n');
@@ -174,12 +190,23 @@ const SELF_TEST_PLAN = path.join(repoRoot, 'tests', 'self-test-mutation.json');
 // 变异锚点＝`fileNameStem` 里那条**活档** return。插入点必须让变异**在 return 之前**执行才有行为；
 // （实测 2026-09-26：把变异行插在文件末尾是**死代码**——子进程照样全绿，"变异"成了摆设。）
 const MUTANT_ANCHOR = /return base\.replace\(\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}_\/, ''\);/;
+// 第二类锚点（2026-09-28 加）：**TRASH 过滤行本身**——它不在 `fileNameStem` 里，故计划用 `anchor: 'filter'`
+// 显式指定，走的仍是同一套「副本自证」机制（M4 用它把判据还原成"只看 basename"）。锚点写死成被测行原文
+// ⇒ 那行被改写时子进程**响亮抛错**（不静默退化成"变异没注入也照样绿"）。
+const FILTER_ANCHOR = "if (f.rel.startsWith('TRASH/') && f.rel.split('/').some((s) => s.includes('__'))) return false;";
 if (process.argv.includes('--expect-mutant')) {
   const plan = JSON.parse(fs.readFileSync(SELF_TEST_PLAN, 'utf8'));
-  const src = fs.readFileSync(path.join(repoRoot, entryRel), 'utf8');
-  if (!MUTANT_ANCHOR.test(src)) throw new Error(`反证锚点不存在（改坏了 fileNameStem？）：${MUTANT_ANCHOR}`);
-  const replaced = src.replace(MUTANT_ANCHOR, `${plan.mutantLine}\n  return base;`);
-  fs.writeFileSync(path.join(repoRoot, entryRel), replaced, 'utf8');
+  const entryPath = path.join(repoRoot, entryRel);
+  const src = fs.readFileSync(entryPath, 'utf8');
+  let replaced;
+  if (plan.anchor === 'filter') {
+    if (!src.includes(FILTER_ANCHOR)) throw new Error(`反证锚点不存在（TRASH 过滤行被改写？）：${FILTER_ANCHOR}`);
+    replaced = src.replace(FILTER_ANCHOR, plan.mutantLine);
+  } else {
+    if (!MUTANT_ANCHOR.test(src)) throw new Error(`反证锚点不存在（改坏了 fileNameStem？）：${MUTANT_ANCHOR}`);
+    replaced = src.replace(MUTANT_ANCHOR, `${plan.mutantLine}\n  return base;`);
+  }
+  fs.writeFileSync(entryPath, replaced, 'utf8');
   console.log(`  [self-test] 变异已注入：${plan.name}（子进程自证：必须红在「${plan.expectFail}」）`);
 }
 
@@ -231,6 +258,13 @@ try {
     assert('夹具：非快照 TRASH 回收件仍在图，卡名 == 整条 basename',
       keptTrash.length === 1 && keptTrash[0] === '2026-09-12_退役记录_回收件',
       '1 张卡且卡名 2026-09-12_退役记录_回收件', keptTrash);
+    // ③c TRASH **目录级**归档戳（2026-09-28 加）：归档戳是"文件级 / 目录级"**同义形态**，判据必须看
+    // rel 的任一段 —— 只看 basename 时这对夹具立刻红（副本进图 ⇒ labelOf 取到 1 张卡；且与活档撞名）。
+    const dirSnap = labelOf('TRASH/2026-09-14T10-00-00__某归档目录/知识/某主题/SKILL.md');
+    assert('夹具：TRASH 目录级归档戳目录里的文件不进图（basename 干净也照样排）',
+      Array.isArray(dirSnap) && dirSnap.length === 0, '[]（该路径在图谱里取不到节点）', dirSnap);
+    assert('夹具：目录级副本对应的活档仍在图、卡名 == 文件名（只排副本，不排活档）',
+      labelOf('L3/common/某主题/SKILL.md') === 'SKILL', 'SKILL', labelOf('L3/common/某主题/SKILL.md'));
     assert('夹具：L1 卡名 == frontmatter name（不波及自带名的层）', labelOf('L1/某规则.md') === '某规则 — 自带名',
       '某规则 — 自带名', labelOf('L1/某规则.md'));
     const cards = g.nodes.filter((n) => n.rel.startsWith('L2/agents/'));
@@ -304,6 +338,11 @@ if (selfTest) {
       expectFail: '夹具：L3 记忆卡名 == 文件名（非主题名）' },
     { name: 'M3 卡名恒等正文标题（旧规则的正文半边）',
       mutantLine: "  return '正文标题回潮';", expectFail: '夹具：重名组 = 0' },
+    // M4（2026-09-28 加）：把 TRASH 过滤判据还原成**只看 basename**、并保留归档戳的旧口径 ⇒ 目录级戳
+    // 目录里的副本整棵回到图上，与活档撞名。这正是 A 修掉的那个缺陷，夹具 ③c 就是为它造的。
+    { name: 'M4 TRASH 过滤只看 basename（还原目录级副本漏网）', anchor: 'filter',
+      mutantLine: "    if (f.rel.startsWith('TRASH/') && path.basename(f.rel).includes('__')) return false;",
+      expectFail: '夹具：TRASH 目录级归档戳目录里的文件不进图（basename 干净也照样排）' },
   ];
   for (const m of MUTANTS) {
     const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'mind-label-mut-'));

@@ -86,8 +86,11 @@ function assert(label, condition, expected, actual) {
   console.log(`       expected: ${JSON.stringify(expected)}`);
   console.log(`       actual:   ${JSON.stringify(actual)}`);
 }
-/** 快照副本判据（与后端过滤行**同一口径**：rel 以 `TRASH/` 开头 + basename 含 `__`）。 */
-const isSnapshotCopy = (rel) => rel.startsWith('TRASH/') && path.basename(rel).includes('__');
+/** 快照副本判据（与后端过滤行**同一口径**：rel 以 `TRASH/` 开头 + **路径任一段**含 `__` 归档戳）。
+ *  2026-09-28 口径同步：原为 `path.basename(rel).includes('__')` ⇒ 只认**文件级**戳，漏掉**目录级**
+ *  归档（`TRASH/<戳>__<目录名>/…` 里文件 basename 干净）——实测 14 个节点漏进图、期望值虚高 14。
+ *  戳落在哪一段不拘：文件级与目录级是**同义形态**。 */
+const isSnapshotCopy = (rel) => rel.startsWith('TRASH/') && rel.split('/').some((s) => s.includes('__'));
 
 console.log('[verify-mind-graph-trash-snapshots] TRASH 归档快照不出图');
 
@@ -112,7 +115,8 @@ function walkContentMdAll() {
   return out;
 }
 /** 独立期望节点数：镜像 `buildGraph('')` 的**过滤链口径**（不是实现）——排 `tasks/evolution/snapshots/`
- *  与 `TRASH/` 下 basename 含 `__` 的归档副本；其余全留。被测 lib 少排/过排都躲不过等值断言。 */
+ *  与 `TRASH/` 下**路径任一段**含 `__` 的归档副本（文件级 / 目录级同义，2026-09-28 口径同步）；
+ *  其余全留。被测 lib 少排/过排都躲不过等值断言。 */
 const expectedNodeCount = (rels) => rels.filter((r) => !r.startsWith('tasks/evolution/snapshots/') && !isSnapshotCopy(r)).length;
 const disk = walkContentMdAll();
 const diskTrash = disk.filter((r) => r.startsWith('TRASH/'));
