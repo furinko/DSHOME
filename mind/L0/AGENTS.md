@@ -53,8 +53,8 @@
 | 记忆协议详版 | `mind\L1\Memory.md`（§八 写入门 · §十 调取排序） |
 | 门禁内核（不变式 / 裁决 / 边界冲突） | `mind\L1\Invariants.md` |
 | 概念权威源与路由（todo/progress/suggestion/memory/skill 挂号） | `mind\L1\Concepts.md`（一律以它为准） |
-| Skill/Exp 怎么用·怎么沉淀 | `mind\L1\Power.md` |
-| 思维方法论（复盘 / 蒸馏 / 写作） | `mind\L1\Wisdom.md` |
+| Skill/Exp 怎么用·怎么沉淀（含蒸馏判据与执行） | `mind\L1\Power.md` |
+| 思维方法论（拆解 / 闭环 / 写作） | `mind\L1\Wisdom.md` |
 | 工具操作细则（从属；清单以运行时 schema 为准） | `mind\L0\TOOL.md` |
 | 成员底线（专项成员宪法·从属件） | `mind\L0\CREW.md` |
 | 跨会话记忆现查 | `/api/mind/search?q=…` → `mind-private\L3\` grep |
@@ -65,4 +65,4 @@
 - 自维护 / 元进化 / 整理队列 / cron / 独立复核 → 读 `Ritual §四`。
 
 ---
-_版本：3.16 | 2026-09-28 | 沿革收敛（批次 `l1-slim`）：3.14 及更早沿革入 `mind\L1\changelog-L0.md`（逐字节照抄），本行此后只留本版摘要 + 指针_
+_版本：3.17 | 2026-09-28 | §八 地图订正：**蒸馏**自 `Wisdom.md` 行移出（该件只有拆解/闭环/写作，地图却写它管蒸馏）→ 并入 `Power.md` 行（含蒸馏判据与执行）_
