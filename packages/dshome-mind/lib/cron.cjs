@@ -394,6 +394,13 @@ async function executeTask(hostCtx, task) {
 // 失败面（fail-open）：拿不到 sessions 服务 / 事件丢失 ⇒ `BUSY_MAX_MS` 兜底强制放闸，
 //   最坏降级成旧行为（并发不保证），但**绝不把队列卡死**。
 const BUSY_MAX_MS = 45 * 60 * 1000; // 单会话占闸上限（防 turn/end 事件丢失）
+// 补跑**重试上限**（2026-09-28 加 · 病灶 184）：一次触发失败后，最多再补跑 2 次（同一轮最多 3 次尝试）。
+//   为什么需要（新语义下的配套闸）：`lastRunAt` 改成"**上次成功结束的时刻**"后（见 `recordRun`），
+//   失败的任务**不会**再被"已经跑过"这个账面事实挡住 ⇒ `catchUpMissed()` 会持续判它「错过」。
+//   若没有上限，长故障（如出网未就绪的 TRANSPORT）就会变成**补跑风暴**：每分钟兜底重试都拉一个
+//   必然失败的会话、白烧 token。到顶即 **giveup**：台账留一行 + `lastRunAt` **账面归位**（放弃本轮、
+//   等下个自然触发点），而不是无界重试。
+const CATCHUP_RETRY_MAX = 2;
 // 补跑前的**等闸**上限（2026-09-23 修 · 见 `deferCatchUp`）：
 //   `watching = true` 写在 `hostCtx.inject` 的**回调**里，而真宿主该回调**不是同步调用** ⇒
 //   原 `start()` 里"先接事件、再 catchUp"的顺序保证**不成立**（2026-09-23 实测同型复发）。
@@ -530,7 +537,11 @@ class DshCron {
       console.warn('[dshome-cron] sessions 订阅失败：串行闸降级（' + (e?.message ?? e) + '）');
     }
   }
-  /** 闸：有活着的自治会话 → 入队；否则立刻跑。 */
+  /** 闸：有活着的自治会话 → 入队；否则立刻跑。
+   *  🔴 2026-09-28 补返回值（病灶 232）：面板「▶ 立即运行」过去**直接 `await executeTask`**（绕过本闸、
+   *  也不入 `active` ⇒ `turn/end` 不记账）。改走本闸后，调用方**必须能知道这次到底"发了/排了/被去重了"**，
+   *  否则面板只能瞎猜（旧文案假设同步拿到 `sessionId`，已不成立）⇒ 每个分支都返回 `{ok, mode[, dedup|queueLength]}`。
+   *  ⚠️ 既有 3 个调用点（`schedule` / `catchUpMissed` / `drain`）继续忽略返回值，行为不变。 */
   trigger(task, reason) {
     // 降级面（诚实优先）：拿不到 sessions 事件 ⇒ 无法知道会话什么时候结束，
     //   **不能入队**——否则队列永远等不到放闸（实测反例：只入队不补跑，任务静默延迟）。
@@ -545,25 +556,26 @@ class DshCron {
       //   只能靠两条会话 `createdAt` 相差 2ms 反推。现在落一条台账（`status:'degraded'`）。
       this.recordDegrade(task.id, reason);
       this.run(task, reason + '+unserialized');
-      return;
+      return { ok: true, mode: 'unserialized' };
     }
     // 去重（两条都要）：① 已在队列里 → 不重复入队 ② 这个任务正跑着又来一次 tick
     //   → 跳过（等价 croner protect 的语义，否则「每分钟型」任务会在长会话期间堆成 N 条队列，
     //   放闸后连跑 N 次）。跳过只记日志，静默即违规（Invariants #14）。
     if (this.queue.some((q) => q.id === task.id)) {
       console.log('[dshome-cron]', task.id, 'skip:already-queued', `(reason=${reason})`);
-      return;
+      return { ok: true, mode: 'queued', dedup: 'already-queued' };
     }
     if ([...this.active.values()].some((v) => v.id === task.id)) {
       console.log('[dshome-cron]', task.id, 'skip:already-running', `(reason=${reason})`);
-      return;
+      return { ok: true, mode: 'running', dedup: 'already-running' };
     }
     if (this.isBusy()) {
       this.queue.push({ id: task.id, reason, at: Date.now() });
       console.log('[dshome-cron]', task.id, 'queued:busy', `(reason=${reason}, 队列=${this.queue.length})`);
-      return;
+      return { ok: true, mode: 'queued', queueLength: this.queue.length };
     }
     this.run(task, reason);
+    return { ok: true, mode: 'started' };
   }
   isBusy() {
     const now = Date.now();
@@ -597,8 +609,16 @@ class DshCron {
     }
   }
   /** 记一次自治 run 的**真实结果**：JSONL 台账 + 任务上的 `lastResult` + 非成功时**响亮告警**。
-   *  `lastRunAt` 语义保持不变（= 触发时刻，供 missed 补跑判定）——本函数补的是"**成没成**"，
-   *  而不是改"跑没跑过"（改它会引来持续失败时的补跑风暴）。 */
+   *  🔴 `lastRunAt` 语义 2026-09-28 **改**（病灶 184），旧注释说的"保持不变"**已被本改动推翻**：
+   *     · 新语义 = **"上次成功结束的时刻"**，且本函数是它**唯一的推进点**（成功分支才写 `rec.ts`）。
+   *     · 旧语义 = "触发时刻"（`run()` 一创建成功会话就写）。病根：2026-09-28 08:50 宿主启动后
+   *       catchUp 补跑两条任务，**会话建成了，但会话内 LLM 调用因 TRANSPORT（出网未就绪）失败**
+   *       ⇒ `lastRunAt` 已推进 ⇒ `catchUpMissed()` 不再认为"错过" ⇒ **当轮/当天不再重试**，
+   *       整轮维护被**静默跳过**。改成"成功才推进"后，失败任务仍会被判「错过」⇒ 能重试。
+   *     · 那"持续失败会不会引来补跑风暴"？（旧注释担心的正是这个）——**由 `CATCHUP_RETRY_MAX` 兜住**：
+   *       非成功累计 `retryCount`，超过上限即 **giveup**（台账留痕 + `lastRunAt` **账面归位** + 清零），
+   *       不是靠"不许推进"来防。
+   *  ⚠️ 递归禁令：giveup 那条台账**直接 `appendCronRun`**，绝不回头再调 `recordRun`（否则无限递归）。 */
   recordRun(taskId, info) {
     const rec = { ts: new Date().toISOString(), taskId, ...info };
     appendCronRun(rec);
@@ -609,7 +629,32 @@ class DshCron {
         ...(rec.errorCode !== undefined ? { errorCode: rec.errorCode } : {}),
         ...(rec.sessionId !== undefined ? { sessionId: rec.sessionId } : {}),
       };
-      saveCron(this.tasks);
+      if (rec.status === 'ok') {
+        // ① **成功才推进**：`lastRunAt` = 成功**结束**的时刻（供 `catchUpMissed()` 判"错过没"）
+        task.lastRunAt = rec.ts;
+        delete task.retryCount; // ② 成功即清零（下一轮失败从 1 重新数）
+      } else {
+        task.retryCount = (task.retryCount || 0) + 1;
+        if (task.retryCount > CATCHUP_RETRY_MAX) {
+          // ── 放弃重试（giveup）：同一轮已尝试 CATCHUP_RETRY_MAX+1 次仍不成功 ──────────────
+          const retryCount = task.retryCount;
+          const lastErrorCode = rec.errorCode !== undefined ? rec.errorCode : null;
+          // ① 台账留一行：**直接 appendCronRun**（不递归调用 recordRun）
+          appendCronRun({
+            ts: new Date().toISOString(), taskId,
+            status: 'giveup', errorCode: 'retry-exhausted',
+            lastErrorCode, retryCount,
+          });
+          task.lastRunAt = rec.ts; // ② **账面归位**：停止它继续被判「错过」（否则每分钟照样重试）
+          delete task.retryCount;  // ③ 清零（双保险见 catchUpMissed 的守卫）
+          // ④ **响亮**（Invariants #14）：放弃是一件"要有人知道"的事，不许静默
+          console.error(`[dshome-cron] ❗自治任务重试 ${retryCount} 次仍失败，已放弃本轮，等下个自然触发点：`
+            + `task=${taskId} status=${rec.status} 最后一次 code=${lastErrorCode ?? '—'}`
+            + ` session=${rec.sessionId ?? '—'}（台账 mind-private/tasks/cron-runs.jsonl）`);
+          task.lastResult = { ...task.lastResult, status: 'giveup' }; // ⑤ `lastResult` 标 giveup
+        }
+      }
+      saveCron(this.tasks); // 三条路径（ok / 失败计数 / giveup）都经这里落盘
     }
     if (rec.status !== 'ok') {
       console.error(`[dshome-cron] ❗自治 run 非成功：task=${taskId} status=${rec.status}`
@@ -643,22 +688,26 @@ class DshCron {
       if (r.status === 'created') {
         // 只在闸接上时才占闸（降级面不跟踪，免得 active 永久积累没人放闸）
         if (this.watching === true) this.active.set(String(r.sessionId), { id: task.id, since: Date.now() }); // 交棒给真实会话
-        // 记录实际触发时间（供 missed 补跑判定）
+        // 🔴 2026-09-28 改（病灶 184）：这里**不再写 `lastRunAt`**。
+        //   旧行为＝"会话被创建成功就算跑过"，而 09-28 08:50 实测：会话建成了、**会话内 LLM 调用因
+        //   TRANSPORT 失败** ⇒ `lastRunAt` 照样推进 ⇒ `catchUpMissed()` 不再判「错过」⇒ 当轮/当天
+        //   **不再重试**（整轮维护静默跳过）。新语义：`lastRunAt` = **上次成功结束的时刻**，
+        //   唯一推进点是 `recordRun` 的成功分支（见那里）；本处只记 `lastStartedAt`（纯观测："上次何时
+        //   开始跑"），失败任务靠 `recordRun` 计数 + `reload()` 兜底重试，上限 `CATCHUP_RETRY_MAX`。
         // 🔴 **按 id 认领活对象再写**（2026-09-25 修 · 与 `recordAttach` 09-24 修的是**同一病灶**）：
         //    `task` 是 `run()` 的入参，而本回调**跨 `await`**（`executeTask` 建会话耗时秒级），
         //    期间 `reload()`（每 60s）会 `this.tasks = loadCron()` **整表换新对象** ⇒ 直接写
-        //    `task.lastRunAt` 会落在**已不在表里的旧对象**上、而 `saveCron(this.tasks)` 落的却是新表
+        //    `task.lastStartedAt` 会落在**已不在表里的旧对象**上、而 `saveCron(this.tasks)` 落的却是新表
         //    ⇒ **静默丢失**（无告警、无台账）。活读数（2026-09-25 00:00 self-clean）：会话已建成、
-        //    `lastAttach` 已写，而 `lastRunAt` 仍停在 `2026-09-24T14:23:09.877Z` **未推进**。
-        //    后果：`catchUpMissed()` 用 `job.nextRun(new Date(t.lastRunAt))` 判"错过没" ⇒ 读数是滞后旧值。
+        //    `lastAttach` 已写，而时间戳仍停在旧值**未推进**。
         const stamp = new Date().toISOString();
         const live = this.tasks.find((t) => t && t.id === task.id);
         if (live) {
-          live.lastRunAt = stamp;
+          live.lastStartedAt = stamp;
           saveCron(this.tasks);
         } else {
           // 响亮（同 `recordAttach` 的口径）：账本自己"没写成"也必须留痕，不许静默。
-          console.warn('[dshome-cron]', task.id, '：lastRunAt **未能落账**——当前任务表里找不到同 id 任务（已被删除？）');
+          console.warn('[dshome-cron]', task.id, '：lastStartedAt **未能落账**——当前任务表里找不到同 id 任务（已被删除？）');
         }
         // 一次性任务：跑完自动移除 + 停表
         if (task.once) {
@@ -695,13 +744,23 @@ class DshCron {
       return true;
     } catch { return false; }
   }
-  /** 重启补跑：上次实际跑过（有 lastRunAt）之后有"该触发点"已过去 → 错过，立即补跑一次。 */
+  /** 重启补跑：上次实际跑过（有 lastRunAt）之后有"该触发点"已过去 → 错过，立即补跑一次。
+   *  ⚠️ `lastRunAt` 现在是"**上次成功结束的时刻**"（2026-09-28 改 · 见 `recordRun`）⇒ 失败任务会**持续**
+   *  被判「错过」，靠 `reload()` 每分钟兜底重试，由 `CATCHUP_RETRY_MAX` 封顶。 */
   catchUpMissed() {
     for (const t of this.tasks) {
       const job = this.jobs.get(t.id);
       if (!job) continue;
       // 任务级开关：只有显式 catchUp:true 的任务才补跑（幂等/每日型补；提醒/一次性/敏感型不补）
       if (t.catchUp !== true) continue;
+      // 🔴 双保险（2026-09-28 加）：`retryCount` 因故**没被清零/归位**时，跳过补跑。
+      //   正路已由 `recordRun` 的 giveup 分支清零归位（那里是主闸）；这里是"计数万一残留"时的第二道闸，
+      //   防的就是注释里说的"补跑风暴"。跳过**不静默**（Invariants #14：静默即违规）。
+      if ((t.retryCount || 0) > CATCHUP_RETRY_MAX) {
+        console.warn('[dshome-cron]', t.id, `skip:retry-exhausted (retryCount=${t.retryCount} > ${CATCHUP_RETRY_MAX})`
+          + ' —— 已放弃本轮，等下个自然触发点');
+        continue;
+      }
       if (!t.lastRunAt) { t.lastRunAt = new Date().toISOString(); saveCron(this.tasks); continue; }
       const next = job.nextRun(new Date(t.lastRunAt));
       if (next && next < new Date()) {
@@ -718,6 +777,13 @@ class DshCron {
   reload() {
     this.tasks = loadCron();
     for (const t of this.tasks) if (!this.jobs.has(t.id)) this.schedule(t);
+    // 🔴 2026-09-28 加（病灶 184）：失败任务**必须能在同一进程内被重试**——`lastRunAt` 现在只在成功时
+    //   推进（见 `recordRun`），失败任务会持续被判「错过」；没有这条，失败只能干等到**下次重启**才补跑。
+    //   ⚠️ **只许在闸接上（`watching === true`）时补**：降级面（sessions 不可用）既无法保证串行、也不占闸，
+    //   若也补就会变成"**每分钟反复发起新会话**"的风暴；降级面**只保留启动窗口那一次** fail-open 补跑
+    //   （`deferCatchUp` 的现有行为，一行不动）。重试次数上限由 `CATCHUP_RETRY_MAX` 兜住（见 `recordRun`）。
+    //   反例：把 `this.watching === true` 这个守卫删掉 ⇒ itest N4 必红（降级面每次 reload 都飙会话）。
+    if (this.watching === true) this.catchUpMissed();
     this.drain(); // 每分钟兜底：占闸超时（turn/end 事件丢失）被 isBusy() 剪掉后，队列靠这里继续跑
   }
   clear() {
@@ -742,6 +808,9 @@ class DshCron {
   }
   list() {
     return this.tasks.map((t) => ({
+      // `...t` 展开 ⇒ 任务上的**全部持久字段**都带出去：`lastRunAt` / `lastResult` / `lastAttach` 之外，
+      //   2026-09-28 新增的两个失败重试面字段（`retryCount`＝本轮已失败次数、`lastStartedAt`＝上次何时开始跑）
+      //   也**自然带出**（面板/探针据此看"正在重试"还是"已放弃"），无需逐个列举。
       ...t,
       enabled: t.enabled !== false,
       nextRun: this.nextRunFor(t.id),
@@ -809,4 +878,6 @@ function getCronInstance() { return __instance; }
 
 module.exports = { DshCron, loadCron, saveCron, executeTask, normalizeModel, CRON_FILE, CRON_RUNS_FILE, outcomeOfTurnEnd, appendCronRun, setCronInstance, getCronInstance, resolveRunTarget, attachToWorkspace, WS_NONE, setWorkspaceRegistry, getWorkspaceRegistry,
   // 导出让 itest 能**断言**"预算就是 45s / 轮询 500ms / 上界 10min"（独立复核：不导出只能读源码，等于不可断言）
-  ATTACH_REGISTRY_WAIT_MS, ATTACH_POLL_MS, ATTACH_WAIT_MAX_MS, ATTACH_CAPABILITY_FAILS };
+  ATTACH_REGISTRY_WAIT_MS, ATTACH_POLL_MS, ATTACH_WAIT_MAX_MS, ATTACH_CAPABILITY_FAILS,
+  // 2026-09-28 加：补跑重试上限（同款理由——itest 要能断言"就是 2 次重试、第 3 次尝试后 giveup"）
+  CATCHUP_RETRY_MAX };

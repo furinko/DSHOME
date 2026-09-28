@@ -58,7 +58,9 @@ function makeHome() {
       { id: 'itest-attach-g', cron: '0 0 * * *', prompt: 'attach-g', cwd: home, catchUp: false, enabled: true },
       { id: 'itest-attach-h', cron: '0 0 * * *', prompt: 'attach-h', cwd: home, catchUp: false, enabled: true },
       { id: 'itest-attach-i', cron: '0 0 * * *', prompt: 'attach-i', cwd: home, catchUp: false, enabled: true },
-      // J 用独立任务：断言的是 `run()` **自己写的** `lastRunAt`（2026-09-25 修的同族第二处）
+      // J 用独立任务：断言的是 `run()` **自己写的** `lastStartedAt`（2026-09-25 修的同族第二处）。
+      //   ⚠️ 2026-09-28 病灶 184 之后，`run()` **不再写 `lastRunAt`**（改由 `recordRun` 在会话
+      //   **成功结束**时唯一推进）⇒ 本用例断言的对象随之改成 `lastStartedAt`，另加 J3 钉新语义。
       { id: 'itest-runat', cron: '0 0 * * *', prompt: 'runat', cwd: home, catchUp: false, enabled: true },
     ],
   }, null, 2));
@@ -245,14 +247,17 @@ const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance,
   check('H1 反例·reload 换对象后落账不许被静默吞掉（盘上必须读得到 lastAttach）',
     !!onDiskH?.lastAttach?.attached, JSON.stringify(onDiskH?.lastAttach || null));
 
-  // J 反例（**同族第二处 · 2026-09-25 修**）：与 H 同一病灶，但落在 `run()` **自己写的** `lastRunAt` 上——
+  // J 反例（**同族第二处 · 2026-09-25 修**）：与 H 同一病灶，但落在 `run()` **自己写的**时间戳上——
   //   `.then()` 回调跨 `await`（`executeTask` 建会话），期间 `reload()` 整表换新对象 ⇒ 旧写法写的是
-  //   **已不在表里的旧对象**、而 `saveCron(this.tasks)` 落的是**新表** ⇒ `lastRunAt` **静默丢失**
+  //   **已不在表里的旧对象**、而 `saveCron(this.tasks)` 落的是**新表** ⇒ 该字段 **静默丢失**
   //   （无告警、无台账）。活读数（2026-09-25 00:00 self-clean 会话）：会话已建成、`lastAttach` 已写，
-  //   而 `lastRunAt` 仍停在 `2026-09-24T14:23:09.877Z` **未推进**。
+  //   而时间戳仍停在 `2026-09-24T14:23:09.877Z` **未推进**。
+  //   ⚠️ 2026-09-28 病灶 184：`run()` 写的字段由 `lastRunAt` 换名为 `lastStartedAt`（`lastRunAt` 改由
+  //   `recordRun` 在会话**成功结束**时唯一推进）⇒ 本用例的**防护意图不变**（"`run()` 亲自写的字段不许
+  //   被 reload 吞掉"），只是断言对象随实现换名；新语义另由 J3 单独钉住。
   //   🔴 与 H 的区别：本用例**不等**再 reload —— `trigger()` 后**立刻** `reload()`，此刻 `executeTask`
   //   必然尚未 resolve ⇒ **确定性复现**（不靠 60s tick 与建会话耗时的竞争）。
-  //   判据＝reload 之后，**盘上**该任务的 `lastRunAt` 必须已被推进（且该任务确实跑过，排除假绿）。
+  //   判据＝reload 之后，**盘上**该任务的 `lastStartedAt` 必须已被推进（且该任务确实跑过，排除假绿）。
   cron.active.clear();
   const beforeJ = st.created.length;
   const taskJ = cron.tasks.find((t) => t.id === 'itest-runat');
@@ -262,8 +267,15 @@ const { attachToWorkspace, DshCron, setWorkspaceRegistry, setCronInstance,
   await sleep(900);
   const onDiskJ = JSON.parse(readFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), 'utf8'))
     .tasks.find((t) => t.id === 'itest-runat');
-  check('J1 反例·`run()` 写的 lastRunAt 不许被 reload 静默吞掉（盘上必须已推进）',
-    typeof onDiskJ?.lastRunAt === 'string' && onDiskJ.lastRunAt.length > 0,
+  check('J1 反例·`run()` 写的 lastStartedAt 不许被 reload 静默吞掉（盘上必须已推进）',
+    typeof onDiskJ?.lastStartedAt === 'string' && onDiskJ.lastStartedAt.length > 0,
+    JSON.stringify({ lastStartedAt: onDiskJ?.lastStartedAt ?? null }));
+  // J3（2026-09-28 加 · 病灶 184 的语义钉子）：`run()` 创建成功**不再**推进 `lastRunAt` ——
+  //   它改由 `recordRun` 在**会话成功结束**（turn/end → ok）时唯一推进。反例：把实现改回
+  //   "创建成功就写 lastRunAt" ⇒ 本断言必红（该字段会从 undefined 变成字符串）。
+  //   夹具 `itest-runat`（见文件头）本就**不带** `lastRunAt` ⇒ `undefined` 是干净的判据。
+  check('J3 → 创建成功**不**推进 lastRunAt（新语义：只有成功结束才推进）',
+    onDiskJ?.lastRunAt === undefined,
     JSON.stringify({ lastRunAt: onDiskJ?.lastRunAt ?? null }));
   check('J2 → 该任务确实被跑过（排除"没跑当然没时间戳"的假绿）',
     st.created.length > beforeJ, `created ${beforeJ}→${st.created.length}`);

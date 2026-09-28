@@ -31,7 +31,12 @@ const results = [];
 const check = (name, ok, extra) => results.push([name, ok ? 'PASS' : 'FAIL', extra]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function makeHome() {
+/** 「2 天前」的固定哨兵：catchUpMissed 用它必判「错过」；断言里当**旧值**用——
+ *  新语义（2026-09-28）下"未推进"就该**仍是它**，推进了就该是"近 60s 内"。 */
+const PAST = new Date(Date.now() - 2 * 86400000).toISOString();
+
+/** 建临时根。`tasks` 可省（= A/B 两条默认任务），也可传**数组**或 **`(home) => 数组`**（N 用例要按 home 拼路径）。 */
+function makeHome(tasks) {
   const home = mkdtempSync(join(tmpdir(), 'dshome-cron-itest-'));
   mkdirSync(join(home, 'mind'), { recursive: true });
   mkdirSync(join(home, 'mind-private', 'tasks'), { recursive: true });
@@ -43,13 +48,11 @@ function makeHome() {
     + "writeFileSync(new URL('./prime-argv.json', import.meta.url), JSON.stringify(process.argv.slice(2)));\n"
     + "console.log('# stub prime（itest 用）');\n");
   // 每日 00:00 的 cron + 上次跑在 2 天前 ⇒ catchUpMissed 必判「错过」，且测试期间不会真到点 tick
-  const past = new Date(Date.now() - 2 * 86400000).toISOString();
-  writeFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), JSON.stringify({
-    tasks: [
-      { id: 'itest-a', cron: '0 0 * * *', prompt: 'A', cwd: home, catchUp: true, lastRunAt: past, enabled: true },
-      { id: 'itest-b', cron: '0 0 * * *', prompt: 'B', cwd: home, catchUp: true, lastRunAt: past, enabled: true },
-    ],
-  }, null, 2));
+  const list = typeof tasks === 'function' ? tasks(home) : (tasks || [
+    { id: 'itest-a', cron: '0 0 * * *', prompt: 'A', cwd: home, catchUp: true, lastRunAt: PAST, enabled: true },
+    { id: 'itest-b', cron: '0 0 * * *', prompt: 'B', cwd: home, catchUp: true, lastRunAt: PAST, enabled: true },
+  ]);
+  writeFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), JSON.stringify({ tasks: list }, null, 2));
   return home;
 }
 
@@ -100,7 +103,29 @@ function makeHost(injectMode) {
   };
 }
 
-const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
+const { DshCron, CATCHUP_RETRY_MAX } = require('../packages/dshome-mind/lib/cron.cjs');
+
+// ── 断言用的读数帮手（N 用例加）─────────────────────────────────────────────
+const tasksOf = (home) => JSON.parse(readFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), 'utf8')).tasks;
+const taskOf = (home, id) => tasksOf(home).find((t) => t.id === id);
+/** run 台账（JSONL）：失败重试/giveup 是"事件流"，断言落没落账靠它。 */
+function runsOf(home) {
+  const p = join(home, 'mind-private', 'tasks', 'cron-runs.jsonl');
+  if (!existsSync(p)) return [];
+  return readFileSync(p, 'utf8').split('\n').filter(Boolean)
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+}
+/** 有界等待（不用固定 sleep 赌时序：失败记账跨 `executeTask` 的异步路径）。 */
+async function waitFor(pred, timeoutMs = 4000, stepMs = 50) {
+  const t0 = Date.now();
+  for (;;) {
+    if (pred()) return true;
+    if (Date.now() - t0 > timeoutMs) return false;
+    await sleep(stepMs);
+  }
+}
+/** "近 60s 内"判据（推进类断言统一用它，避免各处各写一遍）。 */
+const isFresh = (iso) => typeof iso === 'string' && Date.now() - new Date(iso).getTime() < 60000;
 
 // ── A 正例：串行闸生效（**夹具忠实**：inject 回调异步 = 真宿主的形状）──────────────
 //   ⚠️ 这条在旧夹具（同步 inject）下**恒绿**，恰是本次病灶的藏身之处：把 'async' 换回 'sync'
@@ -121,9 +146,24 @@ const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
   check('A5 放闸后补跑第 2 条', st.created.length === 2, `created=${st.created.length}`);
   check('A6 队列已清空', cron.queue.length === 0, `queue=${cron.queue.length}`);
   check('A7 补跑期间仍无并发（maxLive=1）', st.maxLive === 1, `maxLive=${st.maxLive}`);
-  const after = JSON.parse(readFileSync(join(home, 'mind-private', 'tasks', 'cron.json'), 'utf8')).tasks;
-  check('A8 两条都写了 lastRunAt', after.every((t) => t.lastRunAt && Date.now() - new Date(t.lastRunAt).getTime() < 60000),
-    after.map((t) => t.id + '=' + (t.lastRunAt ? 'yes' : 'no')).join(' '));
+  // 🔴 A8 **2026-09-28 合法改写**（病灶 184 · 新语义钉进断言）：
+  //   旧断言是"两条都写了 lastRunAt"，它依赖**旧语义**（`run()` 一创建成功就写）。
+  //   新语义＝`lastRunAt` = **上次成功结束的时刻**，唯一推进点是 `recordRun` 的成功分支
+  //   ⇒ 只有"已 turn/end(completed)"的那条会推进；仍在跑的那条**必须还是旧值**。
+  //   反例（写不出反例＝没验过）：把 `run()` created 分支改回写 `lastRunAt` ⇒ **A8b 必红**
+  //   （仍在跑的那条也会被推进）；把 `recordRun` 的 ok 分支删掉 ⇒ A8a 必红。
+  const after = tasksOf(home);
+  const heldNow = [...cron.active.values()].map((v) => v.id); // 现在占闸的那条 = 第 2 条（尚未 turn/end）
+  const runningTask = after.find((t) => t.id === heldNow[0]);
+  const endedTask = after.find((t) => t.id !== heldNow[0]);
+  check('A8a 已 turn/end(completed) 的那条 ⇒ lastRunAt 推进到近 60s 内',
+    heldNow.length === 1 && !!endedTask && isFresh(endedTask.lastRunAt) && endedTask.lastRunAt !== PAST,
+    `ended=${endedTask && endedTask.id} lastRunAt=${endedTask && endedTask.lastRunAt}（旧值 ${PAST}）`);
+  check('A8b 仍未结束的那条 ⇒ lastRunAt **仍是旧值（未推进）**',
+    heldNow.length === 1 && !!runningTask && runningTask.lastRunAt === PAST,
+    `running=${runningTask && runningTask.id} lastRunAt=${runningTask && runningTask.lastRunAt}`);
+  check('A8c 仍在跑的那条 ⇒ 只写了新字段 lastStartedAt（纯观测"上次何时开始跑"）',
+    !!runningTask && isFresh(runningTask.lastStartedAt), `lastStartedAt=${runningTask && runningTask.lastStartedAt}`);
   cron.clear();
   check('A9 clear() 放掉订阅与队列', cron.queue.length === 0 && cron.active.size === 0 && cron.watching === false, '');
   rmSync(home, { recursive: true, force: true });
@@ -310,6 +350,218 @@ const { DshCron } = require('../packages/dshome-mind/lib/cron.cjs');
   }
 
   setWorkspaceRegistry(null); // 收尾：别把引用漏给后面的用例（与真宿主 effect 清理同义）
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ══ N 组（2026-09-28 加 · 病灶 184/232）══════════════════════════════════════════
+//   专门为两处修复写的回归面（A8 只是"顺手钉住"）。每条都带**反例说明**——写不出反例＝没验过。
+
+// ── N1：**失败不推进 `lastRunAt`**（病灶 184 的核心）────────────────────────────
+//   造一条 catchUp 任务 + `workspace` 指向不存在目录 ⇒ `executeTask` 必 `failed`（判据见 E3）。
+//   反例：把 `recordRun` 的非成功分支改回"也写 `lastRunAt`" ⇒ **N1a 必红**；
+//        把失败计数（`retryCount`）删掉 ⇒ N1b/N1f 必红。
+{
+  const home = makeHome((h) => [
+    { id: 'itest-n1', cron: '0 0 * * *', prompt: 'N1', cwd: h, catchUp: true, lastRunAt: PAST, enabled: true,
+      workspace: join(h, 'nope-does-not-exist') },
+  ]);
+  process.env.DSH_HOME = home;
+  const { hostCtx, st } = makeHost('async');
+  const cron = new DshCron(hostCtx);
+  cron.start();
+  const settled = await waitFor(() => taskOf(home, 'itest-n1').retryCount === 1);
+  const t1 = taskOf(home, 'itest-n1');
+  check('N1a 失败**不推进** lastRunAt（仍是旧值）', settled && t1.lastRunAt === PAST,
+    `lastRunAt=${t1.lastRunAt}（旧值 ${PAST}）`);
+  check('N1b 失败累计 retryCount=1', settled && t1.retryCount === 1, `retryCount=${t1.retryCount}`);
+  check('N1c 失败确实落了台账（status=error · 不再静默）',
+    runsOf(home).some((r) => r.taskId === 'itest-n1' && r.status === 'error'),
+    JSON.stringify(runsOf(home).filter((r) => r.taskId === 'itest-n1')));
+  check('N1d 失败面不建会话（workspace 不存在 ⇒ 直接 failed）', st.created.length === 0, `created=${st.created.length}`);
+  // 前置断言：没接上闸的话本用例验的是"降级面"，结论不可比 ⇒ 必须钉住闸真接上了（同 A4/B3 的口径）
+  check('N1e 前置·闸真接上了（watching=true）', cron.watching === true, `watching=${cron.watching}`);
+  check('N1f `list()` 带出 retryCount（A6：`...t` 展开）',
+    cron.list().find((t) => t.id === 'itest-n1')?.retryCount === 1,
+    `list().retryCount=${cron.list().find((t) => t.id === 'itest-n1')?.retryCount}`);
+  cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── N2：**只有成功结束才推进 + 清零**（新语义的另一半）─────────────────────────
+//   种子给 `retryCount: 1`（模拟"上一轮失败过"）⇒ 成功 turn/end 后必须清零。
+//   反例：把 `run()` created 分支改回写 `lastRunAt` ⇒ **N2a 必红**（会话一建成就推进了）；
+//        把 `recordRun` ok 分支的两行删掉 ⇒ N2d/N2e 必红。
+{
+  const home = makeHome((h) => [
+    { id: 'itest-n2', cron: '0 0 * * *', prompt: 'N2', cwd: h, catchUp: true, lastRunAt: PAST, retryCount: 1, enabled: true,
+      workspace: '@none' }, // 明确不登记 ⇒ 掐掉 attach 面，本用例只验"推进语义"
+  ]);
+  process.env.DSH_HOME = home;
+  const { hostCtx, st, endSession } = makeHost('async');
+  const cron = new DshCron(hostCtx);
+  cron.start();
+  // 等到"创建分支真的落盘了"（`st.created` 只证 agents.create 被调，早于 run() 的 .then 写入）
+  await waitFor(() => isFresh(taskOf(home, 'itest-n2').lastStartedAt));
+  const mid = taskOf(home, 'itest-n2');
+  check('N2a 会话建成但**未 turn/end** ⇒ lastRunAt 仍未推进（仍是旧值）',
+    st.created.length === 1 && mid.lastRunAt === PAST, `created=${st.created.length} lastRunAt=${mid.lastRunAt}`);
+  check('N2b → 只写了 lastStartedAt（新字段，近 60s 内）', isFresh(mid.lastStartedAt), `lastStartedAt=${mid.lastStartedAt}`);
+  check('N2c `list()` 也带出 lastStartedAt（A6：`...t` 展开）',
+    isFresh(cron.list().find((t) => t.id === 'itest-n2')?.lastStartedAt), '');
+  endSession(st.created[0]);
+  const advanced = await waitFor(() => taskOf(home, 'itest-n2').lastRunAt !== PAST);
+  const after2 = taskOf(home, 'itest-n2');
+  check('N2d turn/end(completed) ⇒ lastRunAt 推进到近 60s 内', advanced && isFresh(after2.lastRunAt),
+    `lastRunAt=${after2.lastRunAt}（旧值 ${PAST}）`);
+  check('N2e 成功 ⇒ retryCount 被**清零**', after2.retryCount === undefined, `retryCount=${after2.retryCount}`);
+  check('N2f 成功 ⇒ lastResult.status=ok（与推进同源）', after2.lastResult?.status === 'ok', JSON.stringify(after2.lastResult));
+  cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── N3：**重试上限 → giveup**（防"补跑风暴"的主闸）─────────────────────────────
+//   连续失败到 `CATCHUP_RETRY_MAX + 1` 次尝试（启动补跑 1 次 + reload 兜底 2 次）：
+//   ① 台账出现 `status:'giveup'` ② `lastRunAt` **账面归位**（近 60s 内 ⇒ 不再被判「错过」）
+//   ③ `retryCount` 清零 ④ 之后再 reload **不再发起**（风暴真的停了）。
+//   反例：把 giveup 分支里的 `task.lastRunAt = rec.ts` 删掉 ⇒ **N3b/N3f 必红**（永远"错过"⇒ 每分钟重试）；
+//        把 giveup 那条 `appendCronRun` 删掉 ⇒ N3a 必红；把它改成递归调 `recordRun` ⇒ 栈溢出/台账刷屏。
+{
+  const home = makeHome((h) => [
+    { id: 'itest-n3', cron: '0 0 * * *', prompt: 'N3', cwd: h, catchUp: true, lastRunAt: PAST, enabled: true,
+      workspace: join(h, 'nope-does-not-exist') },
+  ]);
+  process.env.DSH_HOME = home;
+  const { hostCtx } = makeHost('async');
+  const cron = new DshCron(hostCtx);
+  cron.start();
+  check('N3⓪ 常量冻结值 = 2（⇒ 同一轮最多 3 次尝试）', CATCHUP_RETRY_MAX === 2, `CATCHUP_RETRY_MAX=${CATCHUP_RETRY_MAX}`);
+  const errRows = () => runsOf(home).filter((r) => r.taskId === 'itest-n3' && r.status === 'error').length;
+  const hasGiveup = () => runsOf(home).some((r) => r.taskId === 'itest-n3' && r.status === 'giveup');
+  const a1 = await waitFor(() => errRows() === 1);   // 第 1 次尝试：启动窗口补跑
+  cron.reload();                                     // 兜底重试 #1（A4 的那条触发面）
+  const a2 = a1 && await waitFor(() => errRows() === 2);
+  cron.reload();                                     // 兜底重试 #2 ⇒ 第 3 次尝试 ⇒ 超上限 ⇒ giveup
+  const a3 = a2 && await waitFor(() => hasGiveup());
+  const t3 = taskOf(home, 'itest-n3');
+  const gRow = runsOf(home).find((r) => r.taskId === 'itest-n3' && r.status === 'giveup');
+  check('N3a 超上限 ⇒ 台账 giveup（errorCode=retry-exhausted · lastErrorCode · retryCount=3）',
+    a3 && !!gRow && gRow.errorCode === 'retry-exhausted' && typeof gRow.lastErrorCode === 'string'
+    && gRow.retryCount === CATCHUP_RETRY_MAX + 1, JSON.stringify(gRow));
+  check('N3b giveup ⇒ lastRunAt **账面归位**到近 60s 内（不再被判「错过」）', a3 && isFresh(t3.lastRunAt),
+    `lastRunAt=${t3.lastRunAt}（旧值 ${PAST}）`);
+  check('N3c giveup ⇒ retryCount 被清掉', a3 && t3.retryCount === undefined, `retryCount=${t3.retryCount}`);
+  check('N3d giveup **不递归**（台账里 giveup 只有一条）',
+    runsOf(home).filter((r) => r.taskId === 'itest-n3' && r.status === 'giveup').length === 1,
+    `giveup 行数=${runsOf(home).filter((r) => r.taskId === 'itest-n3' && r.status === 'giveup').length}`);
+  check('N3e `lastResult` 记 status=giveup', t3.lastResult?.status === 'giveup', JSON.stringify(t3.lastResult));
+  const rowsBefore = runsOf(home).length;
+  cron.reload();                                     // 再兜一次：账面已归位 ⇒ 不该再发起
+  await sleep(400);
+  check('N3f 归位后再 reload **不再发起**（补跑风暴真的停了）', runsOf(home).length === rowsBefore,
+    `台账行数 ${rowsBefore}→${runsOf(home).length}`);
+  cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── N4：**reload 兜底只在闸接上时补**（否则降级面会"每分钟飙会话"）─────────────
+//   降级面（`makeHost('none')`：连 inject 都没有）⇒ 启动窗口那一次 fail-open 补跑照旧（现有行为不动），
+//   但**每一次 `reload()` 都不许再补**（不占闸、也无法保证串行）。
+//   反例：把 `reload()` 里 `if (this.watching === true)` 的守卫删掉 ⇒ **N4b/N4c 必红**
+//   （3 次 reload ⇒ 会话 +6、degraded 台账 +6）。
+{
+  const home = makeHome();
+  process.env.DSH_HOME = home;
+  const { hostCtx, st } = makeHost('none');
+  const cron = new DshCron(hostCtx);
+  cron.start();
+  await sleep(900); // 跨过 GATE_WAIT_MS(400) + 一轮 GATE_POLL_MS(500)：启动窗口那次降级补跑
+  const base = st.created.length;
+  const degBefore = runsOf(home).filter((r) => r.status === 'degraded').length;
+  check('N4a 前置·降级面启动窗口仍补跑（2 条）且闸确实没接上',
+    base === 2 && cron.watching === false, `created=${base} watching=${cron.watching}`);
+  cron.reload(); cron.reload(); cron.reload(); // 模拟 3 次"每分钟 tick"
+  await sleep(400);
+  check('N4b 降级面 reload **不补跑**（会话数不增）', st.created.length === base, `created ${base}→${st.created.length}`);
+  check('N4c → 也没有新的 degraded 台账行（证明 reload 真没发起触发）',
+    runsOf(home).filter((r) => r.status === 'degraded').length === degBefore,
+    `degraded ${degBefore}→${runsOf(home).filter((r) => r.status === 'degraded').length}`);
+  cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── N5（病灶 232）：`trigger()` 的**返回值语义**（面板文案与面板走闸都靠它）──────
+//   B1 的五个分支逐个钉住：started / running / queued(忙) / queued(已在队列) / unserialized。
+//   反例：把某个分支的 `return` 删掉 ⇒ 面板拿到 `undefined` ⇒ 该条必红（旧实现就是全都 `undefined`）。
+{
+  const home = makeHome((h) => [
+    { id: 'n5-a', cron: '0 0 * * *', prompt: 'A', cwd: h, catchUp: false, enabled: true, workspace: '@none' },
+  ]);
+  process.env.DSH_HOME = home;
+  const { hostCtx } = makeHost('sync'); // 'sync' ⇒ `watching` 在 watchSessions() 内立刻为 true（本用例只验分支语义）
+  const cron = new DshCron(hostCtx);
+  cron.watchSessions();
+  check('N5⓪ 前置·闸接上了', cron.watching === true, `watching=${cron.watching}`);
+  const taskA = cron.tasks.find((t) => t.id === 'n5-a');
+
+  // ① 闸空 ⇒ 立刻跑
+  cron.active.clear(); cron.queue = [];
+  const r0 = cron.trigger(taskA, 'panel-run');
+  check('N5a 闸空 ⇒ mode=started', r0?.ok === true && r0.mode === 'started', JSON.stringify(r0));
+
+  // ② 该任务已在跑 ⇒ 不重复发起
+  cron.active.clear(); cron.queue = [];
+  cron.active.set('sid-n5', { id: 'n5-a', since: Date.now() });
+  const r1 = cron.trigger(taskA, 'panel-run');
+  check('N5b 已在跑 ⇒ mode=running / dedup=already-running',
+    r1?.ok === true && r1.mode === 'running' && r1.dedup === 'already-running', JSON.stringify(r1));
+
+  // ③ 忙（别的任务占闸）⇒ 入队
+  const other = { ...taskA, id: 'n5-b' };
+  const r2 = cron.trigger(other, 'panel-run');
+  check('N5c 忙 ⇒ mode=queued / queueLength=1', r2?.ok === true && r2.mode === 'queued' && r2.queueLength === 1 && !r2.dedup,
+    JSON.stringify(r2));
+
+  // ④ 已在队列 ⇒ 去重（不重复入队）
+  const r3 = cron.trigger(other, 'panel-run');
+  check('N5d 已在队列 ⇒ mode=queued / dedup=already-queued',
+    r3?.ok === true && r3.mode === 'queued' && r3.dedup === 'already-queued', JSON.stringify(r3));
+
+  // ⑤ 降级面（闸没接上）⇒ 照发，但**如实**标 unserialized
+  cron.watching = false;
+  const r4 = cron.trigger(taskA, 'panel-run');
+  check('N5e 降级面 ⇒ mode=unserialized', r4?.ok === true && r4.mode === 'unserialized', JSON.stringify(r4));
+  check('N5f → 降级照样留痕（degraded 台账，不静默）',
+    runsOf(home).some((r) => r.taskId === 'n5-a' && r.status === 'degraded'),
+    JSON.stringify(runsOf(home).filter((r) => r.taskId === 'n5-a')));
+  await sleep(200); // 让⑤那条降级 run 落定，别飘到下个进程/用例
+  cron.clear();
+  rmSync(home, { recursive: true, force: true });
+}
+
+// ── N6（2026-09-28 加）：A5 的**双保险守卫**真拦得住（否则那一行**零覆盖**）───────
+//   正路里盘上的 `retryCount` 只会停在 1/2（第 3 次尝试当场 giveup + 清零）⇒ 守卫那行平时跑不到。
+//   本用例**手造** `retryCount = CATCHUP_RETRY_MAX + 1`（模拟"计数因故没被清零/归位"）⇒ 补跑必须被跳过。
+//   反例：把 `catchUpMissed()` 里那段 `retryCount > CATCHUP_RETRY_MAX` 守卫删掉 ⇒ **N6b/N6d 必红**
+//   （守卫没了就会照常发起会话）。
+{
+  const home = makeHome((h) => [
+    { id: 'itest-n6', cron: '0 0 * * *', prompt: 'N6', cwd: h, catchUp: true, lastRunAt: PAST,
+      retryCount: CATCHUP_RETRY_MAX + 1, enabled: true },
+  ]);
+  process.env.DSH_HOME = home;
+  const { hostCtx, st } = makeHost('async');
+  const cron = new DshCron(hostCtx);
+  cron.start();
+  await sleep(700); // 跨过"闸接上 + 启动窗口那次补跑"
+  check('N6a 前置·闸接上了', cron.watching === true, `watching=${cron.watching}`);
+  check('N6b 账面 retryCount 超上限 ⇒ 补跑被**跳过**（不发起会话）', st.created.length === 0, `created=${st.created.length}`);
+  const t6 = taskOf(home, 'itest-n6');
+  check('N6c → 守卫只"跳过"、**不动账**（lastRunAt 仍旧值 · retryCount 仍残留）',
+    t6.lastRunAt === PAST && t6.retryCount === CATCHUP_RETRY_MAX + 1, JSON.stringify({ lastRunAt: t6.lastRunAt, retryCount: t6.retryCount }));
+  cron.reload(); // A4 的兜底面也要受同一守卫约束
+  await sleep(300);
+  check('N6d reload 兜底同样跳过（不因 reload 而飙会话）', st.created.length === 0, `created=${st.created.length}`);
+  cron.clear();
   rmSync(home, { recursive: true, force: true });
 }
 

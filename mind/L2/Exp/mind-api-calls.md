@@ -1,7 +1,7 @@
 ---
 name: mind-api-calls
 description: 用脚本直打心智 HTTP API（`/api/mind/*`）的三条硬口径——① 必须带 `Sec-Fetch-Site: same-origin`（否则 403）② body 必须显式 UTF-8 字节（传字符串会把中文**静默**变 `?`，接口仍返 200）③ 写完必须**回读校验**。触发：打API / Invoke-RestMethod / api/mind / 心智API / 中文变问号 / body编码 / 回读校验 / cron任务API / CSRF / 403 forbidden。
-version: 1.0.0
+version: 1.0.1
 author: DSHOME
 license: internal
 contract:
@@ -57,7 +57,7 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:3099/api/mind/cron/add' -Headers $h -Me
 - `POST /api/mind/cron/add` → body `{id, cron, prompt, cwd, workspace?, catchUp?, preset?}`
 - `POST /api/mind/cron/update` → body `{id, ...patch}`（`workspace:''` = 清空回"按目录自动"；`'@none'` = 明确不登记）
 - `POST /api/mind/cron/remove` → body `{id}` → `{ok, removed}`
-- `POST /api/mind/cron/run` → body `{id}` → **会 `executeTask`（拉真会话）**，返回 `{status, sessionId, cwd, workspace:{attached, path, workspaceId, attempts, registryWaitedMs, deferred?}}`
+- `POST /api/mind/cron/run` → body `{id}` → **走串行闸 `cron.trigger(task,'panel-run')`（拉真会话）**，返回 `{ok, mode, …}`：`mode` ∈ `started`（闸空 ⇒ 立刻发了）/ `queued`（闸忙 ⇒ 入队，另带 `queueLength`，或 `dedup:'already-queued'` 表示本来就在队列里）/ `running`（该任务已在跑 ⇒ 未重复发起，`dedup:'already-running'`）/ `unserialized`（串行闸未接上 ⇒ 发了但**不保证不并发**）。⚠️ **不再返回 `sessionId` / `workspace`**——会话 id 要等创建完才有，本接口**不同步等**（2026-09-28 改；旧形状＝`executeTask` 直调 + 返回 `{status, sessionId, cwd, workspace}`）。
 - `GET  /api/mind/workspaces` → `{ok, workspaces:[{id,title,path}], diag:{registryRef,count}}`
 
 **反例自检**（证明修法有效、且"乱码 ≠ 输入问题"）：同一条中文 prompt 分两次 `add`——字符串 body 一次、UTF-8 字节一次——各自 `GET` 回读对比。**两次都 200，只有回读能分开**。
@@ -66,11 +66,11 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:3099/api/mind/cron/add' -Headers $h -Me
 
 - **不能靠门禁**：`?` 是合法 ASCII ⇒ 服务端无法判定真伪问号。这一条**只能靠纪律 + 回读**。
 - **面板不受影响**：浏览器（GUI）发的是正确 UTF-8；本坑只存在于"**脚本直打**"这一面。
-- **`/api/mind/cron/run` 的副作用**：它绕过 `cron.run()`（面板「立即运行」同路径）⇒ **不进 `cron-runs.jsonl` 台账**，且会真拉一个自治会话。要验接线就别碰它。
+- **`/api/mind/cron/run` 的副作用**：**会真拉一个自治会话**（面板「立即运行」同路径）。2026-09-28 起它改走串行闸 ⇒ ① 闸忙时语义是**入队**、不是"立刻跑"（看返回的 `mode`）② 该会话结束后**会进 `cron-runs.jsonl` 台账**（旧版绕闸直调、不进台账那半个缺口已修）。要验接线就别碰它。
 
 ## 四、关联索引
 
 - `mind/L2/Skill/verify-integrity.md` —— "接口返 200 ≠ 内容是对的"同源：**判据必须落在"结果变没变"，不是"动作做没做"**
 - 私有区 Exp「读文本 / 比较文件的操作口径」（**私有区**，按标题引用）—— **读侧**同族：`Get-Content` 默认 ANSI ⇒ 中文乱码 + 私有全文上屏；本条目是它的**写侧姊妹**
 - 本机 `Learn.md` 2026-09-11「探针要对被测资产零风险」及其 2026-09-24 补记（**私有区**，按标题引用）—— 上面那条事故链的原始记录与四条动作
-- 本机项目档待办「`/api/mind/cron/run` 绕过 `cron.run()`——面板「立即运行」拉起的自治会话不进台账」（**私有区**，按标题引用）
+- 该「`/api/mind/cron/run` 绕过串行闸 + 该会话不进台账」缺口**已于 2026-09-28 修**（改走 `cron.trigger(task,'panel-run')`，形状见上「已实测的路由形状」）；当时挂在私有区项目档的那条待办已随之办结

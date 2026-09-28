@@ -531,9 +531,21 @@ window.__ModuleLoader__.load({
           card.appendChild(editZone);
           govEl.appendChild(card);
           run.addEventListener("click", function () {
+            // 🔴 2026-09-28 改（病灶 232）：`/cron/run` 现在走 `cron.trigger`（**与 cron 路径共用串行闸**）
+            //   ⇒ 返回 `{ ok, mode, dedup? , queueLength? }`，**不再同步返回 `sessionId` / `workspace`**
+            //   （trigger 只回答"发了/排了/被去重了"，会话与归属结果稍后体现在卡片的 running/queued
+            //   与任务上的 lastResult/lastAttach）。旧文案假设同步拿到 sessionId，已不成立——
+            //   **不许假装有**：按 mode/dedup 出准确文案。
             postJSON("/api/mind/cron/run", { id: t.id }).then(function (r) {
-              var ws = (r && r.workspace) ? (" · 归属: " + (r.workspace.attached ? ("✅ " + r.workspace.path) : ("⚠️ 未登记（" + r.workspace.reason + "）"))) : "";
-              window.alert(r && r.ok ? ("✅ 已触发执行，session=" + (r.sessionId || "?") + ws) : ("⚠️ 触发失败：" + ((r && r.error) || "未知")));
+              var msg;
+              if (r && r.ok && r.mode === "started") msg = "✅ 已触发执行（会话创建中，稍后可在下方看到「运行中」）";
+              else if (r && r.ok && r.mode === "queued" && r.dedup === "already-queued") msg = "ℹ️ 该任务已在队列里，等前一个自治会话结束";
+              else if (r && r.ok && r.mode === "queued") msg = "ℹ️ 已排队：当前有自治会话在跑，放闸后依序执行";
+              else if (r && r.ok && r.mode === "running") msg = "ℹ️ 该任务正在跑，本次未重复发起";
+              else if (r && r.ok && r.mode === "unserialized") msg = "⚠️ 已触发，但串行闸未接上（不保证不并发）";
+              else msg = "⚠️ 触发失败：" + ((r && r.error) || "未知");
+              window.alert(msg);
+              reload(); // 顺手刷新：让卡片的 running/queued 状态立刻可见
             });
           });
           tg.addEventListener("click", function () { postJSON("/api/mind/cron/toggle", { id: t.id }).then(function () { reload(); }); });

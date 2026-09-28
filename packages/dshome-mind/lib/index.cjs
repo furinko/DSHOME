@@ -6,7 +6,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { DshCron, setCronInstance, getCronInstance, executeTask, setWorkspaceRegistry, getWorkspaceRegistry } = require('./cron.cjs');
+const { DshCron, setCronInstance, getCronInstance, setWorkspaceRegistry, getWorkspaceRegistry } = require('./cron.cjs');
 // 出厂自治「处方」（2026-09-14）：机制/处方出厂、实例私有、默认关——见文件头注释。
 const { resolveRecipes, projectKeyOf } = require('./cron-recipes.cjs');
 // L3 检索共享库（§十 权威排序单一实现——F3：index.cjs 与 mind-prime 共用 tokenize/jaccard/fmValue/confidenceRank）
@@ -1141,8 +1141,14 @@ function makeMindRoutes() {
           if (!cron) return json(res, 503, { ok: false, error: 'cron unavailable' });
           const task = (cron.tasks || []).find((x) => x.id === b?.id);
           if (!task) return json(res, 404, { ok: false, error: 'not-found' });
-          const out = await executeTask(cron.hostCtx, task);
-          json(res, 200, { ok: out.status === 'created', ...out });
+          // 🔴 2026-09-28 改（病灶 232）：面板「▶ 立即运行」**改走 `cron.trigger(task,'panel-run')`**，
+          //   与 cron 触发路径**共用串行闸**。旧写法 `await executeTask(cron.hostCtx, task)` 的病：
+          //   ① **绕过串行闸**——不查忙、不入队、不占闸，连点两次就能再造一个并发自治会话；
+          //   ② 该会话 `active` 里**没有记录** ⇒ `turn/end` 不触发 `recordRun` ⇒ **跑完不进
+          //      `cron-runs.jsonl` 台账**（"跑了但没成"再也查不到）。
+          //   ⚠️ 不再 `await`（trigger 是同步的"发/排/去重"决定，会话在后台建），返回值 `{ok, mode[, dedup]|queueLength}`
+          //   **原样透出**给面板出文案（trigger 不同步返回 sessionId/workspace，面板不许假装有）。
+          json(res, 200, cron.trigger(task, 'panel-run'));
         } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }); }
       },
     },
