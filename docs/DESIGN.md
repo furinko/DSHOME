@@ -42,7 +42,7 @@ DSHOME = 基于 DeepSeek Harness 的**个人桌面客户端**：独立 profile +
 |---|---|
 | **四阶分层** | L0 我是谁/怎么活 · L1 能做什么/怎么做/怎么存 · L2 某类问题怎么解决 · L3 踩过的坑去哪查（+ TRASH 不删只移） |
 | **双区** | `mind/`＝出厂固件（入库可推）｜`mind-private/`＝本机实例（gitignore 永不推），**同名私有优先** |
-| **加载三档** | **R0 注入**：`SOUL` + `AGENTS` **双件全文**，正文即唯一注入源（无手写摘要副本），SOUL 先于 AGENTS 是契约 ｜ **R1 上工装配**：`mind-prime` 装六件（项目进度/待办 + L3 相关记忆 + Learn 末尾 + user-rules + 人设卡 + Tree/Power 速览）｜ **按需层**：`Memory`/`Invariants`/`Ritual`/`Concepts`/`Wisdom`/`Design-Philosophy`/`Dream` 用时 read |
+| **加载三档** | **R0 注入**：`SOUL` + `AGENTS` **双件全文**，正文即唯一注入源（无手写摘要副本），SOUL 先于 AGENTS 是契约 ｜ **R1 上工装配**：`mind-prime` 装**七件**（项目「进度状态」+「下一步」待办 + L3 相关记忆 **top-4** + Learn **末尾 3 条 + 按任务检索 2 条** + user-rules + 人设卡 + Tree/Power 速览）｜ **按需层**：`Memory`/`Invariants`/`Ritual`/`Concepts`/`Wisdom`/`Design-Philosophy`/`Dream` 用时 read |
 | **token 预算** | 常驻极简 + 细则按需；最贵的预算花在"每次会话都要带"的东西上 |
 | **确定性内核 vs 判断层** | 归类/方案/内容归 LLM 自由；内核（硬约束/门禁）不可被 AI 判断绕过，每条带门禁或兜底 |
 | **profile = 4 层 patch 叠加** | 核心行 → 浏览器面 → 自有插件 → 本机覆盖位；同 id 整体替换 / `- insert` 追加 / `disabled` 停用 |
@@ -192,7 +192,7 @@ DSHOME 最厚的一层不是功能，是**方法论**（写在 `mind/L2/Skill/` 
 | 2 | `Invariants` 是否注入 | `Invariants` §一 表写"规则硬执行（**注入** + 门禁拦截）" | **不注入**（机制只注 SOUL+AGENTS） | 收窄为"按需（不注入）" |
 | 3 | 入口覆盖矩阵 | `Invariants` #12「**有格子空着就是漏洞**」 | 矩阵缺**整类 HTTP 写路由**行 | 补行 + 给写路由加越界断言 |
 | 4 | "缺输入即通过" | `Invariants` #14（四类必拦） | 主校验器与打包门禁等处**缺输入仍判通过** | 按 #14 **全仓清查**（非逐点补） |
-| 5 | Learn 装配口径 | `HUB`/`Ritual`/`mind/README`「末尾 **4 条**」 | 末尾 4 条 **∪ 相关 top-N** | 收窄文本 |
+| 5 | Learn 装配口径 **〔2026-09-28 已办·销〕** | ~~`HUB`/`Ritual`/`mind/README`「末尾 **4 条**」~~ 三处均已改为**「末尾 3 条 + 按任务检索 2 条」**（`HUB` 1.15 · `Ritual` 1.30 · `mind\README.md` 2026-09-28） | `mind-prime.mjs` 实读：`lines.slice(-3)`（注释「2026-09-23 瘦身：4→3」）+ `LEARN_RETRIEVED=2` | 已办（无需 L0 改动） |
 | 6 | 排序契约 | `Memory` §十 仍写旧加性式 | 实现已是**平台式** | 规则同步实现 |
 | 7 | 检索阈值 | 技能卡与 docstring 写 `0.03` | 实现 `0.02` | 收窄文本 |
 | 8 | 出厂不写私有读数 | `Tree`「出厂只写结构与机制」 | 出厂面仍有若干本机读数 | 按既有正确做法（"读数属私有面，此处不复述"）改掉 |
