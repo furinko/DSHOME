@@ -125,6 +125,48 @@ function contentText(m) {
   return '';
 }
 
+/** 真用户消息判据（2026-09-28 修 · Skill 自激止血第一刀）。
+ *
+ *  病灶：本插件原先扫 `[...messages, ...decision.messages]` 的**全部**文本找触发词，而
+ *  `decision.messages` 里已经躺着**同一个 step 内前序 hook 注入的 R0 全文**（mind-inject 先跑）、
+ *  官方 runtime context（agent-loop 的默认 decision 自带它，见 dsh-agent-loop/lib/index.js:894-901），
+ *  已注入的卡片也在会话流里 ⇒ 注入块反过来当输入：命中 → 再注入（滚雪球）。
+ *
+ *  判据形态**取样自真实会话**（2026-09-28 复算，330 个会话文件 / E:\DSHOME\sessions）：
+ *    `user/message` 事件共 6114 条，`data.source` 缺席 0 条、非对象 0 条；`source.kind` 值域 9 种：
+ *      user 3108 · plugin 2264 · agent-instructions 337 · skill-catalog 132 ·
+ *      subagent-settled 131 · agent-message 120 · team-message 12 · goal 8 · subagent-report 2
+ *    ⇒ **只有 `kind === 'user'` 是主人/成员的真用户输入**，其余全是插件或官方注入/中继：
+ *      R0 = `plugin|agent-instructions`（dshome-mind-inject）、R1 = `plugin/recall`、
+ *      官方 runtime context = `plugin/snapshot`（@deepseek-ai/dsh-system-prompt）、
+ *      已注入的技能卡 = `plugin/catalog`（本插件自己）。
+ *  官方类型面同口径：`MessageSourceMap.user = { kind: 'user' }`，且 `Message.source` 是 required
+ *  （dsh-llm `lib/types/message.d.ts:94-97`、`127-128`）⇒ 不存在"没有 source 的真用户消息"。
+ *
+ *  边界（实测同源）：成员的任务书正是 `kind:'user'`（成员会话 38ae0feb 取样 1 条），
+ *  顶层主人输入同样是 `kind:'user'`（带 rpcId/clientTimeZone 时仍是它）⇒ 顶层与成员两条路都仍能触发。
+ *  取白名单而非黑名单：将来新增的注入 kind 一律**不**参与命中（fail-safe——宁可漏也不自激）。 */
+function isRealUserMessage(m) {
+  return m?.source?.kind === 'user';
+}
+
+/** 卡面剥「触发：…」段（2026-09-28 修 · 自激止血第二刀）。
+ *  病灶：卡片文案把 `description` 原文印出来，而 description 里带一张触发词表
+ *  （形如 `…核口径；触发：派活 / 派成员 / … / 派单。`）⇒ 卡片文案自带触发词，
+ *  一旦它进了扫描面就会点燃别的卡。
+ *  实测（22 张卡，逐卡真跑）：卡片文案含别卡 trigger 的边 **36 条**；裁掉触发段后降到 **25 条**
+ *  ——残余来自 description 正文与产出摘要里的同形词，属**不可达残余**：判据已只认真用户消息，
+ *  而卡片文案的来源是 `plugin/catalog`（见 isRealUserMessage）。
+ *  裁法：`触发：`（含半角 `触发:`）起、至该句末（。！？）止，连同紧邻其前的分隔符（；;，,、）一并裁掉。
+ *  ⚠️ 只裁**卡片文案**：技能文件一个字节不动 —— frontmatter 不写、`contract.triggers`（机器字段）
+ *     照旧原样用于命中判定。 */
+function stripTriggerClause(text) {
+  return String(text ?? '')
+    .replace(/[；;，,、]?\s*触发\s*[：:][^。！？\n]*?(?=[。！？]|$)/g, '')
+    .replace(/^[\s；;，,、。]+/, '')
+    .trim();
+}
+
 /** 宿主插件主体。 */
 export function apply(ctx) {
   try {
@@ -167,8 +209,13 @@ export function apply(ctx) {
         const hinted = hintedBySession.get(key);
         if (!createUserMessage) return decision; // 上游导出缺失 → 静默跳过（apply 期已留痕）
 
-        // 扫"本会话全部消息"找触发词（简单可靠：命中未提示过的 Skill 就注入卡片）
-        const joined = [...(messages || []), ...(decision.messages || [])].map(contentText).join('\n');
+        // 扫"真用户消息"找触发词（2026-09-28 修 · 自激止血）：命中面**只认真用户输入**，
+        // R0 全文 / R1 召回 / 官方 runtime context / 已注入的技能卡一律不进扫描面
+        // （它们是 plugin|agent-instructions 来源，判据与取样见 isRealUserMessage）。
+        const joined = [...(messages || []), ...(decision.messages || [])]
+          .filter(isRealUserMessage)
+          .map(contentText)
+          .join('\n');
         if (!joined) return decision;
 
         const skills = getSkills(); // 懒加载：目录变了自动重扫（新增私有 skill 即时生效）
@@ -185,7 +232,9 @@ export function apply(ctx) {
             : '';
           const card = [
             '',
-            `🧩 命中${skill.kind === 'exp' ? '工具手册' : '方法论'}「${skill.id}」：${skill.description || ''}`,
+            // description 先剥掉「触发：…」段（2026-09-28 修 · 自激止血）：卡面不再自带触发词表；
+            // 技能文件与 contract.triggers 不动（机器字段仍照旧用于命中判定）。
+            `🧩 命中${skill.kind === 'exp' ? '工具手册' : '方法论'}「${skill.id}」：${stripTriggerClause(skill.description)}`,
             outLine,
             `全文 \`${skill.full}\`（命中提示——需要时 read 全文即生效${skill.zone === 'private' ? '；私有区不推送' : ''}）`,
             '',

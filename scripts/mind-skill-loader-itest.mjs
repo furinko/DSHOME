@@ -35,25 +35,25 @@ await new Promise((r) => setTimeout(r, 50));
 const results = [];
 // 场景1：消息含 "后端崩了 exit1" → 应命中 dshome-diagnostics
 const a1 = fakeAgent('t1');
-const d1 = await dispatchPreStep(ctx, a1, [{ id: 'm1', role: 'user', content: [{ type: 'text', text: '后端崩了 exit1 频繁重启，怎么办' }] }]);
+const d1 = await dispatchPreStep(ctx, a1, [{ id: 'm1', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '后端崩了 exit1 频繁重启，怎么办' }] }]);
 const texts1 = (d1.messages || []).map((m) => contentTextOf(m));
 const hit1 = texts1.find((t) => t.includes('dshome-diagnostics'));
 results.push(['触发注入(diagnostics)', hit1 ? '✅ 命中' : '❌ 未命中', hit1 ? hit1.split('\n')[1] : '']);
 
 // 场景2：同 agent 二次含同触发词 → 不重复注入
-const d2 = await dispatchPreStep(ctx, a1, [{ id: 'm2', role: 'user', content: [{ type: 'text', text: '后端又 exit1 了' }] }]);
+const d2 = await dispatchPreStep(ctx, a1, [{ id: 'm2', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '后端又 exit1 了' }] }]);
 const hit2 = (d2.messages || []).some((m) => contentTextOf(m).includes('dshome-diagnostics'));
 results.push(['防重复(同session)', hit2 ? '❌ 重复' : '✅ 未重复注入']);
 
 // 场景3：消息含 "做个插件 cordis" → 应命中 dshome-plugin-dev
 const a3 = fakeAgent('t3');
-const d3 = await dispatchPreStep(ctx, a3, [{ id: 'm3', role: 'user', content: [{ type: 'text', text: '我要做个 cordis 插件，slot 注册失败' }] }]);
+const d3 = await dispatchPreStep(ctx, a3, [{ id: 'm3', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '我要做个 cordis 插件，slot 注册失败' }] }]);
 const hit3 = (d3.messages || []).some((m) => contentTextOf(m).includes('dshome-plugin-dev'));
 results.push(['触发注入(plugin-dev)', hit3 ? '✅ 命中' : '❌ 未命中']);
 
 // 场景4：普通消息无触发词 → 不注入
 const a4 = fakeAgent('t4');
-const d4 = await dispatchPreStep(ctx, a4, [{ id: 'm4', role: 'user', content: [{ type: 'text', text: '今天天气不错，帮我写首诗' }] }]);
+const d4 = await dispatchPreStep(ctx, a4, [{ id: 'm4', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '今天天气不错，帮我写首诗' }] }]);
 const extra4 = (d4.messages || []).length;
 results.push(['无触发不注入', extra4 === 1 ? '✅ 无多余注入' : '❌ 多出 ' + extra4 + ' 条']);
 
@@ -96,7 +96,7 @@ try {
   mkdirSync(dirname(FIXTURE), { recursive: true });
   writeFileSync(FIXTURE, fixtureBody, 'utf8');
   const a5 = fakeAgent('t5');
-  const d5 = await dispatchPreStep(ctx, a5, [{ id: 'm5', role: 'user', content: [{ type: 'text', text: '帮我跑一下鲸鱼私有测试流程' }] }]);
+  const d5 = await dispatchPreStep(ctx, a5, [{ id: 'm5', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '帮我跑一下鲸鱼私有测试流程' }] }]);
   const t5 = (d5.messages || []).map((m) => contentTextOf(m)).find((t) => t.includes('whaletest-private'));
   const privatePath = Boolean(t5) && String(t5).includes('mind-private');
   results.push(['私有skill触发（自带夹具·运行中新增免重启）', t5 && privatePath ? '✅ 命中且卡片指私有路径' : `❌ 未命中或路径异常（hit=${Boolean(t5)} privatePath=${privatePath}）`]);

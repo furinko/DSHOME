@@ -357,6 +357,131 @@ const EXPECT = {
       return out;
     },
   },
+  // ── 2026-09-28 加：Skill 卡「自激」止血（触发判据只认真用户消息 + 卡面剥「触发：…」段）──────
+  // 既有门禁只验「挂载面」（apply 不抛错 + 注册了钩子），对注入**判据**零覆盖 —— 而 live 病灶
+  //   正长在判据上：`mind-skill-loader.js` 旧判据扫 `[...messages, ...decision.messages]` 的**全部**
+  //   文本找触发词，而同一个 step 里**前序 hook 注入的 R0 全文**就在 `decision.messages` 里
+  //   （mind-inject 先跑），官方 runtime context 也在（dsh-agent-loop/lib/index.js:894-901 的默认
+  //   decision 自带它）⇒ **注入块当输入：命中 → 再注入**（滚雪球）。现场读数：主人一句「你好」，
+  //   一次注入 ≈15.8k 字（其中技能卡 3449 字 / 10 条）。第二刀：卡面把 `description` 原文印出来，
+  //   而 description 里带一张触发词表（`…；触发：派活 / 派成员 / …。`）⇒ 卡片文案自带触发词。
+  // 断言三条轴，缺哪条都会造出假绿：
+  //   ① 正：**顶层**与**成员**两条路的真用户消息（source.kind='user'）都必须仍能触发；
+  //   ② 负：R0 全文 / 官方 runtime context / 已注入卡片文案，作注入块一律不得触发；
+  //   ③ 正对照：**同一段文本**换成真用户消息必须能触发 —— 否则负臂的 0 可能只是"这段文本里
+  //      本来就没有触发词"（判据假绿的老病），正对照把这条退路堵死。
+  //   ④ 卡面：注入的真卡片文案不含「触发：」段，且仍带「🧩 命中…」「全文 `<path>`」行（不是被裁空）。
+  'mind-skill-loader': {
+    desc: '技能卡只由真用户消息（source.kind=user）触发；R0/官方 context/已注入卡片作注入块不得触发；卡面不含「触发：…」段',
+    run: async ({ runHandlers }) => {
+      const out = [];
+      // ⚠️ 夹具消息带可识别 id：本插件的注入消息**同名为** `dshome-mind-skill-loader`，
+      //   「注入条数」断言必须只数**插件自己产出**的消息，不能把喂进去的夹具当成注入
+      //   （7b 首跑就栽在这：输入那条卡片文案被算进注入数 ⇒ 假红）。
+      let probeSeq = 0;
+      const mkSrc = (text, source) => ({ id: `verify-probe-input-${++probeSeq}`, role: 'user', content: [{ type: 'text', text }], source });
+      const isProbeInput = (m) => String(m?.id || '').startsWith('verify-probe-input-');
+      // 真依赖①：触发词从**真技能目录现读**（不写死探针词 —— 技能改名/新增不会造出假红假绿）
+      const fmField = (c, key) => { const m = new RegExp('(?:^|\\n)\\s*' + key + ':\\s*([^\\n]+)').exec(c); return m ? m[1].trim().replace(/^['"]|['"]$/g, '') : ''; };
+      const fmList = (c, key) => {
+        const m = new RegExp('(?:^|\\n)\\s*' + key + ':\\s*\\[([^\\]]*)\\]').exec(c);
+        return m ? m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean) : [];
+      };
+      const skills = [];
+      for (const segs of [['mind', 'L2', 'Skill'], ['mind-private', 'L2', 'Skill'], ['mind', 'L2', 'Exp'], ['mind-private', 'L2', 'Exp']]) {
+        const dir = join(repoRoot, ...segs);
+        if (!existsSync(dir)) continue;
+        for (const n of readdirSync(dir)) {
+          if (!n.endsWith('.md') || n === 'README.md' || n === '_index.md') continue;
+          const c = readFileSync(join(dir, n), 'utf8');
+          const id = fmField(c, 'name') || n.replace(/\.md$/, '');
+          const triggers = fmList(c, 'triggers');
+          if (id && triggers.length) skills.push({ id, triggers });
+        }
+      }
+      if (!skills.length) {
+        out.push({ name: '技能探针预置：真技能目录读到触发词', ok: false, detail: '0 张 —— 缺真依赖 ⇒ 后续断言不可信（fail-closed，不许静默通过）' });
+        return out;
+      }
+      const probeWord = skills[0].triggers[0];
+      const allWords = [...new Set(skills.flatMap((s) => s.triggers))].join(' / ');
+      out.push({ name: `技能探针预置：真技能目录读到 ${skills.length} 张卡`, ok: true, detail: `探针词「${probeWord}」（取自 ${skills[0].id}）；全部触发词 ${new Set(skills.flatMap((s) => s.triggers)).size} 个` });
+      // 真依赖②：L0 全文（SOUL+AGENTS）—— 现场自激的输入正是它（R0 payload）
+      const l0Paths = ['SOUL.md', 'AGENTS.md'].map((f) => join(repoRoot, 'mind', 'L0', f));
+      const l0Missing = l0Paths.filter((p) => !existsSync(p));
+      const L0 = l0Missing.length ? '' : l0Paths.map((p) => readFileSync(p, 'utf8')).join('\n\n');
+      out.push({ name: 'L0 夹具预置：读到 SOUL+AGENTS 全文', ok: l0Missing.length === 0, detail: l0Missing.length ? `缺 ${l0Missing.join(', ')}` : `${L0.length} 字` });
+      const hintsOf = (r) => retMessages(r.at(-1)).filter((m) => m && m.source && m.source.plugin === 'dshome-mind-skill-loader' && !isProbeInput(m));
+      const idsOf = (ms) => ms.map((m) => (/「([^」]+)」/.exec(msgText(m)) || [])[1]).filter(Boolean);
+      const run = (id, { messages = [], decisionMessages, origin } = {}) => runHandlers({
+        ev: 'agent/pre-step',
+        step: 1,
+        messages,
+        agent: { session: makeSessionProbe({ id, gen: 0, nodes: [], ...(origin === undefined ? {} : { origin }) }) },
+        ...(decisionMessages ? { decision: { kind: 'enter', messages: [...decisionMessages] } } : {}),
+      });
+      // 场景1【正·顶层】真用户消息含触发词 ⇒ 必须注入
+      const r1 = await run('verify-skill-top', { messages: [mkSrc(probeWord, { kind: 'user' })] });
+      const h1 = hintsOf(r1);
+      out.push({
+        name: '场景1 顶层真用户消息含触发词 ⇒ 必须注入',
+        ok: h1.length >= 1 && idsOf(h1).includes(skills[0].id),
+        detail: `注入 ${h1.length} 张（期望 ≥1 且含「${skills[0].id}」）；判据若把真用户消息也滤掉 ⇒ 这里变 0`,
+      });
+      // 场景2【正·成员】成员会话（header.origin==='subagent'）的任务书 = user 消息 ⇒ 仍必须注入
+      const r2 = await run('verify-skill-member', { messages: [mkSrc(probeWord, { kind: 'user' })], origin: 'subagent' });
+      const h2 = hintsOf(r2);
+      out.push({
+        name: '场景2 成员会话（origin=subagent）的任务书 ⇒ 仍必须注入',
+        ok: h2.length >= 1,
+        detail: `注入 ${h2.length} 张，期望 ≥1（成员任务书实测 source.kind='user'；判据误挡成员面时会变 0）`,
+      });
+      // 场景3【负·R0 现场形态】R0 全文作注入块（plugin/instructions）⇒ 必须不注入
+      const r3 = await run('verify-skill-r0-inject', { decisionMessages: [mkSrc(L0, { kind: 'plugin', plugin: 'dshome-mind-inject', form: 'instructions' })] });
+      const h3 = hintsOf(r3);
+      out.push({
+        name: '场景3 R0 全文作注入块（plugin/instructions）⇒ 必须不注入',
+        ok: h3.length === 0,
+        detail: `注入 ${h3.length} 张，期望 0（旧判据实测 10 张 —— 这正是自激源）`,
+      });
+      // 场景4【负·R0 历史形态】agent-instructions 形态同样是注入块 ⇒ 0
+      const r4 = await run('verify-skill-r0-legacy', { decisionMessages: [mkSrc(L0, { kind: 'agent-instructions', form: 'instructions', plugin: 'dshome-mind-inject' })] });
+      const h4 = hintsOf(r4);
+      out.push({ name: '场景4 R0 全文作注入块（agent-instructions 历史形态）⇒ 必须不注入', ok: h4.length === 0, detail: `注入 ${h4.length} 张，期望 0（旧判据实测 10 张）` });
+      // 场景5【负·官方 runtime context】plugin/snapshot（真形态字段同官方）⇒ 0
+      const r5 = await run('verify-skill-ctx', { decisionMessages: [mkSrc(probeWord, { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot', sections: [{ name: 'probe', text: probeWord }] })] });
+      const h5 = hintsOf(r5);
+      out.push({ name: '场景5 官方 runtime context（plugin/snapshot）含触发词 ⇒ 必须不注入', ok: h5.length === 0, detail: `注入 ${h5.length} 张，期望 0（旧判据会命中 ≥1）` });
+      // 场景6【正对照·关键】**同一段 L0 文本**换成真用户消息 ⇒ 必须注入（堵"文本里本就没词"的假绿）
+      const r6 = await run('verify-skill-r0-control', { messages: [mkSrc(L0, { kind: 'user' })] });
+      const h6 = hintsOf(r6);
+      out.push({
+        name: '场景6 正对照：同一段 L0 全文作真用户消息 ⇒ 必须注入',
+        ok: h6.length > 0,
+        detail: `注入 ${h6.length} 张，期望 >0 —— 若为 0，说明 L0 文本已不含任何触发词，场景3/4 的 0 属假绿（实测旧口径下同一文本命中 10 张）`,
+      });
+      // 场景7【负·已注入卡片】先真烧出全部卡片文案（一条 user 消息喂全部触发词），再把它当注入块喂回去
+      const burn = await run('verify-skill-burn', { messages: [mkSrc(allWords, { kind: 'user' })] });
+      const cardTexts = hintsOf(burn).map(msgText);
+      out.push({ name: '场景7a 夹具前提：全部触发词作真用户消息 ⇒ 卡片可被批量注入', ok: cardTexts.length > 0, detail: `注入 ${cardTexts.length} 张（期望 >0；为 0 则 7b/7c 的负臂是空跑假绿）` });
+      const joinedCards = cardTexts.join('\n\n');
+      const r7 = await run('verify-skill-card-inject', { decisionMessages: [mkSrc(joinedCards, { kind: 'plugin', plugin: 'dshome-mind-skill-loader', form: 'catalog' })] });
+      const h7 = hintsOf(r7);
+      out.push({ name: '场景7b 已注入卡片文案（decision.messages 面）⇒ 必须不注入', ok: h7.length === 0, detail: `注入 ${h7.length} 张，期望 0（旧判据下这张文案能点燃别的卡 —— 单跳自激边）` });
+      const r8 = await run('verify-skill-card-msg', { messages: [mkSrc(joinedCards, { kind: 'plugin', plugin: 'dshome-mind-skill-loader', form: 'catalog' })] });
+      const h8 = hintsOf(r8);
+      out.push({ name: '场景7c 已注入卡片文案（messages 面）⇒ 必须不注入', ok: h8.length === 0, detail: `注入 ${h8.length} 张，期望 0` });
+      // 场景8【卡面】注入的真卡片文案不得含「触发：…」段（第二刀），且不得被裁空
+      const leaked = cardTexts.filter((t) => /触发\s*[：:]/.test(t));
+      out.push({ name: '场景8 卡片文案不含「触发：…」段', ok: cardTexts.length > 0 && leaked.length === 0, detail: `${leaked.length}/${cardTexts.length} 张含触发段，期望 0（未剥段时 22/22 含）` });
+      const intact = cardTexts.filter((t) => t.includes('🧩 命中') && t.includes('全文 `'));
+      out.push({ name: '场景8b 卡面仍带「🧩 命中…」与「全文 `<path>`」行（不是被裁空）', ok: cardTexts.length > 0 && intact.length === cardTexts.length, detail: `${intact.length}/${cardTexts.length} 张完整` });
+      // 【读数】卡片文案若**真**以用户消息形态出现，仍能点燃几张卡 —— 不参与判定，只报残余词面（供复算）
+      const r9 = await run('verify-skill-card-asuser', { messages: [mkSrc(joinedCards, { kind: 'user' })] });
+      out.push({ name: '【读数·非断言】同上文案作真用户消息 ⇒ 点燃卡数（残余词面）', ok: true, detail: `${hintsOf(r9).length} 张（残余来自 description 正文与产出摘要里的同形词，判据下不可达）` });
+      return out;
+    },
+  },
 };
 
 
