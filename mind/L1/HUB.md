@@ -1,6 +1,6 @@
 # HUB.md — 知识网络之心
 
-> 版本：1.11 | 2026-09-24 | **规则层订正批次 ③ ③**：头注层名 `M 元层`（全库无定义）→ **按需层**（与 §三 三档一致）| 1.10 | 2026-09-24 | **§三 R1 装配读数校准**（`mind-prime.mjs` 2026-09-23 瘦身后：L3 相关记忆 top-N→**top-4**（`--limit` 默认 4、通用层保底 2 席）；Learn **末尾 4 条**→**末尾 3 条 + 按任务检索 2 条**）——文档落后于机制，按实测读数改齐 | 1.9 | 2026-09-18 | **§三 加载策略按机制订正**（原「强制层＝每次上工必须加载 Tree+Power+**Memory**+Learn+**Invariants**」是**空头义务**：实测 `mind-inject.js` 只注 `SOUL`+`AGENTS`、`mind-prime.mjs` 只装六件（project 进度/待办 + L3 top-N + Learn 末尾 4 条 + user-rules + 人设卡 + Tree/Power 速览）⇒ **Memory/Invariants 从来不在装配面**，改为「注入层 R0 / 上工装配层 R1 / 按需层」三档如实描述）+ **§四 红线① 订正「L0 宪法＝SOUL+AGENTS」**（`TOOL.md` 层属 L0 却是**从属参考、非宪法级**——依据 `TOOL.md` 首行 + `mind-guard.js` 高危名单不含它）+ `Tree.md` Invariants 行的"强制层加载"同批改 | 1.8 | 2026-09-15 | 规则层订正批次：L42 强制层清单**五处路径前缀补全**（`L1/Learn.md` 实为私有区 `mind-private\L1\Learn.md`） | 1.7 | 2026-09-11 | 机制名表述统一 | 1.6 | 2026-09-09 | 记忆层重构：L3 三区表（common/projects/history）替代 L3/index+Project 行；知识流动路径同步 | 1.5 | 2026-09-06 | 注入层对齐 R0：注入层=「dshome-mind-inject 运行时读 SOUL.md + AGENTS.md 双件全文注入（R0 人格宪法+运行宪法，正文=注入源，无手写摘要）+ dshome-mind-recall 动态召回」；强制层读取动作化（AGENTS §八 知识地图）
+> 版本：1.15 | 2026-09-28 | 本批 `l1-slim`：L0 四件补口（§二 架构表 + §四① 补 `CREW.md` 定位与「目前无机器门禁＝纪律级」现状）· §三 R1「装的六件」→**七件**（枚举实为 7 项，与机制 `mind-prime.mjs` 输出 7 段对齐；§三下方 2026-09-18 两条订正记录仍写"六件"——历史照抄、有意保留）
 > 加载：按需层——维护/审计/新设备时读；不参与运行时注入（注入=R0 SOUL+AGENTS）
 > 定位：L1 中枢——心智基座的设计理念、加载规则、跨层红线
 
@@ -18,7 +18,7 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 
 | 层 | 回答 | 内容 |
 |---|---|---|
-| L0 | 我是谁？怎么活？ | SOUL + AGENTS（宪法）· TOOL（从属参考） |
+| L0 | 我是谁？怎么活？ | SOUL + AGENTS（宪法）· TOOL / CREW（从属参考——不注入；CREW＝成员底线，由 `agent-roles.js` 运行时读盘拼进成员系统提示段） |
 | L1 | 能做什么？怎么做？怎么存？ | HUB + Wisdom + Tree + Power + Memory + Dream + Learn + Ritual + Invariants + Concepts + Design-Philosophy |
 | L2 Skill | 某类问题怎么解决？ | 方法论——跨项目可复用的逻辑闭环 |
 | L2 Exp | 这个工具/平台怎么用？有什么坑？ | 经验公式——方法论的实例 + 踩坑记录 |
@@ -39,7 +39,7 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 `dshome-mind-inject` 运行时读 `mind\L0\SOUL.md`（人格宪法）+ `mind\L0\AGENTS.md`（运行宪法）**双件全文**注入（正文=唯一注入源，SOUL 先于 AGENTS 是契约）。
 
 ### 上工装配层（R1 常驻，由 `dshome-mind-recall` 调 `mind-prime` 装配——**不是"全文加载"**）
-装的六件：`project.md`「进度状态」+「下一步」待办 + **L3 相关记忆 top-4**（`--limit` 默认 4；通用层保底 2 席）+ **`mind-private\L1\Learn.md` 末尾 3 条 + 按任务检索 2 条** + `user-rules` + 人设卡 + **`Tree.md`/`Power.md` 速览（头部差量）**。
+装的七件：`project.md`「进度状态」+「下一步」待办 + **L3 相关记忆 top-4**（`--limit` 默认 4；通用层保底 2 席）+ **`mind-private\L1\Learn.md` 末尾 3 条 + 按任务检索 2 条** + `user-rules` + 人设卡 + **`Tree.md`/`Power.md` 速览（头部差量）**。
 
 ### 按需层（本层**不注入、也不由上工装配**，用时 read）
 `Memory` / `Invariants` / `Ritual` / `Concepts` / `Wisdom` / `Design-Philosophy` / `Dream`；L2 Skill/Exp（关键词触发）；L3 记忆区（common/projects/history）grep/read。
@@ -48,7 +48,7 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 
 ## 四、跨层红线
 
-1. **L0 是宪法** — **SOUL / AGENTS** 仅用户明确要求时修改；`TOOL.md` 层属 L0 但为**从属参考、非宪法级**（不注入、改它不按宪法审批，依据 `TOOL.md` 首行 + `mind-guard.js` 高危名单不含它）。
+1. **L0 是宪法** — **SOUL / AGENTS** 仅用户明确要求时修改；`TOOL.md` 与 `CREW.md` 层属 L0 但为**从属参考、非宪法级**（不注入、改它们不按宪法审批，依据 `TOOL.md`/`CREW.md` 首行 + `mind-guard.js` 高危名单不含它们；`CREW.md` 目前**无机器门禁、属纪律级**）。
 2. **L1 是法律** — L1 文件定义规则，不对 L2/L3 具体内容负责。
 3. **L2 是能力** — Skill/Exp 遵守 L1 规则，独立演化。
 4. **L3 是记忆** — 遵守 Memory 规则，各自维护 `_index`。
@@ -73,4 +73,4 @@ mind 不是文件仓库。它是**被蒸馏过的逻辑结晶**——把"怎么�
 
 ---
 
-_版本：1.11 | 2026-09-24 | 与文件头版本行同步：**规则层订正批次 ③ ③**——头注 `M 元层` → **按需层** | 1.10 | 2026-09-24 | 与文件头版本行同步：**§三 R1 装配读数校准**（`mind-prime.mjs` 09-23 瘦身后：L3 top-**4**；Learn 末尾 **3** 条 + 按任务检索 **2** 条）| 1.9 | 2026-09-18 | 与文件头版本行同步：**§三 加载策略按机制订正**（删「强制层＝每次上工必须加载 Memory/Invariants」的空头义务；改为 注入层 R0 / 上工装配层 R1 / 按需层 三档如实描述）+ **§四① L0 宪法＝SOUL+AGENTS，TOOL 为从属参考** | 1.8 | 2026-09-15 | 与文件头版本行同步（2026-09-17 补：本文件此前**缺文件尾版本行**，`verify-l1-versions` 报 warn 后补齐）_
+_版本：1.15 | 2026-09-28 | 本批 `l1-slim`：L0 四件补口（补 `CREW.md`）· §三「六件」→**七件**；沿革（1.11 及更早）已整行归档 `mind\L1\changelog-L1.md`_
