@@ -104,7 +104,7 @@ for (const s of skills) {
   if (kv && !/^##\s+一、/m.test(readFileSync(s.full, 'utf8'))) issues.push({ sev: 'warn', file: s.rel, msg: '未按 Skill 五章（## 一、…）格式' });
 }
 
-// ①b Skill 版本一致性（Power.md §六："文件头版本与文件尾版本一致"）——四元比对：
+// ①b Skill 版本一致性（Power.md §四·版本号规则："文件头版本与文件尾版本一致"）——四元比对：
 //     Skill frontmatter.version == 文件尾 "_版本：x.y" == Tree.md 清单版本 == _index.md 版本。
 //     规则：frontmatter 是机器可读真源；文件尾/Tree/_index 是人工维护的镜像。任一不一致即 warn（镜像漂移）。
 function footerVersion(md) {
@@ -536,7 +536,7 @@ if (!deferContentDrift && existsSync(authoritativeAgentsFile) && existsSync(payl
   }
 }
 
-// ⑧ 头/尾版本一致性（Power §六：文件头版本与文件尾版本一致）——规则类文件两端都带版本行才比较
+// ⑧ 头/尾版本一致性（Power §四·版本号规则：文件头版本与文件尾版本一致）——规则类文件两端都带版本行才比较
 // 头部取值序：frontmatter version（L2 Skill）→ 正文头 `> 版本：x.y`；尾部取文末 `_版本：x.y`。
 function versionPair(content) {
   const c = String(content || '').replace(/\r\n/g, '\n');
@@ -567,7 +567,7 @@ for (const f of walk(MIND, [], 'mind').concat(extraVersionFiles)) {
   const c = readFileSync(f.full, 'utf8');
   const { head, tail, hs, ts } = versionPair(c);
   if (head !== null && tail !== null && head !== tail)
-    issues.push({ sev: 'warn', file: f.rel, msg: `头/尾版本不一致（头 ${hs} vs 尾 ${ts}）——Power §六 要求一致` });
+    issues.push({ sev: 'warn', file: f.rel, msg: `头/尾版本不一致（头 ${hs} vs 尾 ${ts}）——Power §四·版本号规则 要求一致` });
 }
 
 // ⑨ 出厂卫生：禁词表扫描公开面（2026-09-10）
