@@ -562,13 +562,17 @@ function versionPair(content) {
 // 根 AGENTS.md 已于 2026-09-04 退役删除（权威版唯一 = mind/L0/AGENTS.md）；存在时才加入版本检查（向前兼容）
 const extraVersionFiles = [];
 if (existsSync(join(repoRoot, 'AGENTS.md'))) extraVersionFiles.push({ full: join(repoRoot, 'AGENTS.md'), rel: 'AGENTS.md' });
+const oneSided = []; // 2026-09-29 加：单侧缺失**显式上报**（行为不变、不判红——把静默盲区变成可见读数，对齐 Invariants #14「不许静默」）
 for (const f of walk(MIND, [], 'mind').concat(extraVersionFiles)) {
   if (/L3|Project|TRASH/.test(f.rel)) continue; // 记忆/项目档不适用版本行规范
   const c = readFileSync(f.full, 'utf8');
   const { head, tail, hs, ts } = versionPair(c);
   if (head !== null && tail !== null && head !== tail)
     issues.push({ sev: 'warn', file: f.rel, msg: `头/尾版本不一致（头 ${hs} vs 尾 ${ts}）——Power §四·版本号规则 要求一致` });
+  else if (head === null || tail === null) oneSided.push(`${f.rel}（${head === null ? '仅尾行' : '仅头行'}）`);
 }
+if (oneSided.length)
+  issues.push({ sev: 'info', file: 'mind/**（头/尾版本行）', msg: `**单侧缺失 ${oneSided.length} 件** ⇒ 本判据对它们**既不比较、也不判红**（**已知盲区，不是"验过"**）：${oneSided.join(' · ')}。其中 L0 三件（CREW/SOUL/AGENTS，仅尾行）属**形态不齐**，补齐属 L0 正文改动（需明确放行）；\`changelog-*\` / \`_index\` / \`README\` 属**设计上只带尾版本行**的结构件。另注毛边：TOOL.md（仅头行）未入本列表——其正文含「版本：」字样、被尾窗口误取（单独待核）⇒ 是否把「形态不齐」这一类升为判红，取向记在 \`project.md\` 待办（2026-09-29）。` });
 
 // ⑨ 出厂卫生：禁词表扫描公开面（2026-09-10）
 //   背景：2026-09-08 隐私事故（Tree.md 登记私有项目名并推送）修复后，09-09 重构波又以"举例"形式把它
