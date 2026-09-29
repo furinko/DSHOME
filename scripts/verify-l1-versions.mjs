@@ -65,7 +65,11 @@ const FOOT_RE = /^_版本：\s*([0-9]+(?:\.[0-9]+)*)/gm;
  *    就含 `_版本：vX | 日期 | 本轮摘要_`，实文件尾在千行之后）。取第一个会**认错尾行** ⇒ 假 warn。
  *     反例（`--selftest` ⑥）：正文放一个 `_版本：1.0 …_` 占位、真尾是 1.1 ⇒ 必须读出 1.1。 */
 function versionsOf(text) {
-  const head = HEAD_RE.exec(text)?.[1] ?? null;
+  // 2026-09-29 修（本机实测）：头行只在**文首窗口**内取——口径与 `mind-validate.mjs` 的 `versionPair()`（`slice(0,1500)`）对齐。
+  //   原实现全文取第一个 `> 版本：`，会被**段内照抄的旧头行**劫持：`changelog-L1.md` 的「Memory.md 沿革 → 替换追加」
+  //   小节里那条 `> 版本：1.35 | …` 被当成该台账的"本档头行" ⇒ 每轮恒打印「头(1.35) ≠ 尾(1.x)（历史遗留）」，而该台账
+  //   第 11 行自陈「本档头部不设版本行、取**最后一个**匹配」⇒ 实现与自述不符（恒亮提示＝没提示）。窗口内没有 ⇒ head=null（合法形态）。
+  const head = HEAD_RE.exec(String(text ?? '').slice(0, 1500))?.[1] ?? null;
   const all = [...String(text ?? '').matchAll(FOOT_RE)];
   const foot = all.length > 0 ? all[all.length - 1][1] : null;
   return { head, foot };
@@ -103,7 +107,8 @@ function versionLines(text) {
 /** HEAD 的**当前版本行**（＝本版那两条：首个头行 + 最后一个尾行，口径同 `versionsOf()`）。 */
 function liveVersionLines(text) {
   const t = norm(text);
-  const head = [...t.matchAll(HEAD_LINE_RE)][0]?.[0] ?? null;
+  // 2026-09-29：头行同样限定文首窗口（口径与 `versionsOf()` 保持一致——原注释自称"口径同 versionsOf()"，实际两处都取全文）
+  const head = [...t.slice(0, 1500).matchAll(HEAD_LINE_RE)][0]?.[0] ?? null;
   const feet = [...t.matchAll(FOOT_LINE_RE)];
   const foot = feet.length ? feet[feet.length - 1][0] : null;
   return new Set([head, foot].filter((x) => x !== null));
